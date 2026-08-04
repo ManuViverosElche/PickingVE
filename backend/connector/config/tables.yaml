@@ -1,0 +1,538 @@
+# =============================================================================
+# CONECTOR FACTUSOL -> BIGQUERY
+# config/tables.yaml  -  MAESTRO DE TABLAS
+# =============================================================================
+# Este archivo define, de forma declarativa, cada tabla que se sincroniza:
+#   - De que tabla de Factusol (F_*) se leen los datos.
+#   - Que columnas se extraen y con que alias (el SQL exacto de los scripts actuales).
+#   - El esquema que se crea en BigQuery (tipos de datos y descripciones).
+#   - El modo de carga: "full" (recarga completa) o "incremental" (solo cambios).
+#   - El campo watermark para incremental (la fecha de modificacion en Factusol).
+#
+# REGLA CRITICA (D-01): los nombres de tabla, nombres de campo y descripciones
+# REPLICAN EXACTAMENTE los scripts actuales (backups/2026-08-04/scripts/), porque
+# las Google Sheets de faena de operarios dependen de ellos. NO CAMBIAR.
+#
+# Modo de carga recomendado (D-04):
+#   - Tablas MAESTRAS (clientes, articulos, agentes...): full.
+#   - Tablas de MOVIMIENTO (pedidos, lineas, stock...): incremental si tienen
+#     campo de fecha de modificacion (FUMPCL, FUMLPC, ...); si no, full.
+#   - El campo `watermark_column` indica la columna usada para el incremental.
+
+tables:
+
+  # ---------------------------------------------------------------------------
+  # 1. CLIENTE  (script: actualizar_cliente.py -> tabla CLIENTE)
+  # ---------------------------------------------------------------------------
+  - name: "CLIENTE"
+    source_table: "F_CLI"
+    mode: "full"                      # Maestra: recarga completa
+    query: |
+      SELECT
+          CODCLI AS ID_CLIENTE,
+          NOFCLI AS N_FISCAL,
+          NOCCLI AS N_COMERCIAL,
+          DOMCLI AS DIRECCION,
+          POBCLI AS CIUDAD,
+          PROCLI AS PROVINCIA,
+          CPOCLI AS CP,
+          PAICLI AS PAIS,
+          TELCLI AS TELEFONOS,
+          EMACLI AS EMAIL,
+          AGECLI AS C_AGENTE,
+          TIVCLI AS T_IVA,
+          FPACLI AS F_PAGO
+      FROM F_CLI
+      WHERE ESTCLI <> 3
+      ORDER BY CODCLI
+    schema:
+      - {name: "ID_CLIENTE",   type: "STRING", mode: "NULLABLE", description: "Id del cliente"}
+      - {name: "N_FISCAL",     type: "STRING", mode: "NULLABLE", description: "Nombre fiscal del cliente"}
+      - {name: "N_COMERCIAL",  type: "STRING", mode: "NULLABLE", description: "Nombre comercial del cliente"}
+      - {name: "DIRECCION",    type: "STRING", mode: "NULLABLE", description: "Dirección del cliente"}
+      - {name: "CIUDAD",       type: "STRING", mode: "NULLABLE", description: "Ciudad del cliente"}
+      - {name: "PROVINCIA",    type: "STRING", mode: "NULLABLE", description: "Provincia del cliente"}
+      - {name: "CP",           type: "STRING", mode: "NULLABLE", description: "Código Postal del cliente"}
+      - {name: "PAIS",         type: "STRING", mode: "NULLABLE", description: "País del cliente"}
+      - {name: "TELEFONOS",    type: "STRING", mode: "NULLABLE", description: "Número de teléfono del cliente"}
+      - {name: "EMAIL",        type: "STRING", mode: "NULLABLE", description: "E-mail del cliente"}
+      - {name: "C_AGENTE",     type: "STRING", mode: "NULLABLE", description: "Código del agente asignado al cliente"}
+      - {name: "T_IVA",        type: "STRING", mode: "NULLABLE", description: "Tipo de IVA del cliente"}
+      - {name: "F_PAGO",       type: "STRING", mode: "NULLABLE", description: "Forma de pago del cliente"}
+
+  # ---------------------------------------------------------------------------
+  # 2. AGENTE  (script: actualizar_agente.py -> tabla AGENTE)
+  # ---------------------------------------------------------------------------
+  - name: "AGENTE"
+    source_table: "F_AGE"
+    mode: "full"
+    query: |
+      SELECT
+          CODAGE AS ID_AGENTE,
+          EMAAGE AS EMAIL_AGENTE,
+          NOMAGE AS NOMBRE_AGENTE
+      FROM F_AGE
+      ORDER BY CODAGE
+    schema:
+      - {name: "ID_AGENTE",    type: "STRING", mode: "NULLABLE", description: "Código del agente"}
+      - {name: "EMAIL_AGENTE", type: "STRING", mode: "NULLABLE", description: "E-mail del agente"}
+      - {name: "NOMBRE_AGENTE", type: "STRING", mode: "NULLABLE", description: "Nombre del agente"}
+
+  # ---------------------------------------------------------------------------
+  # 3. ARTICULOS  (script: actualizar_articulos.py -> tabla ARTICULOS)
+  # ---------------------------------------------------------------------------
+  - name: "ARTICULOS"
+    source_table: "F_ART"
+    mode: "full"
+    query: |
+      SELECT
+          CODART AS ID_ARTICULO,
+          EQUART AS GLOBALGAP,
+          FAMART AS CODIGO_FAMILIA,
+          DESART AS DESCRIPCION_ARTICULO,
+          DEEART AS NOMBRE_CIENTIFICO,
+          PCOART AS PRECIO_COMPRA,
+          UBIART AS UBICACIONES_FINCAS,
+          DELART AS DESCRIPCION_LARGA,
+          DSCART AS DESCATALOGADO,
+          EANART AS CODIGO_EAN,
+          CP4ART AS FINCA_ARTICULO,
+          DEWART AS DESCRIPCION_DETALLADA
+      FROM F_ART
+      ORDER BY CODART
+    schema:
+      - {name: "ID_ARTICULO",           type: "STRING", mode: "NULLABLE", description: "Referencia del artículo"}
+      - {name: "GLOBALGAP",             type: "STRING", mode: "NULLABLE", description: "Artículo GlobalGAP"}
+      - {name: "CODIGO_FAMILIA",        type: "STRING", mode: "NULLABLE", description: "Código de la familia del artículo"}
+      - {name: "DESCRIPCION_ARTICULO",  type: "STRING", mode: "NULLABLE", description: "Descripción del artículo"}
+      - {name: "NOMBRE_CIENTIFICO",     type: "STRING", mode: "NULLABLE", description: "Nombre científico del artículo"}
+      - {name: "PRECIO_COMPRA",         type: "FLOAT",  mode: "NULLABLE", description: "Precio de compra del artículo"}
+      - {name: "UBICACIONES_FINCAS",    type: "STRING", mode: "NULLABLE", description: "Ubicaciones en la finca"}
+      - {name: "DESCRIPCION_LARGA",     type: "STRING", mode: "NULLABLE", description: "Descripción larga del artículo"}
+      - {name: "DESCATALOGADO",         type: "INTEGER", mode: "NULLABLE", description: "Descatalogado (0 = NO, 1 = SI)"}
+      - {name: "CODIGO_EAN",            type: "STRING", mode: "NULLABLE", description: "Código EAN del artículo"}
+      - {name: "FINCA_ARTICULO",        type: "STRING", mode: "NULLABLE", description: "Finca del artículo"}
+      - {name: "DESCRIPCION_DETALLADA", type: "STRING", mode: "NULLABLE", description: "Información adicional del artículo"}
+
+  # ---------------------------------------------------------------------------
+  # 4. ALBARANES  (script: actualizar_albaranes.py -> tabla ALBARANES)
+  #    OJO: el script agrupa NETO_10+NETO_EXENTO en NETO, etc. Ese calculo se hace
+  #    en transform.py (transformacion "sumar_documento"), no aqui.
+  # ---------------------------------------------------------------------------
+  - name: "ALBARANES"
+    source_table: "F_ALB"
+    mode: "full"
+    transform: "sumar_documento"        # Agrupa campos _10 y _EXENTO en totales
+    query: |
+      SELECT
+          TIPALB AS TIPO_ALBARAN,
+          CODALB AS CODIGO_ALBARAN,
+          FECALB AS FECHA_ALBARAN,
+          ESTALB AS ESTADO,
+          AGEALB AS AGENTE,
+          CLIALB AS CLIENTE,
+          NET2ALB AS NETO_10,
+          NET4ALB AS NETO_EXENTO,
+          IDTO2ALB AS DESCUENTO_10,
+          IDTO4ALB AS DESCUENTO_EXENTO,
+          IPPA2ALB AS PRONTO_PAGO_10,
+          IPPA4ALB AS PRONTO_PAGO_EXENTO,
+          IPOR2ALB AS PORTE_10,
+          IPOR4ALB AS PORTE_EXENTO,
+          IFIN2ALB AS FINANCIACION_10,
+          IFIN2ALB AS FINANCIACION_EXENTO,
+          BAS2ALB AS BASE_10,
+          BAS4ALB AS BASE_EXENTO,
+          IIVA2ALB AS IMPORTE_IVA,
+          TOTALB AS TOTAL_ALBARAN,
+          FOPALB AS FORMA_PAGO
+      FROM F_ALB
+      ORDER BY TIPALB, CODALB
+    schema:
+      - {name: "TIPO_ALBARAN",  type: "STRING", mode: "NULLABLE", description: "Tipo de albarán"}
+      - {name: "CODIGO_ALBARAN", type: "STRING", mode: "NULLABLE", description: "Código del albarán"}
+      - {name: "FECHA_ALBARAN", type: "STRING", mode: "NULLABLE", description: "Fecha del albarán"}
+      - {name: "ESTADO",        type: "STRING", mode: "NULLABLE", description: "Estado del albarán"}
+      - {name: "AGENTE",        type: "STRING", mode: "NULLABLE", description: "Código del agente"}
+      - {name: "CLIENTE",       type: "STRING", mode: "NULLABLE", description: "Código del cliente"}
+      - {name: "NETO",          type: "FLOAT",  mode: "NULLABLE", description: "Importe neto del albarán"}
+      - {name: "DESCUENTO",     type: "FLOAT",  mode: "NULLABLE", description: "Importe de descuento del albarán"}
+      - {name: "PRONTO_PAGO",   type: "FLOAT",  mode: "NULLABLE", description: "Importe de pronto pago del albarán"}
+      - {name: "PORTE",         type: "FLOAT",  mode: "NULLABLE", description: "Importe de porte del albarán"}
+      - {name: "FINANCIACION",  type: "FLOAT",  mode: "NULLABLE", description: "Importe de la financiación del albarán"}
+      - {name: "BASE",          type: "FLOAT",  mode: "NULLABLE", description: "Base imponible del albarán"}
+      - {name: "IMPORTE_IVA",   type: "FLOAT",  mode: "NULLABLE", description: "Importe del IVA"}
+      - {name: "TOTAL_ALBARAN", type: "FLOAT",  mode: "NULLABLE", description: "Total del albarán"}
+      - {name: "FORMA_PAGO",    type: "STRING", mode: "NULLABLE", description: "Código de la forma de pago"}
+
+  # ---------------------------------------------------------------------------
+  # 5. FACTURAS  (script: actualizar_facturas.py -> tabla FACTURAS)
+  #    Misma logica de agrupacion que albaranes (transform "sumar_documento").
+  # ---------------------------------------------------------------------------
+  - name: "FACTURAS"
+    source_table: "F_FAC"
+    mode: "full"
+    transform: "sumar_documento"
+    query: |
+      SELECT
+          TIPFAC AS TIPO_FACTURA,
+          CODFAC AS CODIGO_FACTURA,
+          FECFAC AS FECHA_FACTURA,
+          ESTFAC AS ESTADO,
+          AGEFAC AS AGENTE,
+          CLIFAC AS CLIENTE,
+          NET2FAC AS NETO_10,
+          NET4FAC AS NETO_EXENTO,
+          IDTO2FAC AS DESCUENTO_10,
+          IDTO4FAC AS DESCUENTO_EXENTO,
+          IPPA2FAC AS PRONTO_PAGO_10,
+          IPPA4FAC AS PRONTO_PAGO_EXENTO,
+          IPOR2FAC AS PORTE_10,
+          IPOR4FAC AS PORTE_EXENTO,
+          IFIN2FAC AS FINANCIACION_10,
+          IFIN2FAC AS FINANCIACION_EXENTO,
+          BAS2FAC AS BASE_10,
+          BAS4FAC AS BASE_EXENTO,
+          IIVA2FAC AS IMPORTE_IVA,
+          TOTFAC AS TOTAL_FACTURA,
+          FOPFAC AS FORMA_PAGO
+      FROM F_FAC
+      ORDER BY TIPFAC, CODFAC
+    schema:
+      - {name: "TIPO_FACTURA",  type: "STRING", mode: "NULLABLE", description: "Tipo de factura"}
+      - {name: "CODIGO_FACTURA", type: "STRING", mode: "NULLABLE", description: "Código de la factura"}
+      - {name: "FECHA_FACTURA", type: "STRING", mode: "NULLABLE", description: "Fecha de la factura"}
+      - {name: "ESTADO",        type: "STRING", mode: "NULLABLE", description: "Estado de la factura"}
+      - {name: "AGENTE",        type: "STRING", mode: "NULLABLE", description: "Código del agente"}
+      - {name: "CLIENTE",       type: "STRING", mode: "NULLABLE", description: "Código del cliente"}
+      - {name: "NETO",          type: "FLOAT",  mode: "NULLABLE", description: "Importe neto de la factura"}
+      - {name: "DESCUENTO",     type: "FLOAT",  mode: "NULLABLE", description: "Importe de descuento de la factura"}
+      - {name: "PRONTO_PAGO",   type: "FLOAT",  mode: "NULLABLE", description: "Importe de pronto pago de la factura"}
+      - {name: "PORTE",         type: "FLOAT",  mode: "NULLABLE", description: "Importe de porte de la factura"}
+      - {name: "FINANCIACION",  type: "FLOAT",  mode: "NULLABLE", description: "Importe de la financiación de la factura"}
+      - {name: "BASE",          type: "FLOAT",  mode: "NULLABLE", description: "Base imponible de la factura"}
+      - {name: "IMPORTE_IVA",   type: "FLOAT",  mode: "NULLABLE", description: "Importe del IVA"}
+      - {name: "TOTAL_FACTURA", type: "FLOAT",  mode: "NULLABLE", description: "Total de la factura"}
+      - {name: "FORMA_PAGO",    type: "STRING", mode: "NULLABLE", description: "Código de la forma de pago"}
+
+  # ---------------------------------------------------------------------------
+  # 6. PEDIDOS  (script: actualizar_pedidos.py -> tabla PEDIDOS)
+  #    Tiene transformaciones especiales: FECHA_CARGA manual, calculos de
+  #    transporte/margen logistico (transform "pedidos").
+  # ---------------------------------------------------------------------------
+  - name: "PEDIDOS"
+    source_table: "F_PCL"
+    mode: "incremental"               # Tiene FECHA_MODIFICACION (FUMPCL) para watermark
+    watermark_column: "FECHA_MODIFICACION"
+    transform: "pedidos"
+    query: |
+      SELECT
+          TIPPCL AS SERIE_PEDIDO,
+          CODPCL AS NUMERO_PEDIDO,
+          REFPCL AS REFERENCIA_PEDIDO,
+          FECPCL AS FECHA_PEDIDO,
+          PENPCL AS FECHA_CARGA,
+          FUMPCL AS FECHA_MODIFICACION,
+          HORPCL AS FECHA_CREACION,
+          USUPCL AS USUARIO_CREACION,
+          USMPCL AS USUARIO_MODIFICACION,
+          CLIPCL AS NUMERO_CLIENTE,
+          AGEPCL AS CODIGO_AGENTE,
+          ESTPCL AS ESTADO_PEDIDO,
+          INCPCL AS TIENE_INCIDENCIA,
+          FOPPCL AS FORMA_PAGO,
+          TIVPCL AS TIPO_IVA,
+          BAS2PCL AS BASE_10,
+          BAS4PCL AS BASE_EXENTO,
+          IIVA2PCL AS IVA_10,
+          TOTPCL AS TOTAL_PEDIDO,
+          PDTO2PCL AS DTO_10_PCT,
+          IDTO2PCL AS DTO_10_IMP,
+          PDTO4PCL AS DTO_EXENTO_PCT,
+          IDTO4PCL AS DTO_EXENTO_IMP,
+          PPPA2PCL AS PP_10_PCT,
+          IPPA2PCL AS PP_10_IMP,
+          PPPA4PCL AS PP_EXENTO_PCT,
+          IPPA4PCL AS PP_EXENTO_IMP,
+          IPOR2PCL AS PORTES_VENTA_10,
+          IPOR4PCL AS PORTES_VENTA_EXENTO,
+          TPOPCL AS SECTOR_CARGA,
+          PPOPCL AS FINCA_CARGA,
+          OB1PCL AS OBSERVACIONES,
+          OB2PCL AS MARCA_PEDIDO,
+          PRIPCL AS NOTA_PRIVADA,
+          COMPCL AS NOTAS_PEDIDO,
+          PRTPCL AS MODO_PORTES
+      FROM F_PCL
+    schema:
+      - {name: "SERIE_PEDIDO",           type: "STRING",  mode: "NULLABLE", description: "Serie del pedido"}
+      - {name: "NUMERO_PEDIDO",          type: "STRING",  mode: "NULLABLE", description: "Número de pedido"}
+      - {name: "REFERENCIA_PEDIDO",      type: "STRING",  mode: "NULLABLE", description: "Referencia cliente"}
+      - {name: "NUMERO_CLIENTE",         type: "STRING",  mode: "NULLABLE", description: "ID Cliente"}
+      - {name: "CODIGO_AGENTE",          type: "STRING",  mode: "NULLABLE", description: "ID Agente"}
+      - {name: "USUARIO_CREACION",       type: "STRING",  mode: "NULLABLE", description: "Usuario alta"}
+      - {name: "USUARIO_MODIFICACION",   type: "STRING",  mode: "NULLABLE", description: "Usuario modif"}
+      - {name: "FECHA_PEDIDO",           type: "DATETIME", mode: "NULLABLE", description: "Fecha pedido"}
+      - {name: "FECHA_CARGA",            type: "DATETIME", mode: "NULLABLE", description: "Fecha carga"}
+      - {name: "FECHA_MODIFICACION",     type: "DATETIME", mode: "NULLABLE", description: "Fecha modif"}
+      - {name: "FECHA_CREACION",         type: "DATETIME", mode: "NULLABLE", description: "Fecha registro"}
+      - {name: "ESTADO_PEDIDO",          type: "INT64",  mode: "NULLABLE", description: "Estado numérico"}
+      - {name: "TIENE_INCIDENCIA",       type: "INT64",  mode: "NULLABLE", description: "Incidencia (0/1)"}
+      - {name: "FORMA_PAGO",             type: "STRING",  mode: "NULLABLE", description: "Forma pago"}
+      - {name: "TIPO_IVA",               type: "STRING",  mode: "NULLABLE", description: "Tipo IVA"}
+      - {name: "BASE_10",                type: "NUMERIC", mode: "NULLABLE", description: "Base 10%"}
+      - {name: "BASE_EXENTO",            type: "NUMERIC", mode: "NULLABLE", description: "Base exenta"}
+      - {name: "IVA_10",                 type: "NUMERIC", mode: "NULLABLE", description: "IVA 10%"}
+      - {name: "TOTAL_PEDIDO",           type: "NUMERIC", mode: "NULLABLE", description: "Total pedido"}
+      - {name: "DTO_10_PCT",             type: "NUMERIC", mode: "NULLABLE", description: "% Dto 10%"}
+      - {name: "DTO_10_IMP",             type: "NUMERIC", mode: "NULLABLE", description: "Imp Dto 10%"}
+      - {name: "DTO_EXENTO_PCT",         type: "NUMERIC", mode: "NULLABLE", description: "% Dto exento"}
+      - {name: "DTO_EXENTO_IMP",         type: "NUMERIC", mode: "NULLABLE", description: "Imp Dto exento"}
+      - {name: "PP_10_PCT",              type: "NUMERIC", mode: "NULLABLE", description: "% PP 10%"}
+      - {name: "PP_10_IMP",              type: "NUMERIC", mode: "NULLABLE", description: "Imp PP 10%"}
+      - {name: "PP_EXENTO_PCT",          type: "NUMERIC", mode: "NULLABLE", description: "% PP exento"}
+      - {name: "PP_EXENTO_IMP",          type: "NUMERIC", mode: "NULLABLE", description: "Imp PP exento"}
+      - {name: "PORTES_VENTA_10",        type: "NUMERIC", mode: "NULLABLE", description: "Portes 10%"}
+      - {name: "PORTES_VENTA_EXENTO",    type: "NUMERIC", mode: "NULLABLE", description: "Portes exento"}
+      - {name: "SECTOR_CARGA",           type: "STRING",  mode: "NULLABLE", description: "Sector logística"}
+      - {name: "FINCA_CARGA",            type: "STRING",  mode: "NULLABLE", description: "Finca logística"}
+      - {name: "OBSERVACIONES",          type: "STRING",  mode: "NULLABLE", description: "Notas preparación"}
+      - {name: "MARCA_PEDIDO",           type: "STRING",  mode: "NULLABLE", description: "Marca pedido"}
+      - {name: "MODO_PORTES",            type: "INT64",   mode: "NULLABLE", description: "0-Debido / 1-Pagado"}
+      - {name: "COSTE_TRANSPORTE_COMPRA", type: "NUMERIC", mode: "NULLABLE", description: "Coste real camión (Nota)"}
+      - {name: "TRANSPORTE_INCLUIDO_30", type: "NUMERIC", mode: "NULLABLE", description: "30% calculado del total"}
+      - {name: "MARGEN_LOGISTICO_NETO",  type: "NUMERIC", mode: "NULLABLE", description: "Rendimiento transporte"}
+      - {name: "REPERCUSION_TRANSPORTE_PCT", type: "NUMERIC", mode: "NULLABLE", description: "% coste s/ total"}
+      - {name: "NOTAS_PEDIDO",           type: "STRING",  mode: "NULLABLE", description: "Notas del pedido"}
+      - {name: "NOTA_PRIVADA",           type: "STRING",  mode: "NULLABLE", description: "Nota privada completa"}
+
+  # ---------------------------------------------------------------------------
+  # 7. LINEA_PEDIDO  (script: actualizar_linea_pedido.py -> tabla LINEA_PEDIDO)
+  #    OJO DE SEGURIDAD (D-08): el script ORIGINAL escribia en Factusol para
+  #    corregir duplicados. El conector NUEVO NO escribe jamas: solo lectura y
+  #    extraccion de tags. La sincronizacion usa MERGE por HUELLA_DIGITAL.
+  # ---------------------------------------------------------------------------
+  - name: "LINEA_PEDIDO"
+    source_table: "F_LPC"
+    mode: "full"                      # No hay watermark fiable; recarga + MERGE por HUELLA
+    transform: "linea_pedido"
+    merge_key: "HUELLA_DIGITAL"       # Clave unica para el MERGE en BigQuery
+    query: |
+      SELECT
+          TIPLPC AS SERIE_PEDIDO,
+          CODLPC AS NUMERO_PEDIDO,
+          POSLPC AS POSICION_PEDIDO,
+          ARTLPC AS REFERENCIA_ARTICULO,
+          SUMLPC AS HUELLA_DIGITAL,
+          DESLPC AS DESCRIPCION_SISTEMA,
+          CANLPC AS UNIDADES,
+          PENLPC AS UNIDADES_PENDIENTES,
+          CE1LPC AS CODIGO_LITRAJE,
+          CE2LPC AS CODIGO_SECTOR,
+          PRELPC AS PRECIO,
+          MEMLPC AS NOTA_LINEA_PEDIDO,
+          NIMLPC AS IMPRIMIR_LINEA
+      FROM F_LPC
+    schema:
+      - {name: "HUELLA_DIGITAL",          type: "STRING", mode: "REQUIRED", description: "ID único persistente (SUMLPC)"}
+      - {name: "SERIE_PEDIDO",            type: "STRING", mode: "NULLABLE", description: "Serie del pedido (TIPLPC)"}
+      - {name: "NUMERO_PEDIDO",           type: "STRING", mode: "NULLABLE", description: "Número de documento (CODLPC)"}
+      - {name: "POSICION_PEDIDO",         type: "INTEGER", mode: "NULLABLE", description: "Orden correlativo de la línea (POSLPC)"}
+      - {name: "REFERENCIA_ARTICULO",     type: "STRING", mode: "NULLABLE", description: "Código de artículo (ARTLPC)"}
+      - {name: "DESCRIPCION_ARTICULO",    type: "STRING", mode: "NULLABLE", description: "Nombre del artículo filtrado de tags"}
+      - {name: "UNIDADES",                type: "FLOAT", mode: "NULLABLE", description: "Cantidad total (CANLPC)"}
+      - {name: "UNIDADES_PENDIENTES",     type: "FLOAT", mode: "NULLABLE", description: "Cantidad no servida (PENLPC)"}
+      - {name: "CODIGO_LITRAJE",          type: "STRING", mode: "NULLABLE", description: "Información de formato/litraje (CE1LPC)"}
+      - {name: "CODIGO_SECTOR",           type: "STRING", mode: "NULLABLE", description: "Información de ubicación/sector (CE2LPC)"}
+      - {name: "PRECIO",                  type: "FLOAT", mode: "NULLABLE", description: "Precio unitario (PRELPC)"}
+      - {name: "MARCADO",                 type: "BOOLEAN", mode: "NULLABLE", description: "Booleano (TRUE/FALSE) si detecta etiqueta de marcado"}
+      - {name: "MARCA",                   type: "STRING", mode: "NULLABLE", description: "Color o marca extraída del tag [M:]"}
+      - {name: "FINCA_RELEVADA",          type: "STRING", mode: "NULLABLE", description: "Nombre de finca extraído del tag [F:]"}
+      - {name: "SECTOR_RELEVADO",         type: "STRING", mode: "NULLABLE", description: "Sector específico extraído del tag [S:]"}
+      - {name: "UBICACION_EXTRA",         type: "STRING", mode: "NULLABLE", description: "Ubicación detallada extraída del tag [UBI:]"}
+      - {name: "PRIORIDAD",               type: "STRING", mode: "NULLABLE", description: "Estado de urgencia determinado por tags"}
+      - {name: "ACCION_LOGISTICA",        type: "STRING", mode: "NULLABLE", description: "Instrucciones especiales del tag [OBS:]"}
+      - {name: "NOTA_LINEA_PEDIDO",       type: "STRING", mode: "NULLABLE", description: "Campo de notas extendidas (MEMLPC)"}
+      - {name: "DESCRIPCION_SISTEMA",     type: "STRING", mode: "NULLABLE", description: "Texto original de Factusol sin procesar"}
+      - {name: "TOTAL_ACOPIADO",          type: "FLOAT", mode: "NULLABLE", description: "Cantidad gestionada acumulada"}
+      - {name: "LINEA_ACTIVA",            type: "BOOLEAN", mode: "NULLABLE", description: "Estado lógico de existencia en el origen"}
+      - {name: "IMPRIMIR_LINEA",          type: "INTEGER", mode: "NULLABLE", description: "Flag de visibilidad en documentos (NIMLPC)"}
+      - {name: "ULTIMA_SINCRONIZACION",   type: "DATETIME", mode: "NULLABLE", description: "Marca temporal del proceso"}
+
+  # ---------------------------------------------------------------------------
+  # 8. CODIGOS_EAN  (script: actualizar_codigos_ean.py -> tabla CODIGOS_EAN)
+  # ---------------------------------------------------------------------------
+  - name: "CODIGOS_EAN"
+    source_table: "F_EAC"
+    mode: "full"
+    query: |
+      SELECT
+          ARTEAC AS REFERENCIA_ARTICULO,
+          EANEAC AS CODIGO_EAN,
+          CE1EAC AS CODIGO_LITRAJE,
+          CE2EAC AS CODIGO_SECTOR
+      FROM F_EAC
+      ORDER BY ARTEAC, CE1EAC
+    schema:
+      - {name: "REFERENCIA_ARTICULO", type: "STRING", mode: "NULLABLE", description: "Referencia del artículo"}
+      - {name: "CODIGO_EAN",          type: "STRING", mode: "NULLABLE", description: "Código EAN de la combinación"}
+      - {name: "CODIGO_LITRAJE",      type: "STRING", mode: "NULLABLE", description: "Código del litraje del artículo"}
+      - {name: "CODIGO_SECTOR",       type: "STRING", mode: "NULLABLE", description: "Código del sector del artículo"}
+
+  # ---------------------------------------------------------------------------
+  # 9. LITRAJES  (script: actualizar_litrajes.py -> tabla LITRAJES)
+  # ---------------------------------------------------------------------------
+  - name: "LITRAJES"
+    source_table: "F_CE1"
+    mode: "full"
+    query: |
+      SELECT
+          CODCE1 AS ID_LITRAJE,
+          DESCE1 AS DESCRIPCION_LITRAJE
+      FROM F_CE1
+      ORDER BY DESCE1
+    schema:
+      - {name: "ID_LITRAJE",           type: "STRING", mode: "NULLABLE", description: "Código del litraje"}
+      - {name: "DESCRIPCION_LITRAJE",  type: "STRING", mode: "NULLABLE", description: "Descripción del litraje"}
+
+  # ---------------------------------------------------------------------------
+  # 10. SECTORES  (script: actualizar_sectores.py -> tabla SECTORES)
+  # ---------------------------------------------------------------------------
+  - name: "SECTORES"
+    source_table: "F_CE2"
+    mode: "full"
+    query: |
+      SELECT
+          CODCE2 AS ID_SECTOR,
+          DESCE2 AS DESCRIPCION_SECTOR
+      FROM F_CE2
+      ORDER BY DESCE2
+    schema:
+      - {name: "ID_SECTOR",           type: "STRING", mode: "NULLABLE", description: "Código del sector"}
+      - {name: "DESCRIPCION_SECTOR",  type: "STRING", mode: "NULLABLE", description: "Descripción del sector"}
+
+  # ---------------------------------------------------------------------------
+  # 11. FORMAS_PAGO  (script: actualizar_formas_pago.py -> tabla FORMAS_PAGO)
+  # ---------------------------------------------------------------------------
+  - name: "FORMAS_PAGO"
+    source_table: "F_FPA"
+    mode: "full"
+    query: |
+      SELECT
+          CODFPA AS ID_FORMA_PAGO,
+          DESFPA AS DESCRIPCION_FORMA_PAGO,
+          VENFPA AS NUMERO_VENCIMIENTOS,
+          PROFPA AS VENCIMIENTOS_PROPORCIONALES,
+          DIA1FPA AS DIAS_VENCIMIENTO_1,
+          DIA2FPA AS DIAS_VENCIMIENTO_2,
+          DIA3FPA AS DIAS_VENCIMIENTO_3,
+          DIA4FPA AS DIAS_VENCIMIENTO_4,
+          DIA5FPA AS DIAS_VENCIMIENTO_5,
+          DIA6FPA AS DIAS_VENCIMIENTO_6,
+          PRO1FPA AS PROPORCION_PAGO_1,
+          PRO2FPA AS PROPORCION_PAGO_2,
+          PRO3FPA AS PROPORCION_PAGO_3,
+          PRO4FPA AS PROPORCION_PAGO_4,
+          PRO5FPA AS PROPORCION_PAGO_5,
+          PRO6FPA AS PROPORCION_PAGO_6,
+          MESFPA AS TIPO_VENCIMIENTO,
+          AUDFPA AS AJUSTAR_ULTIMO_DIA,
+          CCOFPA AS CONTRAPARTIDA_COBROS,
+          CPAFPA AS CONTRAPARTIDA_PAGOS,
+          CFEFPA AS CODIGO_FACTURA_E
+      FROM F_FPA
+      ORDER BY CODFPA
+    schema:
+      - {name: "ID_FORMA_PAGO",             type: "STRING",  mode: "NULLABLE", description: "Código de la forma de pago"}
+      - {name: "DESCRIPCION_FORMA_PAGO",    type: "STRING",  mode: "NULLABLE", description: "Descripción de la forma de pago"}
+      - {name: "NUMERO_VENCIMIENTOS",       type: "INTEGER", mode: "NULLABLE", description: "Número de vencimientos"}
+      - {name: "VENCIMIENTOS_PROPORCIONALES", type: "INTEGER", mode: "NULLABLE", description: "Vencimientos proporcionales"}
+      - {name: "DIAS_VENCIMIENTO_1",        type: "INTEGER", mode: "NULLABLE", description: "Días de vencimiento 1"}
+      - {name: "DIAS_VENCIMIENTO_2",        type: "INTEGER", mode: "NULLABLE", description: "Días de vencimiento 2"}
+      - {name: "DIAS_VENCIMIENTO_3",        type: "INTEGER", mode: "NULLABLE", description: "Días de vencimiento 3"}
+      - {name: "DIAS_VENCIMIENTO_4",        type: "INTEGER", mode: "NULLABLE", description: "Días de vencimiento 4"}
+      - {name: "DIAS_VENCIMIENTO_5",        type: "INTEGER", mode: "NULLABLE", description: "Días de vencimiento 5"}
+      - {name: "DIAS_VENCIMIENTO_6",        type: "INTEGER", mode: "NULLABLE", description: "Días de vencimiento 6"}
+      - {name: "PROPORCION_PAGO_1",         type: "FLOAT",   mode: "NULLABLE", description: "Proporción de pago 1"}
+      - {name: "PROPORCION_PAGO_2",         type: "FLOAT",   mode: "NULLABLE", description: "Proporción de pago 2"}
+      - {name: "PROPORCION_PAGO_3",         type: "FLOAT",   mode: "NULLABLE", description: "Proporción de pago 3"}
+      - {name: "PROPORCION_PAGO_4",         type: "FLOAT",   mode: "NULLABLE", description: "Proporción de pago 4"}
+      - {name: "PROPORCION_PAGO_5",         type: "FLOAT",   mode: "NULLABLE", description: "Proporción de pago 5"}
+      - {name: "PROPORCION_PAGO_6",         type: "FLOAT",   mode: "NULLABLE", description: "Proporción de pago 6"}
+      - {name: "TIPO_VENCIMIENTO",          type: "STRING",  mode: "NULLABLE", description: "Forma de pago por días o por meses"}
+      - {name: "AJUSTAR_ULTIMO_DIA",        type: "BOOLEAN", mode: "NULLABLE", description: "Ajustar al último día del mes"}
+      - {name: "CONTRAPARTIDA_COBROS",      type: "STRING",  mode: "NULLABLE", description: "Contrapartida por defecto para cobros"}
+      - {name: "CONTRAPARTIDA_PAGOS",       type: "STRING",  mode: "NULLABLE", description: "Contrapartida por defecto para pagos"}
+      - {name: "CODIGO_FACTURA_E",          type: "STRING",  mode: "NULLABLE", description: "Código de la forma de pago en el estándar Factura-e"}
+
+  # ---------------------------------------------------------------------------
+  # 12. TARIFAS  (script: actualizar_tarifas.py -> tabla TARIFAS)
+  # ---------------------------------------------------------------------------
+  - name: "TARIFAS"
+    source_table: "F_TAR"
+    mode: "full"
+    query: |
+      SELECT
+          CODTAR AS CODIGO_TARIFA,
+          DESTAR AS DESCRIPCION_TARIFA
+      FROM F_TAR
+    schema:
+      - {name: "CODIGO_TARIFA",      type: "STRING", mode: "NULLABLE", description: "Código de la tarifa"}
+      - {name: "DESCRIPCION_TARIFA", type: "STRING", mode: "NULLABLE", description: "Descripción de la tarifa"}
+
+  # ---------------------------------------------------------------------------
+  # 13. STOCK  (script: actualizar_stock.py -> tabla STOCK)
+  # ---------------------------------------------------------------------------
+  - name: "STOCK"
+    source_table: "F_STC"
+    mode: "full"
+    query: |
+      SELECT
+          ARTSTC AS REFERENCIA_ARTICULO,
+          CE1STC AS CODIGO_LITRAJE,
+          CE2STC AS CODIGO_SECTOR,
+          ACTSTC AS STOCK_ACTUAL,
+          DISSTC AS DISPONIBLE_ACTUAL
+      FROM F_STC
+      ORDER BY ARTSTC
+    schema:
+      - {name: "REFERENCIA_ARTICULO", type: "STRING", mode: "NULLABLE", description: "Referencia del artículo"}
+      - {name: "CODIGO_LITRAJE",      type: "STRING", mode: "NULLABLE", description: "Código de litraje del artículo"}
+      - {name: "CODIGO_SECTOR",       type: "STRING", mode: "NULLABLE", description: "Código del sector del artículo"}
+      - {name: "STOCK_ACTUAL",        type: "FLOAT",  mode: "NULLABLE", description: "Stock actual del artículo"}
+      - {name: "DISPONIBLE_ACTUAL",   type: "FLOAT",  mode: "NULLABLE", description: "Disponible actual del artículo"}
+
+  # ---------------------------------------------------------------------------
+  # 14. PRECIOS_VENTA  (script: actualizar_precios_venta.py -> tabla PRECIOS_VENTA)
+  #     Une dos tablas: precios simples (F_LTA) + precios de combinaciones (F_LTC).
+  # ---------------------------------------------------------------------------
+  - name: "PRECIOS_VENTA"
+    source_table: "F_LTA/F_LTC"
+    mode: "full"
+    transform: "precios_venta"
+    # OJO: la consulta principal NO se usa; precios_venta une dos consultas
+    # (simples + combinaciones) mediante pandas.concat. El SQL de referencia:
+    query_referencia: |
+      -- Simples: SELECT TARLTA, ARTLTA, PRELTA, NULL, NULL, 'NO' FROM F_LTA
+      -- Combinaciones: SELECT TARLTC, ARTLTC, PRELTC, CE1LTC, CE2LTC, 'SÍ' FROM F_LTC
+    schema:
+      - {name: "CODIGO_TARIFA",      type: "STRING", mode: "NULLABLE", description: "Código de la tarifa"}
+      - {name: "REFERENCIA_ARTICULO", type: "STRING", mode: "NULLABLE", description: "Referencia del artículo"}
+      - {name: "PRECIO_VENTA",       type: "FLOAT",  mode: "NULLABLE", description: "Precio de venta"}
+      - {name: "CODIGO_LITRAJE",     type: "STRING", mode: "NULLABLE", description: "Código del litraje"}
+      - {name: "CODIGO_SECTOR",      type: "STRING", mode: "NULLABLE", description: "Código del sector"}
+      - {name: "ES_COMBINACION",     type: "STRING", mode: "NULLABLE", description: "Indica si es combinación o no"}
+
+# =============================================================================
+# EXTENSION FUTURA (Fase 2) - Tablas para el dataset Analytics
+# =============================================================================
+# Estas tablas NO se cargan todavia (las filas de la lista `tables` con
+# enabled: false quedan fuera). Su definicion esta documentada en docs/MA_TABLAS.md.
+#   - LINEA_FACTURA   (F_LFA)  -> ventas por articulo
+#   - LINEA_ALBARAN   (F_LAL)  -> entregas por articulo
+#   - COBROS          (F_COB)  -> cobros de clientes
+#   - VENCIMIENTOS    (F_REC)  -> vencimientos / deudas
+#   - FAMILIAS        (F_FAM)  -> jerarquia de producto
+#   - OBRAS           (F_OBR)  -> destinos / obras de los clientes
+#   - ALMACENES       (F_ALM), TRANSPORTISTAS (F_TRN), BANCOS (F_BAN)
+#   - PROVINCIAS      (F_PRO), PAISES (F_PAI)

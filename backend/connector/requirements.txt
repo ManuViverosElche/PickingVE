@@ -1,0 +1,21 @@
+# Dependencias del conector Factusol -> BigQuery
+# Instalacion recomendada:
+#   backend\.venv\Scripts\pip install -r backend\connector\requirements.txt
+
+# Acceso a la base de datos Access de Factusol (.accdb) via ODBC
+pyodbc>=5.0
+
+# Manipulacion de datos (DataFrames) y lectura desde ODBC
+pandas>=2.0
+
+# Configuracion declarativa de tablas y sincronizacion (archivos YAML)
+PyYAML>=6.0
+
+# Carga nativa de datos en BigQuery
+google-cloud-bigquery>=3.28
+
+# Lectura de variables de entorno desde archivo .env (credenciales fuera del codigo)
+python-dotenv>=1.0
+
+# Reintentos automaticos con backoff ante fallos transitorios (red/ODBC)
+tenacity>=8.0

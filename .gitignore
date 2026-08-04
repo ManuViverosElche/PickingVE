@@ -24,6 +24,7 @@ __pycache__/
 *.pyc
 .env
 !backend/connector/config/.env.example
+backend/connector/config/settings.local.yaml
 
 # OS
 .DS_Store

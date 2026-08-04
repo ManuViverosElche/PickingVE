@@ -1,0 +1,48 @@
+# =============================================================================
+# CONECTOR FACTUSOL -> BIGQUERY
+# config/settings.yaml  (plantilla SIN secretos)
+# =============================================================================
+# Este archivo es la plantilla que se versiona en Git.
+# La configuracion REAL con las rutas de tu maquina va en settings.local.yaml
+# (que esta en .gitignore y nunca se sube al repositorio).
+#
+# Cualquier ruta o credencial que dependa de la maquina va en settings.local.yaml.
+# Para crear tu copia local:  cp settings.yaml settings.local.yaml  y ajusta.
+
+# --- Base de datos Factusol (Access .accdb) --------------------------------
+access:
+  driver: "Microsoft Access Driver (*.mdb, *.accdb)"  # Driver ODBC instalado
+  # Ruta de la base de datos. La plantilla usa un placeholder; la real se define
+  # en settings.local.yaml con el anio actual, p.ej.  X:\Datos\FS\0142026.accdb
+  db_path: "{{DB_PATH}}"        # <- RELLENAR en settings.local.yaml
+  read_only: true               # Importante (D-08): SOLO LECTURA, nunca escribimos en Factusol
+
+# --- BigQuery (Google Cloud) ----------------------------------------------
+bigquery:
+  project_id: "dashboard-439511"   # Proyecto de la empresa en Google Cloud
+  # Dataset de PRODUCCION operativa. NO SE TOCA (D-01): alimenta la faena de operarios.
+  production_dataset: "GestionComercialVE"
+  # Dataset de PRUEBAS para validar el conector antes de tocar produccion (Fase 1.6)
+  test_dataset: "conector_test"
+  # Dataset destino final para el historico y el modelo analitico (Fase 2-3)
+  analytics_dataset: "Analytics"
+  location: "EU"                # Region del dataset en BigQuery (importante: MCP usa US)
+
+# --- Sincronizacion ---------------------------------------------------------
+sync:
+  # Modo por defecto: "full" (recarga completa) o "incremental" (solo cambios).
+  # Cada tabla puede definir su propio modo en tables.yaml.
+  default_mode: "full"
+  # Tabla de control de estado en BigQuery (watermarks) dentro del dataset de trabajo.
+  state_table: "sync_state"
+  # Numero de reintentos ante fallos transitorios (red/ODBC).
+  retries: 3
+  # Segundos de espera base entre reintentos (se multiplica con backoff).
+  retry_backoff_seconds: 5
+
+# --- Logging ---------------------------------------------------------------
+logging:
+  # Nivel: DEBUG | INFO | WARNING | ERROR
+  level: "INFO"
+  # Si se indica una ruta, escribe log a archivo ademas de consola.
+  file: ""                      # p.ej. "logs/connector.log" (vacío = solo consola)
