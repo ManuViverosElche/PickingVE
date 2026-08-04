@@ -17,6 +17,14 @@ captures/
 secrets.properties
 opencode.json
 
+# Conector Python
+backend/.venv/
+**/.venv/
+__pycache__/
+*.pyc
+.env
+!backend/connector/config/.env.example
+
 # OS
 .DS_Store
 Thumbs.db

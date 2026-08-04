@@ -1,0 +1,16 @@
+﻿LINEA_PEDIDO.csv	7802 lineas
+FACTURA.csv	1061 lineas
+CLIENTE.csv	857 lineas
+FORMA_PAGO.csv	69 lineas
+CODIGOS_EAN.csv	7614 lineas
+ALBARAN.csv	1027 lineas
+ARTICULOS.csv	4811 lineas
+AGENTE.csv	9 lineas
+TARIFAS.csv	4 lineas
+SECTORES.csv	147 lineas
+STOCK.csv	21999 lineas
+PRECIOS_VENTA.csv	33010 lineas
+PEDIDOS.csv	871 lineas
+LITRAJES.csv	275 lineas
+LINEA_PEDIDO_TEMP.csv	7830 lineas
+LINEA_PEDIDO_SYNC.csv	10647 lineas
