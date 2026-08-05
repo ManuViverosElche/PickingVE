@@ -37,6 +37,7 @@ cualquier cambio requiere tu consentimiento explícito.
 | D-06 | Histórico: se cargan las series **`014*`** (2014–2026, operativa) y **`B14*`** (contabilidad, albaranes en B, para totales reales). | 2026-08-04 |
 | D-07 | Los 22 scripts actuales quedan **congelados** en `backups/2026-08-04/` como referencia; el conector nuevo no los modifica. | 2026-08-04 |
 | D-08 | El desarrollo se hace sobre **copias** de los datos; el conector nuevo solo **lee** el `.accdb` del NAS (nunca lo escribe). | 2026-08-04 |
+| D-09 | El entorno local del conector usa **Python 3.11 (32-bit)** en `backend/connector/.venv`: el driver ODBC de Access solo existe en 32-bit en este PC y pandas 2.1+ dejó de publicar ruedas win32. Dependencias instaladas con `--only-binary :all:` (pandas 2.0.3). | 2026-08-04 |
 
 ---
 

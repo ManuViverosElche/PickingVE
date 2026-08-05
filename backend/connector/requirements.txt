@@ -1,12 +1,15 @@
 # Dependencias del conector Factusol -> BigQuery
-# Instalacion recomendada:
-#   backend\.venv\Scripts\pip install -r backend\connector\requirements.txt
+# Instalacion recomendada (entorno 32-bit, ver D-09):
+#   backend\connector\.venv\Scripts\pip install --only-binary :all: -r backend\connector\requirements.txt
 
 # Acceso a la base de datos Access de Factusol (.accdb) via ODBC
 pyodbc>=5.0
 
 # Manipulacion de datos (DataFrames) y lectura desde ODBC
-pandas>=2.0
+# Pin <2.1 con Python 3.11-32: pandas 2.1+ dejo de publicar ruedas para
+# Windows de 32 bits, y el conector necesita el driver ODBC de Access 32-bit.
+# Entorno: backend/connector/.venv (Python 3.11 32-bit).
+pandas>=2.0,<2.1
 
 # Configuracion declarativa de tablas y sincronizacion (archivos YAML)
 PyYAML>=6.0
