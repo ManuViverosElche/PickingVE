@@ -32,7 +32,7 @@ cualquier cambio requiere tu consentimiento explícito.
 | D-01 | El dataset `GestionComercialVE` es **producción operativa** (faena de operarios vía Apps Script). No se cambian nombres de tablas/campos ni funcionalidad. | 2026-08-04 |
 | D-02 | Todo lo nuevo se construye en un **dataset `Analytics`** separado, alimentado por el conector nuevo. | 2026-08-04 |
 | D-03 | El conector corre en **dual**: desarrollo en este PC y despliegue final en el PC-servidor. | 2026-08-04 |
-| D-04 | Estrategia de carga **por tabla**: las tablas de movimiento (pedidos, líneas, albaranes, stock…) en incremental; las maestras (clientes, artículos…) en carga completa. La cadencia se decide por script/tabla. | 2026-08-04 |
+| D-04 | Estrategia de carga: **full reload (TRUNCATE) en las 14 tablas** + **MERGE solo en LINEA_PEDIDO** (preserva `TOTAL_ACOPIADO`/`LINEA_ACTIVA`). Revisado el 2026-08-05: volúmenes pequeños (máx 33 K filas, reload completo ≈ 50 s), `WRITE_TRUNCATE` es atómico por tabla, ningún proceso externo escribe en `GestionComercialVE` (la app escribe en el dataset `pickingve`), el incremental no detecta borrados en Factusol y solo 5/14 tablas tienen marca FUM (F_CLI/F_ART/F_ALB/F_FAC/F_PCL). | 2026-08-04 |
 | D-05 | Dashboards finales en **Looker Studio** (gratuito, conectado a BigQuery, acceso por rol). | 2026-08-04 |
 | D-06 | Histórico: se cargan las series **`014*`** (2014–2026, operativa) y **`B14*`** (contabilidad, albaranes en B, para totales reales). | 2026-08-04 |
 | D-07 | Los 22 scripts actuales quedan **congelados** en `backups/2026-08-04/` como referencia; el conector nuevo no los modifica. | 2026-08-04 |

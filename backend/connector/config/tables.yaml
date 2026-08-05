@@ -222,8 +222,7 @@ tables:
   # ---------------------------------------------------------------------------
   - name: "PEDIDOS"
     source_table: "F_PCL"
-    mode: "incremental"               # Tiene FECHA_MODIFICACION (FUMPCL) para watermark
-    watermark_column: "FECHA_MODIFICACION"
+    mode: "full"                      # D-04: recarga completa; el incremental no detecta borrados y el codigo lo ignora (solo decide merge_key)
     transform: "pedidos"
     query: |
       SELECT
