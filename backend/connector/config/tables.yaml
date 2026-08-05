@@ -510,11 +510,27 @@ tables:
     source_table: "F_LTA/F_LTC"
     mode: "full"
     transform: "precios_venta"
-    # OJO: la consulta principal NO se usa; precios_venta une dos consultas
-    # (simples + combinaciones) mediante pandas.concat. El SQL de referencia:
-    query_referencia: |
-      -- Simples: SELECT TARLTA, ARTLTA, PRELTA, NULL, NULL, 'NO' FROM F_LTA
-      -- Combinaciones: SELECT TARLTC, ARTLTC, PRELTC, CE1LTC, CE2LTC, 'SÍ' FROM F_LTC
+    queries:
+      - |
+        SELECT
+            TARLTA AS CODIGO_TARIFA,
+            ARTLTA AS REFERENCIA_ARTICULO,
+            PRELTA AS PRECIO_VENTA,
+            NULL AS CODIGO_LITRAJE,
+            NULL AS CODIGO_SECTOR,
+            'NO' AS ES_COMBINACION
+        FROM F_LTA
+        ORDER BY TARLTA, ARTLTA
+      - |
+        SELECT
+            TARLTC AS CODIGO_TARIFA,
+            ARTLTC AS REFERENCIA_ARTICULO,
+            PRELTC AS PRECIO_VENTA,
+            CE1LTC AS CODIGO_LITRAJE,
+            CE2LTC AS CODIGO_SECTOR,
+            'SÍ' AS ES_COMBINACION
+        FROM F_LTC
+        ORDER BY TARLTC, ARTLTC
     schema:
       - {name: "CODIGO_TARIFA",      type: "STRING", mode: "NULLABLE", description: "Código de la tarifa"}
       - {name: "REFERENCIA_ARTICULO", type: "STRING", mode: "NULLABLE", description: "Referencia del artículo"}

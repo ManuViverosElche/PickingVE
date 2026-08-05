@@ -38,6 +38,9 @@ cualquier cambio requiere tu consentimiento explícito.
 | D-07 | Los 22 scripts actuales quedan **congelados** en `backups/2026-08-04/` como referencia; el conector nuevo no los modifica. | 2026-08-04 |
 | D-08 | El desarrollo se hace sobre **copias** de los datos; el conector nuevo solo **lee** el `.accdb` del NAS (nunca lo escribe). | 2026-08-04 |
 | D-09 | El entorno local del conector usa **Python 3.11 (32-bit)** en `backend/connector/.venv`: el driver ODBC de Access solo existe en 32-bit en este PC y pandas 2.1+ dejó de publicar ruedas win32. Dependencias instaladas con `--only-binary :all:` (pandas 2.0.3). | 2026-08-04 |
+| D-10 | Carga nativa a BigQuery por **JSONL** (`NEWLINE_DELIMITED_JSON` vía `load_table_from_file`) en vez de `load_table_from_dataframe`: pyarrow no publica ruedas win32 para Python 32-bit y `load_table_from_dataframe` lo requiere. Se escribe un fichero temporal UTF-8 (`force_ascii=False`, `date_format=iso`) y se sube con esquema explícito; `finalize` convierte NaN/NaT reales a `NULL`. Sin pyarrow en dependencias. | 2026-08-05 |
+| D-11 | La validación (sin tocar `GestionComercialVE`) se hace contra el dataset **`conector_test`** en región **EU**: `create_dataset` no acepta `location` como kwarg, se crea con `bigquery.Dataset(ref)` + `ds.location = "EU"`. El MCP bigquery lleva `--location EU` en `opencode.json` (requiere reiniciar opencode). | 2026-08-05 |
+| D-12 | **Validación 1:1 superada** comparando `conector_test` vs `GestionComercialVE` (solo lectura): CLIENTE, ALBARANES y los totales de `sumar_documento` coinciden al 100%; PEDIDOS 7/872 y LINEA_PEDIDO 125/10671 difieren solo por **drift real de Factusol** (pedidos editados, sectores re-asignados, posiciones re-numeradas con la misma huella `ID-…`). | 2026-08-05 |
 
 ---
 
@@ -99,13 +102,16 @@ backend/connector/
 - [ ] `docs/CONECTOR_PLAN.md` (este documento)
 
 ### Fase 1 — Conector core (en curso)
-- [ ] `config/` (settings + tables + .env.example)
-- [ ] `core/access_client.py` — conexión ODBC de solo lectura
-- [ ] `core/transform.py` + `core/bigquery_client.py`
-- [ ] `core/state.py` + `core/sync.py` (watermarks, reintentos, logging)
-- [ ] `scripts/sync_all.py` — CLI
-- [ ] **Validación**: cargar a un dataset de pruebas con el mismo esquema que el actual
-      y comparar contra los CSV existentes. Nada se escribe en `GestionComercialVE`.
+- [x] `config/` (settings + tables + .env.example)
+- [x] `core/access_client.py` — conexión ODBC de solo lectura
+- [x] `core/transform.py` + `core/bigquery_client.py` (carga JSONL, MERGE por huella)
+- [x] `core/sync.py` (reintentos tenacity, logging) — sin `state.py` (no hay watermark fiable; recarga + MERGE)
+- [x] `scripts/sync_all.py` — CLI (`--table`, `--dataset`, `--dry-run`, `--limit`)
+- [x] **Validación**: 14 tablas cargadas en `conector_test` (región EU) y comparadas 1:1
+      contra `GestionComercialVE` (solo lectura). Coincidencia total salvo drift real de
+      Factusol (D-12). Scripts de validación en `backend/connector/scripts/`
+      (`compare_counts.py`, `compare_values.py`, `schema_check.py`, `verify_agent.py`).
+- [ ] Definir cadencia de sincronización (D-04) y despliegue en el PC-servidor (D-03)
 
 ### Fase 2 — Dataset Analytics + histórico
 - Tablas maestras ampliadas y nuevas tablas de movimiento (LFA, LAL, COB, REC, OBR, FAM…)
