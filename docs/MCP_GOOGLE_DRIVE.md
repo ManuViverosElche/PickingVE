@@ -72,14 +72,35 @@ cambia de hash).
 - Alternativa definitiva: publicar la app en el consent screen (sin verificación) para que
   los tokens no caduquen.
 
-## Google Calendar (pendiente de instalación)
+## Google Calendar (instalado 06/08/2026)
 
 El paquete anterior (`@modelcontextprotocol/server-google-calendar`) **fue retirado de
-npm** (404) — esa fue la causa del error -32000. Ningún MCP local de Calendar reutiliza el
-refresh token de Drive: todos requieren un login OAuth en navegador una vez. Pendiente de
-elegir entre:
+npm** (404) — esa fue la causa del error -32000. Se instaló **`@cocal/google-calendar-mcp`
+(nspady, v2.6.2)**, el más mantenido de la comunidad.
 
-- `@cocal/google-calendar-mcp` (nspady, 2.x): el más mantenido; requiere OAuth client tipo
-  Desktop + `npx @cocal/google-calendar-mcp auth` una vez.
-- MCP oficial remoto `https://calendarmcp.googleapis.com/mcp/v1`: oficial, pero su OAuth
-  exige redirect URI pre-registrada (no encaja con el callback local de opencode).
+Configuración en `opencode.json`:
+
+```jsonc
+"gcalendar": {
+  "type": "local",
+  "command": ["npx", "-y", "@cocal/google-calendar-mcp"],
+  "environment": {
+    "GOOGLE_OAUTH_CREDENTIALS": "C:\\Users\\Usuario\\Documents\\mcp-gcal\\gcp-oauth.keys.json"
+  },
+  "timeout": 120000,
+  "enabled": true
+}
+```
+
+- Usa un **OAuth client tipo Desktop** propio (client id `...-j9hv5f56bp7f1250fv9meg2tmete91na`),
+  no el cliente Web de Drive. El JSON vive en `C:\Users\Usuario\Documents\mcp-gcal\gcp-oauth.keys.json`
+  (fuera del repo; la copia original está en `Documentacion/`, que es gitignored).
+- Autenticación inicial (una vez): `npx -y @cocal/google-calendar-mcp auth` con
+  `GOOGLE_OAUTH_CREDENTIALS` apuntando al JSON → login en navegador con
+  `viveroselchels@gmail.com`. Tokens persistidos en
+  `%USERPROFILE%\.config\google-calendar-mcp\tokens.json`.
+- Tools: `list_calendars`, `list_events`, `create_event`, `update_event`, `delete_event`,
+  `get_event`, `respond_to_event`, `suggest_time` (convención `calendar_*`).
+- Caveat: en modo Testing los tokens caducan a los 7 días → re-ejecutar `auth` o publicar
+  la app en el consent screen.
+
