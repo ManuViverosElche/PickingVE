@@ -1,0 +1,14 @@
+{
+  "timeZone": "Europe/Madrid",
+  "dependencies": {
+    "libraries": [
+      {
+        "userSymbol": "LibreriaPedidos",
+        "libraryId": "1iM_5w2iHTidxU_wCpyZrs_7E5u90Yzlee0xfFvAN2NJvULzhTuaMCxhL",
+        "version": "HEAD"
+      }
+    ]
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
+}

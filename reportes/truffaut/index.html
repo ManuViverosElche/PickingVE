@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0e1410">
+<title>Transporte Truffaut — Otoño 2026</title>
+<style>
+  :root{
+    --bg:#0e1410; --card:#151d17; --card2:#1b251d; --line:#26332a;
+    --txt:#e8f0e9; --mut:#8fa393; --accent:#3ddc84; --accent2:#9fe870;
+    --warn:#ffd166; --bad:#ff7a6b; --blue:#5cc8ff;
+    --r:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45;padding-bottom:48px}
+  .wrap{max-width:880px;margin:0 auto;padding:0 14px}
+
+  header.hero{background:linear-gradient(160deg,#12291a 0%,#0e1410 70%);border-bottom:1px solid var(--line);padding:26px 0 20px}
+  .hero h1{font-size:1.45rem;font-weight:800;letter-spacing:.3px}
+  .hero .sub{color:var(--mut);font-size:.85rem;margin-top:4px}
+  .hero .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.75rem;color:var(--mut)}
+  .chip b{color:var(--txt)}
+
+  .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:16px 0 6px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+  .kpi .l{font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;color:var(--mut)}
+  .kpi .v{font-size:1.3rem;font-weight:800;margin-top:3px}
+  .kpi .s{font-size:.72rem;color:var(--mut);margin-top:2px}
+  .kpi.green .v{color:var(--accent)}
+  .kpi.warn .v{color:var(--warn)}
+
+  .note{background:var(--card2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:.78rem;color:var(--mut);margin:10px 0 4px}
+  .note b{color:var(--txt)}
+  .note.warn{border-left-color:var(--bad)}
+
+  .tools{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px;position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:5;border-bottom:1px solid var(--line)}
+  .seg{display:flex;gap:6px;flex:1;min-width:200px}
+  .seg button{flex:1;background:var(--card);color:var(--mut);border:1px solid var(--line);border-radius:10px;padding:9px 6px;font-size:.8rem;font-weight:600;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#06230f;border-color:var(--accent)}
+  select{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 8px;font-size:.8rem}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;margin-bottom:10px}
+  .card.no30{border-color:rgba(255,122,107,.45)}
+  .row1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .oid{font-weight:800;font-size:1.05rem}
+  .oid small{color:var(--mut);font-weight:600;font-size:.72rem;margin-left:6px}
+  .tope{text-align:right;white-space:nowrap}
+  .tope .v{font-size:1.25rem;font-weight:800}
+  .tope .l{font-size:.65rem;text-transform:uppercase;letter-spacing:.6px;color:var(--mut)}
+  .tope.ok .v{color:var(--accent)}
+  .tope.mid .v{color:var(--warn)}
+  .tope.low .v{color:var(--bad)}
+  .ref{color:var(--mut);font-size:.82rem;margin-top:2px}
+  .ref b{color:var(--txt)}
+  .meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:11px}
+  .meta .m{background:var(--card2);border-radius:8px;padding:7px 9px}
+  .meta .m .l{font-size:.62rem;text-transform:uppercase;letter-spacing:.6px;color:var(--mut)}
+  .meta .m .v{font-size:.88rem;font-weight:700;margin-top:1px}
+  .meta .m.g .v{color:var(--accent)}
+  .meta .m.r .v{color:var(--bad)}
+  .badge{display:inline-block;font-size:.66rem;font-weight:700;border-radius:6px;padding:2px 7px;margin-left:8px}
+  .b-no{background:rgba(255,122,107,.12);color:var(--bad);border:1px solid rgba(255,122,107,.4)}
+  .b-oto{background:rgba(92,200,255,.12);color:var(--blue);border:1px solid rgba(92,200,255,.35)}
+  .code{font-family:ui-monospace,Consolas,monospace;font-size:.75rem;color:var(--blue);background:rgba(92,200,255,.08);border:1px solid rgba(92,200,255,.25);border-radius:6px;padding:1px 6px}
+
+  footer{color:var(--mut);font-size:.72rem;text-align:center;margin-top:28px;line-height:1.7}
+  .empty{color:var(--mut);text-align:center;padding:28px 0;font-size:.85rem}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <h1>Truffaut · Transporte Otoño 2026</h1>
+    <div class="sub">Desglose planta / transporte y tope máximo negociable por palet</div>
+    <div class="badges">
+      <span class="chip"><b id="cPed"></b> pedidos</span>
+      <span class="chip"><b id="cPal"></b> palets</span>
+      <span class="chip">Datos: <b id="cGen"></b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="kpis">
+    <div class="kpi"><div class="l">Importe total facturado</div><div class="v" id="kTot">—</div><div class="s">incluye el 30% de transporte repercutido</div></div>
+    <div class="kpi"><div class="l">Destinado a la planta</div><div class="v" id="kPlanta">—</div><div class="s">total ÷ 1,30 (sin el 30% del transporte)</div></div>
+    <div class="kpi green"><div class="l">Destinado al transporte</div><div class="v" id="k30">—</div><div class="s">30% sobre la planta · máximo a ceder</div></div>
+    <div class="kpi warn"><div class="l">Tope medio €/palet</div><div class="v" id="kAvg">—</div><div class="s" id="kRange">—</div></div>
+  </div>
+
+  <div class="note">
+    <b>Cómo se calcula:</b> el precio de las líneas lleva el <b>30% del transporte repercutido</b> sobre el precio de planta
+    (verificado contra precios de referencia: relación ≈1,30 en 29 de 30 pedidos), así que:
+    <b>Planta = Total ÷ 1,30</b> y <b>Transporte = Total × 30/130</b> (23,08% del total).
+    El <b>tope por palet</b> = importe transporte ÷ palets del pedido: lo máximo pagable al transportista sin perder dinero.
+  </div>
+  <div class="note warn" id="no30note">
+    <b>Excepción detectada y verificada:</b> <b>Montpellier (260857)</b> NO lleva el 30% repercutido — sus precios son los de
+    planta (relación ≈1,0). No tiene presupuesto de transporte repercutido; el total es íntegramente planta.
+  </div>
+
+  <div class="tools">
+    <div class="seg" id="seg">
+      <button data-f="all" class="on">Todos</button>
+      <button data-f="d30">D30</button>
+      <button data-f="oto">Otoño</button>
+      <button data-f="pend">Sin fecha carga</button>
+    </div>
+    <select id="sort">
+      <option value="max">Ordenar: tope €/palet ↓</option>
+      <option value="maxa">Ordenar: tope €/palet ↑</option>
+      <option value="pal">Ordenar: palets ↓</option>
+      <option value="tot">Ordenar: importe ↓</option>
+      <option value="oid">Ordenar: nº pedido</option>
+    </select>
+  </div>
+
+  <div id="list"></div>
+  <div class="empty" id="empty" hidden>Sin pedidos para este filtro.</div>
+
+  <footer>
+    Generado el <span id="fGen"></span> · PickingVE · datos de <i>GestionComercialVE.PEDIDOS</i> (BigQuery región EU)<br>
+    Palets = líneas REFERENCIA_ARTICULO 99998 / CODIGO_LITRAJE EUR activas · precios de línea ≈ 1,30 × precio base de planta
+  </footer>
+</div>
+
+<script>
+const fmt = new Intl.NumberFormat('es-ES',{maximumFractionDigits:2,minimumFractionDigits:2});
+const eur = n => '€' + fmt.format(n);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+fetch('data.json').then(r=>r.json()).then(D=>{
+  document.getElementById('cGen').textContent = D.generated;
+  document.getElementById('fGen').textContent = D.generated;
+
+  const all = D.orders.map(o=>{
+    const inc = !o.no30;
+    const planta = inc ? o.tot/1.30 : o.tot;
+    const transp = inc ? o.tot - planta : 0;
+    const max = inc && o.pal>0 ? transp/o.pal : 0;
+    return {...o, inc, planta, transp, max,
+            seg: o.ref.includes('OTOÑO')?'oto':'d30'};
+  });
+
+  const totalPal = all.reduce((a,o)=>a+o.pal,0);
+  const totalTot = all.reduce((a,o)=>a+o.tot,0);
+  const totalPlanta = all.reduce((a,o)=>a+o.planta,0);
+  const totalTransp = all.reduce((a,o)=>a+o.transp,0);
+  const topeVals = all.filter(o=>o.inc && o.pal>0).map(o=>o.max);
+  const avg = topeVals.reduce((a,b)=>a+b,0)/topeVals.length;
+  const mn = Math.min(...topeVals), mx = Math.max(...topeVals);
+  document.getElementById('cPed').textContent = all.length;
+  document.getElementById('cPal').textContent = totalPal;
+  document.getElementById('kTot').textContent = eur(totalTot);
+  document.getElementById('kPlanta').textContent = eur(totalPlanta);
+  document.getElementById('k30').textContent = eur(totalTransp);
+  document.getElementById('kAvg').textContent = avg.toFixed(0);
+  document.getElementById('kRange').textContent = 'min ' + mn.toFixed(0) + ' · max ' + mx.toFixed(0) + ' (con 30%)';
+
+  let filt='all', sortk='max';
+  const render = () => {
+    let rows = all.filter(o=>{
+      if(filt==='d30') return o.seg==='d30';
+      if(filt==='oto') return o.seg==='oto';
+      if(filt==='pend') return !o.fc;
+      return true;
+    });
+    const s = {max:(a,b)=>b.max-a.max, maxa:(a,b)=>a.max-b.max, pal:(a,b)=>b.pal-a.pal, tot:(a,b)=>b.tot-a.tot, oid:(a,b)=>a.n-b.n}[sortk];
+    rows.sort(s);
+    document.getElementById('empty').hidden = rows.length>0;
+    document.getElementById('list').innerHTML = rows.map(o=>{
+      if(!o.inc){
+        return '<div class="card no30">'
+          + '<div class="row1">'
+          +   '<div><span class="oid">'+o.n+'</span><small>cli '+o.cli+'</small><span class="badge b-no">SIN 30% repercutido</span>'+'</div>'
+          +   '<div class="tope"><div class="v" style="color:var(--bad)">—</div><div class="l">tope / palet</div></div>'
+          + '</div>'
+          + '<div class="ref">'+(o.store?o.store:'Truffaut')+' <span class="code">'+esc(o.ncom)+'</span> · '+esc(o.ref)+'</div>'
+          + '<div class="meta">'
+          +   '<div class="m"><div class="l">Fecha pedido</div><div class="v">'+o.fp+'</div></div>'
+          +   '<div class="m"><div class="l">Carga</div><div class="v">'+(o.fc||'<span style="color:var(--warn)">sin fecha</span>')+'</div></div>'
+          +   '<div class="m"><div class="l">Total = planta</div><div class="v">'+eur(o.tot)+'</div></div>'
+          +   '<div class="m g"><div class="l">Planta</div><div class="v">'+eur(o.planta)+'</div></div>'
+          +   '<div class="m r"><div class="l">Transporte</div><div class="v">0 €</div></div>'
+          +   '<div class="m"><div class="l">Palets EUR</div><div class="v">'+o.pal+'</div></div>'
+          + '</div>'
+          + '</div>';
+      }
+      const tcls = o.max>=150?'ok':o.max>=130?'mid':'low';
+      const bot = o.seg==='oto' ? '<span class="badge b-oto">OTOÑO</span>' : '';
+      return '<div class="card">'
+        + '<div class="row1">'
+        +   '<div><span class="oid">'+o.n+'</span><small>cli '+o.cli+'</small>'+bot+'</div>'
+        +   '<div class="tope '+tcls+'"><div class="v">'+o.max.toFixed(0)+' €</div><div class="l">tope / palet</div></div>'
+        + '</div>'
+        + '<div class="ref">'+(o.store?o.store:'Truffaut')+' <span class="code">'+esc(o.ncom)+'</span> · '+esc(o.ref)+'</div>'
+        + '<div class="meta">'
+        +   '<div class="m"><div class="l">Fecha pedido</div><div class="v">'+o.fp+'</div></div>'
+        +   '<div class="m"><div class="l">Carga</div><div class="v">'+(o.fc||'<span style="color:var(--warn)">sin fecha</span>')+'</div></div>'
+        +   '<div class="m"><div class="l">Total facturado</div><div class="v">'+eur(o.tot)+'</div></div>'
+        +   '<div class="m g"><div class="l">Planta</div><div class="v">'+eur(o.planta)+'</div></div>'
+        +   '<div class="m g"><div class="l">Transporte 30%</div><div class="v">'+eur(o.transp)+'</div></div>'
+        +   '<div class="m"><div class="l">Palets EUR</div><div class="v">'+o.pal+'</div></div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  };
+  document.getElementById('seg').addEventListener('click',e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    document.querySelectorAll('#seg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); filt = b.dataset.f; render();
+  });
+  document.getElementById('sort').addEventListener('change',e=>{sortk=e.target.value;render();});
+  render();
+});
+</script>
+</body>
+</html>

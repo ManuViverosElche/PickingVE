@@ -1,0 +1,40 @@
+{
+  "timeZone": "Europe/Madrid",
+  "dependencies": {
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "sheets": {
+    "macros": [{
+      "menuName": "tamaño columna",
+      "functionName": "myFunction"
+    }, {
+      "menuName": "Macro sin título",
+      "functionName": "myFunction1"
+    }, {
+      "menuName": "Macro sin título 1",
+      "functionName": "myFunction2"
+    }, {
+      "menuName": "Macro sin título 2",
+      "functionName": "myFunction3"
+    }, {
+      "menuName": "Macro sin título 3",
+      "functionName": "myFunction4"
+    }, {
+      "menuName": "Macro sin título 4",
+      "functionName": "myFunction5"
+    }, {
+      "menuName": "Macro sin título 5",
+      "functionName": "myFunction6"
+    }, {
+      "menuName": "Macro sin título 6",
+      "functionName": "myFunction7"
+    }, {
+      "menuName": "Macro sin título 7",
+      "functionName": "myFunction8"
+    }, {
+      "menuName": "Macro sin título 8",
+      "functionName": "myFunction9"
+    }]
+  }
+}
