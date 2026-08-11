@@ -16,6 +16,7 @@ captures/
 *.keystore
 secrets.properties
 opencode.json
+Documentacion/*.json
 
 # Conector Python
 backend/.venv/
@@ -33,3 +34,4 @@ Thumbs.db
 # Logs
 *.log
 
+__pycache__/
