@@ -20,14 +20,16 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InventarioScreen(onBack: () -> Unit) {
+fun InventarioScreen(onBack: (() -> Unit)?) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Inventario") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        }
                     }
                 }
             )

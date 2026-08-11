@@ -43,11 +43,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vivero.pickingve.data.local.dao.OrderWithTotals
+import com.vivero.pickingve.util.formatInstrucciones
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -65,7 +67,11 @@ fun OrderListScreen(
     val orders by viewModel.orders.collectAsState()
     val availableDays by viewModel.availableDays.collectAsState()
     val selectedDays by viewModel.selectedDays.collectAsState()
+    val assignedFincas by viewModel.assignedFincas.collectAsState()
+    val selectedFincas by viewModel.selectedFincas.collectAsState()
     val syncState by viewModel.syncState.collectAsState()
+    val uploadState by viewModel.uploadState.collectAsState()
+    val pendingUploadCount by viewModel.pendingUploadCount.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val syncStarted = remember { mutableStateOf(false) }
     var infoOrder by remember { mutableStateOf<OrderWithTotals?>(null) }
@@ -82,6 +88,14 @@ fun OrderListScreen(
         if (message != null) {
             snackbarHostState.showSnackbar(message)
             viewModel.clearSyncMessage()
+        }
+    }
+
+    LaunchedEffect(uploadState.lastResult, uploadState.lastError) {
+        val message = uploadState.lastResult ?: uploadState.lastError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearUploadMessage()
         }
     }
 
@@ -115,6 +129,21 @@ fun OrderListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            if (assignedFincas.size > 1) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(assignedFincas, key = { it }) { finca ->
+                        FilterChip(
+                            selected = finca in selectedFincas,
+                            onClick = { viewModel.toggleFinca(finca) },
+                            label = { Text(finca) }
+                        )
+                    }
+                }
+            }
+
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -125,6 +154,27 @@ fun OrderListScreen(
                         onClick = { viewModel.toggleDay(day) },
                         label = { Text(dayChipLabel(day)) }
                     )
+                }
+            }
+
+            if (pendingUploadCount > 0 || uploadState.uploading) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = if (uploadState.uploading) "Subiendo pendientes..." else "$pendingUploadCount registros por subir",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (!uploadState.uploading) {
+                        TextButton(onClick = { viewModel.uploadNow() }) {
+                            Text("Subir ahora")
+                        }
+                    }
                 }
             }
 
@@ -219,6 +269,14 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold
                     )
+                    if (order.modificado) {
+                        Text(
+                            text = "MODIFICADO · revisa las líneas",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Text(
                         text = displayCustomer,
                         style = MaterialTheme.typography.bodyMedium,
@@ -265,11 +323,23 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                     )
                 }
             }
-            if (order.fincaCarga.isNotBlank()) {
+            if (order.fincaCarga.isNotBlank() || order.sectorCarga.isNotBlank()) {
                 Text(
-                    text = "Finca de carga: ${order.fincaCarga}",
+                    text = listOf(
+                        order.fincaCarga.ifBlank { null }?.let { "Finca de carga: $it" },
+                        order.sectorCarga.ifBlank { null }?.let { "Sector de carga: $it" }
+                    ).filterNotNull().joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            if (order.cargado) {
+                Text(
+                    text = "✓ CARGADO",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
@@ -305,7 +375,17 @@ private fun OrderInfoDialog(order: OrderWithTotals, onDismiss: () -> Unit) {
                     InfoRow(label = "Sector de carga", value = order.sectorCarga)
                 }
                 if (order.observaciones.isNotBlank()) {
-                    InfoRow(label = "Observaciones", value = order.observaciones)
+                    Text(
+                        text = "Observaciones",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = formatInstrucciones(order.observaciones),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontStyle = FontStyle.Italic,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         },
@@ -321,11 +401,12 @@ private fun InfoRow(label: String, value: String) {
         Text(
             text = "$label: ",
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.Bold
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
+            fontStyle = FontStyle.Italic,
             modifier = Modifier.weight(1f)
         )
     }

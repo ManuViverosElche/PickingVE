@@ -15,7 +15,13 @@ data class OrderEntity(
     val fechaCarga: Long? = null,   // epoch millis de FECHA_CARGA (null = sin fecha)
     val marcaPedido: String = "",
     val observaciones: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val modificado: Boolean = false, // True: el pedido cambió en el último sync (cantidades, líneas, estado)
+    val matriculaCamion: String = "",
+    val matriculaRemolque: String = "",
+    val cargado: Boolean = false, // True: se envió el parte final (control de carga)
+    val sobrante: Boolean = false, // True: camión terminado -> escaneos descuentan (sobrante)
+    val pickingActual: Int = 0 // Mayor picking_numero enviado a BigQuery por cualquier dispositivo
 )
 
 @Entity(
@@ -40,5 +46,8 @@ data class OrderLineEntity(
     val prioridad: String = "",
     val ubicacion: String = "",
     val accion: String = "",
-    val observaciones: String = ""
+    val observaciones: String = "",
+    val vigente: Boolean = true, // False: línea retirada del pedido (se muestra pero no se pistoolea)
+    val marcado: Boolean = false, // True: línea marcada ([M] en la descripción, tabla LINEA_PEDIDO)
+    val acopiadoServidor: Int = 0 // Unidades subidas a BigQuery por cualquier dispositivo (otras tabletas incluidas)
 )

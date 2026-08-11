@@ -25,6 +25,9 @@ interface ProductDao {
     @Query("SELECT * FROM products ORDER BY reference LIMIT 200")
     fun observeAll(): Flow<List<ProductEntity>>
 
+    @Query("SELECT * FROM products WHERE reference = :reference AND ean IS NOT NULL AND ean != ''")
+    suspend fun findEansByReference(reference: String): List<ProductEntity>
+
     @Query("SELECT * FROM products WHERE updatedAt > :timestamp")
     suspend fun getUpdatedSince(timestamp: Long): List<ProductEntity>
 

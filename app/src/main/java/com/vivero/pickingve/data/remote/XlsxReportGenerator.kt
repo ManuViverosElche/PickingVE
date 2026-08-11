@@ -11,7 +11,7 @@ import java.util.zip.ZipOutputStream
  * reference file (see Documentacion/picking_260833_I.xlsx):
  *
  * Row 1 (metadata): ID punteo | Matrícula de camion | Matrícula de remolque | Finca | Zona | Peso de la carga
- * Row 2 (headers):  Correo empleado | Número de pedido | EAN Variante | Cantidad | Hora y fecha | Lote | Variedad
+ * Row 2 (headers):  Correo empleado | Número de pedido | EAN Variante | Cantidad | Hora y fecha | Medida | Calibre | Variedad | Ref. pedida | Tipo
  * Rows 3+: data rows (Hora y fecha written as Excel serial number, numFmt 22).
  */
 object XlsxReportGenerator {
@@ -20,8 +20,11 @@ object XlsxReportGenerator {
         val eanVariante: String,
         val cantidad: Int,
         val timestamp: Long,
-        val lote: String = "",
-        val variedad: String = ""
+        val medida: String = "",
+        val calibre: String = "",
+        val variedad: String = "",
+        val refPedida: String = "",
+        val tipo: String = ""
     )
 
     fun generate(
@@ -64,7 +67,7 @@ object XlsxReportGenerator {
         val sb = StringBuilder()
         sb.append(
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
-                "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><dimension ref=\"A1:G${rows.size + 2}\"/><sheetViews><sheetView workbookViewId=\"0\"/></sheetViews><sheetFormatPr defaultRowHeight=\"15\"/><sheetData>"
+                "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><dimension ref=\"A1:J${rows.size + 2}\"/><sheetViews><sheetView workbookViewId=\"0\"/></sheetViews><sheetFormatPr defaultRowHeight=\"15\"/><sheetData>"
         )
 
         // Row 1: metadata
@@ -87,8 +90,11 @@ object XlsxReportGenerator {
                 inlineStrCell("C2", "EAN Variante") +
                 inlineStrCell("D2", "Cantidad") +
                 inlineStrCell("E2", "Hora y fecha") +
-                inlineStrCell("F2", "Lote") +
-                inlineStrCell("G2", "Variedad") +
+                inlineStrCell("F2", "Medida") +
+                inlineStrCell("G2", "Calibre") +
+                inlineStrCell("H2", "Variedad") +
+                inlineStrCell("I2", "Ref. pedida") +
+                inlineStrCell("J2", "Tipo") +
                 "</row>"
         )
 
@@ -101,8 +107,11 @@ object XlsxReportGenerator {
             sb.append(inlineStrCell("C$r", row.eanVariante))
             sb.append(numberCell("D$r", row.cantidad))
             sb.append(dateCell("E$r", row.timestamp))
-            sb.append(inlineStrCell("F$r", row.lote))
-            sb.append(inlineStrCell("G$r", row.variedad))
+            sb.append(inlineStrCell("F$r", row.medida))
+            sb.append(inlineStrCell("G$r", row.calibre))
+            sb.append(inlineStrCell("H$r", row.variedad))
+            sb.append(inlineStrCell("I$r", row.refPedida))
+            sb.append(inlineStrCell("J$r", row.tipo))
             sb.append("</row>")
         }
 

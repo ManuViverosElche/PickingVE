@@ -20,7 +20,13 @@ data class PickingRecordEntity(
     val caliber: String?,              // Calibre
     val batchQty: Int,                 // Quantity in this batch/partida
     val needsLabel: Boolean = false,   // Planta llego sin etiqueta -> hay que sacar etiqueta
+    val labelReason: String = "",      // Motivo de la etiqueta: "" | MACETA_ROTA | CAMBIO_FORMATO
+    val labelFormat: String = "",      // Formato destino si labelReason == CAMBIO_FORMATO (descripcion LITRAJES)
+    val labelSent: Boolean = false,    // Las etiquetas de este registro ya se solicitaron por Telegram
+    val labelSentAt: Long? = null,     // Cuando se solicitaron (historial)
     val timestamp: Long = System.currentTimeMillis(),
     val syncedBigQuery: Boolean = false,
-    val syncedTelegram: Boolean = false
+    val syncedTelegram: Boolean = false,
+    val empleadoEmail: String = "",
+    val empleadoNombre: String = ""
 )

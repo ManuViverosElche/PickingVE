@@ -7,10 +7,12 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.vivero.pickingve.data.local.dao.EncargadoDao
+import com.vivero.pickingve.data.local.dao.LitrajeDao
 import com.vivero.pickingve.data.local.dao.OrderDao
 import com.vivero.pickingve.data.local.dao.PickingDao
 import com.vivero.pickingve.data.local.dao.ProductDao
 import com.vivero.pickingve.data.local.entities.EncargadoEntity
+import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
@@ -22,9 +24,10 @@ import com.vivero.pickingve.data.local.entities.ProductEntity
         OrderEntity::class,
         OrderLineEntity::class,
         PickingRecordEntity::class,
-        EncargadoEntity::class
+        EncargadoEntity::class,
+        LitrajeEntity::class
     ],
-    version = 7,
+    version = 15,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun orderDao(): OrderDao
     abstract fun pickingDao(): PickingDao
     abstract fun encargadoDao(): EncargadoDao
+    abstract fun litrajeDao(): LitrajeDao
 
     companion object {
         @Volatile
@@ -141,6 +145,111 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE products ADD COLUMN litraje TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE products ADD COLUMN sector TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE encargados ADD COLUMN email TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE encargados ADD COLUMN activo INTEGER NOT NULL DEFAULT 1"
+                )
+                db.execSQL(
+                    "ALTER TABLE picking_records ADD COLUMN empleadoEmail TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE picking_records ADD COLUMN empleadoNombre TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE order_lines ADD COLUMN vigente INTEGER NOT NULL DEFAULT 1"
+                )
+                db.execSQL(
+                    "ALTER TABLE orders ADD COLUMN modificado INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE picking_records ADD COLUMN labelSent INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE picking_records ADD COLUMN labelSentAt INTEGER"
+                )
+                db.execSQL(
+                    "ALTER TABLE orders ADD COLUMN matriculaCamion TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE orders ADD COLUMN matriculaRemolque TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE orders ADD COLUMN cargado INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE orders ADD COLUMN sobrante INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE picking_records ADD COLUMN labelReason TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE picking_records ADD COLUMN labelFormat TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS litrajes (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        descripcion TEXT NOT NULL
+                    )
+                    """
+                )
+            }
+        }
+
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE order_lines ADD COLUMN marcado INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE orders ADD COLUMN pickingActual INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE order_lines ADD COLUMN acopiadoServidor INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -150,7 +259,9 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                        MIGRATION_5_6, MIGRATION_6_7
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                        MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                        MIGRATION_13_14, MIGRATION_14_15
                     )
                     .build()
                 INSTANCE = instance

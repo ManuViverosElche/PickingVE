@@ -8,6 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
+import com.vivero.pickingve.ui.admin.AdminFincasScreen
+import com.vivero.pickingve.ui.admin.AdminFincasViewModel
 import com.vivero.pickingve.ui.admin.AdminUsersScreen
 import com.vivero.pickingve.ui.admin.AdminUsersViewModel
 import com.vivero.pickingve.ui.login.LoginScreen
@@ -33,9 +35,11 @@ fun AppNavHost(
     val pickingViewModel: PickingViewModel =
         viewModel { PickingViewModel(repository, settingsRepository) }
     val settingsViewModel: SettingsViewModel =
-        viewModel { SettingsViewModel(settingsRepository) }
+        viewModel { SettingsViewModel(settingsRepository, repository) }
     val adminViewModel: AdminUsersViewModel =
         viewModel { AdminUsersViewModel() }
+    val adminFincasViewModel: AdminFincasViewModel =
+        viewModel { AdminFincasViewModel() }
 
     var loggedIn by remember { mutableStateOf(repository.currentEncargado() != null) }
     var screen by remember {
@@ -76,11 +80,17 @@ fun AppNavHost(
             viewModel = settingsViewModel,
             isSuperUser = repository.currentEncargado()?.rol == "SUPERUSUARIO",
             onBack = { screen = AppScreen.ORDERS },
-            onOpenUsers = { screen = AppScreen.USERS }
+            onOpenUsers = { screen = AppScreen.USERS },
+            onOpenFincas = { screen = AppScreen.FINCAS }
         )
 
         AppScreen.USERS -> AdminUsersScreen(
             viewModel = adminViewModel,
+            onBack = { screen = AppScreen.SETTINGS }
+        )
+
+        AppScreen.FINCAS -> AdminFincasScreen(
+            viewModel = adminFincasViewModel,
             onBack = { screen = AppScreen.SETTINGS }
         )
 
@@ -95,7 +105,11 @@ fun AppNavHost(
         )
 
         AppScreen.INVENTARIO -> InventarioScreen(
-            onBack = { screen = AppScreen.MODE }
+            onBack = if (repository.currentEncargado()?.modo == "AMBAS") {
+                { screen = AppScreen.MODE }
+            } else {
+                null
+            }
         )
     }
 }
@@ -106,4 +120,4 @@ private fun initialScreen(modo: String?): AppScreen = when (modo) {
     else -> AppScreen.ORDERS
 }
 
-private enum class AppScreen { ORDERS, PICKING, SETTINGS, USERS, MODE, INVENTARIO }
+private enum class AppScreen { ORDERS, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }

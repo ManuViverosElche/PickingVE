@@ -11,5 +11,7 @@ data class EncargadoEntity(
     val passwordHash: String,
     val rol: String = "ENCARGADO",
     val fincasCarga: String = "",
-    val modo: String = "PICKING"
+    val modo: String = "PICKING",
+    val email: String = "",
+    val activo: Boolean = true
 )

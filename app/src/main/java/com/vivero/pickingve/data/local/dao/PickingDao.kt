@@ -7,6 +7,8 @@ import androidx.room.Query
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import kotlinx.coroutines.flow.Flow
 
+data class LabelsRequestedByLine(val orderLineId: String?, val cnt: Int)
+
 @Dao
 interface PickingDao {
 
@@ -19,25 +21,67 @@ interface PickingDao {
     @Query("SELECT * FROM picking_records WHERE syncedBigQuery = 0 ORDER BY timestamp")
     fun observePendingBigQuery(): Flow<List<PickingRecordEntity>>
 
-    @Query("SELECT * FROM picking_records WHERE syncedTelegram = 0 ORDER BY timestamp")
-    fun observePendingTelegram(): Flow<List<PickingRecordEntity>>
-
     @Query("SELECT * FROM picking_records WHERE orderId = :orderId ORDER BY timestamp")
     suspend fun getRecordsForOrder(orderId: String): List<PickingRecordEntity>
 
+    @Query("SELECT * FROM picking_records WHERE orderId = :orderId ORDER BY timestamp")
+    fun observeRecordsForOrder(orderId: String): Flow<List<PickingRecordEntity>>
+
+    @Query("SELECT * FROM picking_records WHERE orderLineId = :lineId ORDER BY timestamp DESC")
+    suspend fun getRecordsForLine(lineId: String): List<PickingRecordEntity>
+
     @Query(
         """
-        SELECT COUNT(*) FROM picking_records
-        WHERE orderId = :orderId AND syncedTelegram = 0
+        SELECT * FROM picking_records
+        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 0
+        ORDER BY timestamp
         """
     )
-    suspend fun countPendingTelegramForOrder(orderId: String): Int
+    fun observePendingLabels(orderId: String): Flow<List<PickingRecordEntity>>
+
+    @Query(
+        """
+        SELECT * FROM picking_records
+        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 0
+        ORDER BY timestamp
+        """
+    )
+    suspend fun getPendingLabelsForOrder(orderId: String): List<PickingRecordEntity>
+
+    @Query(
+        """
+        SELECT * FROM picking_records
+        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 1
+        ORDER BY labelSentAt DESC, timestamp
+        """
+    )
+    fun observeLabelsHistory(orderId: String): Flow<List<PickingRecordEntity>>
+
+    @Query(
+        """
+        SELECT orderLineId, COUNT(*) AS cnt FROM picking_records
+        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 1
+        GROUP BY orderLineId
+        """
+    )
+    fun observeLabelsRequestedByLine(orderId: String): Flow<List<LabelsRequestedByLine>>
+
+    @Query(
+        """
+        SELECT orderLineId, SUM(batchQty) AS cnt FROM picking_records
+        WHERE orderId = :orderId AND isSubstituted = 1 AND orderLineId IS NOT NULL
+        GROUP BY orderLineId
+        """
+    )
+    fun observeSubstitutedByLine(orderId: String): Flow<List<LabelsRequestedByLine>>
+
+    @Query(
+        "UPDATE picking_records SET labelSent = 1, labelSentAt = :at WHERE recordId IN (:ids)"
+    )
+    suspend fun markLabelsSent(ids: List<String>, at: Long)
 
     @Query("UPDATE picking_records SET syncedBigQuery = 1 WHERE recordId IN (:ids)")
     suspend fun markSyncedBigQuery(ids: List<String>)
-
-    @Query("UPDATE picking_records SET syncedTelegram = 1 WHERE recordId IN (:ids)")
-    suspend fun markSyncedTelegram(ids: List<String>)
 
     @Query(
         "SELECT COALESCE(MAX(pickingNumber), 0) FROM picking_records WHERE orderId = :orderId"
@@ -47,37 +91,52 @@ interface PickingDao {
     @Query(
         """
         SELECT * FROM picking_records
-        WHERE orderId = :orderId AND needsLabel = 1 AND syncedTelegram = 0
-        ORDER BY timestamp
-        """
-    )
-    fun observePendingLabels(orderId: String): Flow<List<PickingRecordEntity>>
-
-    @Query(
-        """
-        SELECT * FROM picking_records
-        WHERE orderId = :orderId AND needsLabel = 1 AND syncedTelegram = 0
-        ORDER BY timestamp
-        """
-    )
-    suspend fun getPendingLabelsForOrder(orderId: String): List<PickingRecordEntity>
-    @Query(
-        """
-        SELECT * FROM picking_records
-        WHERE orderId = :orderId AND actualProductId = :actualProductId
-            AND (measure = :measure OR (measure IS NULL AND :measure IS NULL))
-            AND (caliber = :caliber OR (caliber IS NULL AND :caliber IS NULL))
-            AND syncedBigQuery = 0
+        WHERE orderId = :orderId
+          AND ((:orderLineId IS NULL AND orderLineId IS NULL)
+               OR orderLineId = :orderLineId)
+          AND (scannedEan = :ean
+               OR (scannedEan IS NULL AND :ean IS NULL AND actualProductId = :actualProductId))
+          AND (measure = :measure OR (measure IS NULL AND :measure IS NULL))
+          AND (caliber = :caliber OR (caliber IS NULL AND :caliber IS NULL))
         LIMIT 1
         """
     )
-    suspend fun findMatchingUnsynced(
+    suspend fun findMatchingRecord(
         orderId: String,
+        orderLineId: String?,
+        ean: String?,
         actualProductId: String,
         measure: String?,
         caliber: String?
     ): PickingRecordEntity?
 
-    @Query("UPDATE picking_records SET batchQty = batchQty + :addQty WHERE recordId = :recordId")
+    @Query(
+        """
+        UPDATE picking_records
+        SET batchQty = batchQty + :addQty, syncedBigQuery = 0
+        WHERE recordId = :recordId
+        """
+    )
     suspend fun incrementBatchQty(recordId: String, addQty: Int)
+
+    @Query("UPDATE picking_records SET batchQty = batchQty - :qty WHERE recordId = :recordId")
+    suspend fun decrementBatchQty(recordId: String, qty: Int)
+
+    @Query("UPDATE picking_records SET needsLabel = 1, syncedBigQuery = 0 WHERE recordId = :recordId")
+    suspend fun markNeedsLabel(recordId: String)
+
+    @Query(
+        """
+        UPDATE picking_records
+        SET needsLabel = 1, labelReason = :labelReason, labelFormat = :labelFormat, syncedBigQuery = 0
+        WHERE recordId = :recordId
+        """
+    )
+    suspend fun markLabelRequested(recordId: String, labelReason: String, labelFormat: String)
+
+    @Query("DELETE FROM picking_records WHERE recordId = :recordId")
+    suspend fun deleteRecord(recordId: String)
+
+    @Query("DELETE FROM picking_records WHERE recordId IN (:recordIds)")
+    suspend fun deleteRecordsByIds(recordIds: List<String>)
 }

@@ -13,6 +13,12 @@ val LightOnWarnContainer = Color(0xFF432A00)
 val DarkWarnContainer = Color(0xFF5C4200)
 val DarkOnWarnContainer = Color(0xFFFFE1B3)
 
+// Marked tones (blue), para líneas marcadas [M] de LINEA_PEDIDO
+val LightMarkedContainer = Color(0xFFD8E4FF)
+val LightOnMarkedContainer = Color(0xFF002D64)
+val DarkMarkedContainer = Color(0xFF29496E)
+val DarkOnMarkedContainer = Color(0xFFD8E4FF)
+
 // Light scheme
 val LightPrimary = Color(0xFF025C65)
 val LightOnPrimary = Color(0xFFFFFFFF)

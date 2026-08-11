@@ -60,6 +60,8 @@ fun AdminUsersScreen(
     var password by remember { mutableStateOf("") }
     var rol by remember { mutableStateOf("ENCARGADO") }
     var modo by remember { mutableStateOf("PICKING") }
+    var email by remember { mutableStateOf("") }
+    var activo by remember { mutableStateOf(true) }
     var fincasSel by remember { mutableStateOf(setOf<String>()) }
 
     val editando = state.editando
@@ -71,6 +73,8 @@ fun AdminUsersScreen(
             password = ""
             rol = editando.rol
             modo = editando.modo
+            email = editando.email
+            activo = editando.activo
             fincasSel = editando.fincasCarga
                 .split(",")
                 .map { it.trim() }
@@ -85,6 +89,8 @@ fun AdminUsersScreen(
             password = ""
             rol = "ENCARGADO"
             modo = "PICKING"
+            email = ""
+            activo = true
             fincasSel = emptySet()
         }
     }
@@ -97,7 +103,8 @@ fun AdminUsersScreen(
 
     val editing = editando != null
     val requiresPassword = !editing && (password.isBlank() || password.length < 4)
-    val canSubmit = nombre.isNotBlank() && usuario.isNotBlank() && !requiresPassword
+    val canSubmit = nombre.isNotBlank() && usuario.isNotBlank() && !requiresPassword &&
+        email.isNotBlank() && email.contains("@")
 
     Scaffold(
         topBar = {
@@ -148,6 +155,30 @@ fun AdminUsersScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth()
             )
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email (va en el parte)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Text("Estado", style = MaterialTheme.typography.bodyMedium)
+            Column {
+                FilterChip(
+                    selected = activo,
+                    onClick = { activo = true },
+                    label = { Text("Activo") },
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                FilterChip(
+                    selected = !activo,
+                    onClick = { activo = false },
+                    label = { Text("Dado de baja") },
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
 
             Text("Rol", style = MaterialTheme.typography.bodyMedium)
             Column {
@@ -203,6 +234,8 @@ fun AdminUsersScreen(
                                 password = password,
                                 rol = rol,
                                 modo = modo,
+                                email = email,
+                                activo = activo,
                                 fincasSeleccionadas = fincasSel
                             )
                         }
@@ -226,7 +259,7 @@ fun AdminUsersScreen(
 
             Text("Usuarios dados de alta", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Toca un usuario para editarlo (rol, modo, fincas o contraseña).",
+                "Toca un usuario para editarlo (email, rol, modo, estado, fincas o contraseña).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -252,13 +285,28 @@ fun AdminUsersScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(e.nombre, style = MaterialTheme.typography.titleMedium)
-                            Text(e.modo, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                if (e.activo) e.modo else "${e.modo} · BAJA",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (e.activo) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                }
+                            )
                         }
                         Text(
                             "@${e.usuario} · ${e.rol}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (e.email.isNotBlank()) {
+                            Text(
+                                e.email,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (e.fincasCarga.isNotBlank()) {
                             Text(
                                 "Fincas: ${e.fincasCarga}",

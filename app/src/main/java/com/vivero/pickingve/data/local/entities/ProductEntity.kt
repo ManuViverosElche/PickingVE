@@ -17,5 +17,7 @@ data class ProductEntity(
     val defaultMeasure: String?,// Default Medida (e.g., "80-100cm")
     val defaultCaliber: String?,// Default Calibre (e.g., "C25")
     val batchQtyDefault: Int = 10, // Default batch quantity per pot label
+    val litraje: String = "",  // Código de litraje de la variante EAN (combinación)
+    val sector: String = "",   // Código de sector de la variante EAN (combinación)
     val updatedAt: Long = System.currentTimeMillis()
 )

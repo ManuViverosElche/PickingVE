@@ -62,11 +62,17 @@ class AdminUsersViewModel(
         password: String,
         rol: String,
         modo: String,
+        email: String,
+        activo: Boolean,
         fincasSeleccionadas: Set<String>
     ) {
         val editando = _state.value.editando
         if (editando == null && password.length < 4) {
             _state.value = _state.value.copy(error = "La contraseña debe tener al menos 4 caracteres")
+            return
+        }
+        if (!email.trim().contains("@")) {
+            _state.value = _state.value.copy(error = "El email debe ser una dirección de correo válida")
             return
         }
         viewModelScope.launch {
@@ -81,7 +87,9 @@ class AdminUsersViewModel(
                         password = password,
                         rol = rol,
                         fincasCarga = fincasSeleccionadas.sorted().joinToString(", "),
-                        modo = modo
+                        modo = modo,
+                        email = email.trim(),
+                        activo = activo
                     )
                 )
                 val who = usuario.trim()

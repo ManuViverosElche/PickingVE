@@ -21,6 +21,11 @@ data class OrderWithTotals(
     val marcaPedido: String,
     val observaciones: String,
     val createdAt: Long,
+    val modificado: Boolean,
+    val matriculaCamion: String,
+    val matriculaRemolque: String,
+    val cargado: Boolean,
+    val sobrante: Boolean,
     val totalRequested: Int,
     val totalPicked: Int
 )
@@ -41,15 +46,16 @@ interface OrderDao {
         """
         SELECT o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
                o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
-               o.createdAt,
+               o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante,
                COALESCE(SUM(l.requestedQty), 0) AS totalRequested,
-               COALESCE(SUM(l.pickedQty), 0) AS totalPicked
+               COALESCE(SUM(MAX(l.pickedQty, l.acopiadoServidor)), 0) AS totalPicked
         FROM orders o
         LEFT JOIN order_lines l ON l.orderId = o.orderId
         AND l.productId NOT BETWEEN '99990' AND '99999'
+        AND l.vigente = 1
         GROUP BY o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
                  o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
-                 o.createdAt
+                 o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante
         ORDER BY COALESCE(o.fechaCarga, o.createdAt) ASC
         """
     )
@@ -59,19 +65,20 @@ interface OrderDao {
         """
         SELECT o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
                o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
-               o.createdAt,
+               o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante,
                COALESCE(SUM(l.requestedQty), 0) AS totalRequested,
-               COALESCE(SUM(l.pickedQty), 0) AS totalPicked
+               COALESCE(SUM(MAX(l.pickedQty, l.acopiadoServidor)), 0) AS totalPicked
         FROM orders o
         LEFT JOIN order_lines l ON l.orderId = o.orderId
         AND l.productId NOT BETWEEN '99990' AND '99999'
+        AND l.vigente = 1
         WHERE o.orderId LIKE '%' || :query || '%'
            OR o.customerName LIKE '%' || :query || '%'
            OR o.customerFiscal LIKE '%' || :query || '%'
            OR o.marcaPedido LIKE '%' || :query || '%'
         GROUP BY o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
                  o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
-                 o.createdAt
+                 o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante
         ORDER BY COALESCE(o.fechaCarga, o.createdAt) ASC
         """
     )
@@ -101,14 +108,37 @@ interface OrderDao {
     @Query(
         """
         UPDATE orders SET status = CASE
-            WHEN (SELECT COALESCE(SUM(pickedQty),0) FROM order_lines WHERE orderId = :orderId) >=
-                 (SELECT COALESCE(SUM(requestedQty),0) FROM order_lines WHERE orderId = :orderId)
+            WHEN (SELECT COALESCE(SUM(MAX(pickedQty, acopiadoServidor)),0) FROM order_lines WHERE orderId = :orderId AND vigente = 1) >=
+                 (SELECT COALESCE(SUM(requestedQty),0) FROM order_lines WHERE orderId = :orderId AND vigente = 1)
             THEN 'COMPLETADO' ELSE 'EN_PROCESO' END
         WHERE orderId = :orderId
         """
     )
     suspend fun refreshOrderStatus(orderId: String)
 
+    @Query("UPDATE order_lines SET vigente = 0 WHERE orderLineId IN (:lineIds)")
+    suspend fun markLinesNotVigente(lineIds: List<String>)
+
+    @Query("UPDATE orders SET modificado = 1 WHERE orderId = :orderId")
+    suspend fun markOrderModificado(orderId: String)
+
+    @Query("UPDATE orders SET modificado = 0 WHERE orderId = :orderId")
+    suspend fun clearOrderModificado(orderId: String)
+
     @Query("SELECT * FROM orders WHERE orderId = :orderId LIMIT 1")
     suspend fun getOrder(orderId: String): OrderEntity?
+
+    @Query(
+        "UPDATE orders SET matriculaCamion = :matriculaCamion, matriculaRemolque = :matriculaRemolque WHERE orderId = :orderId"
+    )
+    suspend fun updateMatriculas(orderId: String, matriculaCamion: String, matriculaRemolque: String)
+
+    @Query("UPDATE orders SET cargado = 1 WHERE orderId = :orderId")
+    suspend fun setOrderCargado(orderId: String)
+
+    @Query("UPDATE orders SET cargado = 0 WHERE orderId = :orderId")
+    suspend fun setOrderNotCargado(orderId: String)
+
+    @Query("UPDATE orders SET sobrante = :sobrante WHERE orderId = :orderId")
+    suspend fun setOrderSobrante(orderId: String, sobrante: Boolean)
 }
