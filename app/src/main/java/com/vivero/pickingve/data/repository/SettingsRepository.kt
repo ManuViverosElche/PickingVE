@@ -12,6 +12,8 @@ data class SettingsStore(
     val operatorEmail: String = "",
     val telegramBotToken: String = "",
     val telegramChatId: String = "",
+    val labelsBotToken: String = "",
+    val labelsChatId: String = "",
     val debounceMs: Long = DEFAULT_DEBOUNCE_MS,
     val vibrateOnScan: Boolean = true,
     val beepOnScan: Boolean = true,
@@ -37,6 +39,12 @@ class SettingsRepository(private val context: Context) {
         telegramChatId = prefs.getString(KEY_CHAT_ID, "")
             ?.takeIf { it.isNotEmpty() }
             ?: com.vivero.pickingve.BuildConfig.DEFAULT_TELEGRAM_CHAT_ID,
+        labelsBotToken = prefs.getString(KEY_LABELS_TOKEN, "")
+            ?.takeIf { it.isNotEmpty() }
+            ?: com.vivero.pickingve.BuildConfig.DEFAULT_LABELS_BOT_TOKEN,
+        labelsChatId = prefs.getString(KEY_LABELS_CHAT_ID, "")
+            ?.takeIf { it.isNotEmpty() }
+            ?: com.vivero.pickingve.BuildConfig.DEFAULT_LABELS_CHAT_ID,
         phoneId = prefs.getString(KEY_PHONE_ID, "").orEmpty(),
         operatorName = prefs.getString(KEY_OPERATOR, "").orEmpty(),
         operatorEmail = prefs.getString(KEY_EMAIL, "").orEmpty(),
@@ -55,6 +63,8 @@ class SettingsRepository(private val context: Context) {
         prefs.edit()
             .putString(KEY_TOKEN, next.telegramBotToken)
             .putString(KEY_CHAT_ID, next.telegramChatId)
+            .putString(KEY_LABELS_TOKEN, next.labelsBotToken)
+            .putString(KEY_LABELS_CHAT_ID, next.labelsChatId)
             .putString(KEY_PHONE_ID, next.phoneId)
             .putString(KEY_OPERATOR, next.operatorName)
             .putString(KEY_EMAIL, next.operatorEmail)
@@ -73,6 +83,8 @@ class SettingsRepository(private val context: Context) {
     companion object {
         private const val KEY_TOKEN = "telegram_bot_token"
         private const val KEY_CHAT_ID = "telegram_chat_id"
+        private const val KEY_LABELS_TOKEN = "labels_telegram_bot_token"
+        private const val KEY_LABELS_CHAT_ID = "labels_telegram_chat_id"
         private const val KEY_PHONE_ID = "phone_id"
         private const val KEY_OPERATOR = "operator_name"
         private const val KEY_EMAIL = "operator_email"

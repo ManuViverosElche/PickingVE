@@ -7,6 +7,7 @@ object Constants {
     // Telegram
     const val TELEGRAM_API_URL = "https://api.telegram.org"
     const val TELEGRAM_SEND_DOCUMENT = "/bot{token}/sendDocument"
+    const val TELEGRAM_SEND_MESSAGE = "/bot{token}/sendMessage"
 
     // BigQuery backend proxy (Cloud Run)
     const val REST_BASE_URL = "https://pickingve-api-938422468946.europe-west1.run.app/api"

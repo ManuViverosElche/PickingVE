@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "938422468946",
+    "project_id": "dashboard-439511",
+    "storage_bucket": "dashboard-439511.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:938422468946:android:d6e653783dbcbb08977a8b",
+        "android_client_info": {
+          "package_name": "com.vivero.pickingve"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "938422468946-bjumf171o1krus7ttk41i4h416tbdats.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCW1GEWShx5_NrMwga8r39SmoCiV4tfbP4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "938422468946-bjumf171o1krus7ttk41i4h416tbdats.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.google.services)
 }
 
 import java.util.Properties
@@ -20,8 +21,8 @@ android {
         applicationId = "com.vivero.pickingve"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 15
+        versionName = "1.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -42,6 +43,16 @@ android {
             "String",
             "API_KEY",
             "\"${secrets.getProperty("API_KEY", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "DEFAULT_LABELS_BOT_TOKEN",
+            "\"${secrets.getProperty("LABELS_BOT_TOKEN", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "DEFAULT_LABELS_CHAT_ID",
+            "\"${secrets.getProperty("LABELS_CHAT_ID", "")}\""
         )
     }
 
@@ -115,9 +126,14 @@ dependencies {
 
     // Kotlinx Coroutines
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
+
+    // Firebase (push notifications)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     debugImplementation(libs.androidx.ui.tooling)
 

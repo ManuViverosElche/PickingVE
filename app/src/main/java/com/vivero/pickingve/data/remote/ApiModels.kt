@@ -21,6 +21,7 @@ data class ApiPedido(
     val finca: String = "",
     val marcaPedido: String = "",
     val observaciones: String = "",
+    val pickingActual: Int = 0,
     val lineas: List<ApiLinea> = emptyList()
 )
 
@@ -33,6 +34,8 @@ data class ApiLinea(
     val unidades: Double? = null,
     val pendientes: Double? = null,
     val imprimirLinea: Int = 0,
+    val marcado: Boolean = false,
+    val acopiado: Int = 0,
     val empleado: String = "",
     val litraje: String = "",
     val litrajeDesc: String = "",
@@ -52,6 +55,11 @@ data class ApiCatalogo(
     val articulos: List<ApiArticulo> = emptyList(),
     val eans: List<ApiEan> = emptyList(),
     val litrajes: List<ApiLitraje> = emptyList()
+)
+
+@Serializable
+data class ApiCatalogoVersion(
+    val version: String = ""
 )
 
 @Serializable
@@ -92,7 +100,9 @@ data class ApiRegistro(
     @SerialName("medida") val medida: String = "",
     @SerialName("calibre") val calibre: String = "",
     @SerialName("cantidad_partida") val cantidadPartida: Double = 0.0,
-    @SerialName("fecha_hora") val fechaHora: String
+    @SerialName("fecha_hora") val fechaHora: String,
+    @SerialName("empleado_email") val empleadoEmail: String = "",
+    @SerialName("empleado_nombre") val empleadoNombre: String = ""
 )
 
 @Serializable
@@ -109,7 +119,9 @@ data class ApiEncargado(
     val rol: String = "",
     @SerialName("password_hash") val passwordHash: String = "",
     @SerialName("fincas_carga") val fincasCarga: String = "",
-    val modo: String = "PICKING"
+    val modo: String = "PICKING",
+    val email: String = "",
+    val activo: Boolean = true
 )
 
 @Serializable
@@ -119,6 +131,43 @@ data class ApiEncargadosResponse(val encargados: List<ApiEncargado> = emptyList(
 data class ApiFincasResponse(val fincas: List<String> = emptyList())
 
 @Serializable
+data class ApiFinca(
+    val finca: String = "",
+    val nombre: String = "",
+    val manual: Boolean = false,
+    val oculto: Boolean = false
+)
+
+@Serializable
+data class ApiFincaGestionResponse(val fincas: List<ApiFinca> = emptyList())
+
+@Serializable
+data class CrearFincaRequest(
+    val finca: String,
+    val nombre: String? = null,
+    val activo: Boolean = true
+)
+
+@Serializable
+data class EliminarFincaRequest(val finca: String)
+
+@Serializable
+data class ApiOkResponse(val ok: Int = 0)
+
+@Serializable
+data class CambiarPasswordRequest(
+    val usuario: String,
+    @SerialName("password_actual") val passwordActual: String,
+    @SerialName("password_nueva") val passwordNueva: String
+)
+
+@Serializable
+data class CambiarEmailRequest(
+    val usuario: String,
+    val email: String
+)
+
+@Serializable
 data class CrearEncargadoRequest(
     val id: String,
     val nombre: String,
@@ -126,11 +175,47 @@ data class CrearEncargadoRequest(
     val password: String,
     val rol: String,
     @SerialName("fincas_carga") val fincasCarga: String,
-    val modo: String
+    val modo: String,
+    val email: String,
+    val activo: Boolean = true
 )
 
 @Serializable
 data class LoginRequest(
     val usuario: String = "",
     val password: String = ""
+)
+
+@Serializable
+data class FcmTokenRequest(
+    val email: String,
+    val token: String,
+    val plataforma: String = "android"
+)
+
+@Serializable
+data class ApiComentario(
+    @SerialName("comentario_id") val id: String = "",
+    @SerialName("pedido_id") val pedido: String = "",
+    @SerialName("linea_huella") val linea: String? = null,
+    @SerialName("autor_email") val autorEmail: String = "",
+    @SerialName("autor_nombre") val autorNombre: String = "",
+    val rol: String = "",
+    val canal: String = "",
+    val texto: String = "",
+    @SerialName("creado_en") val creadoEn: String = ""
+)
+
+@Serializable
+data class ApiComentariosResponse(val comentarios: List<ApiComentario> = emptyList())
+
+@Serializable
+data class ComentarioRequest(
+    @SerialName("pedido_id") val pedidoId: String,
+    @SerialName("linea_huella") val lineaHuella: String? = null,
+    val texto: String,
+    @SerialName("autor_email") val autorEmail: String,
+    @SerialName("autor_nombre") val autorNombre: String = "",
+    val rol: String = "ENCARGADO",
+    val canal: String = "app"
 )

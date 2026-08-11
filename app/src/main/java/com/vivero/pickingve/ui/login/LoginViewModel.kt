@@ -9,6 +9,7 @@ import com.vivero.pickingve.data.repository.PickingRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 data class LoginUiState(
     val loading: Boolean = false,
@@ -31,20 +32,20 @@ class LoginViewModel(
 
     fun loadEncargados() {
         viewModelScope.launch {
-            val locales = repository.encargadosLocales()
-            if (locales.isNotEmpty()) {
-                _state.value = LoginUiState(encargados = locales)
-                return@launch
-            }
-            _state.value = LoginUiState(loading = true)
+            val locales = repository.encargadosLocales().filter { it.activo }
+            _state.value = LoginUiState(encargados = locales)
             try {
                 repository.syncEncargados(api)
-                _state.value = LoginUiState(encargados = repository.encargadosLocales())
+                _state.value = LoginUiState(
+                    encargados = repository.encargadosLocales().filter { it.activo }
+                )
             } catch (e: Exception) {
                 Log.e("PickingVE", "sync encargados failed", e)
-                _state.value = LoginUiState(
-                    error = "Sin conexión y sin encargados descargados"
-                )
+                if (locales.isEmpty()) {
+                    _state.value = LoginUiState(
+                        error = "Sin conexión y sin encargados descargados"
+                    )
+                }
             }
         }
     }
@@ -57,15 +58,28 @@ class LoginViewModel(
         viewModelScope.launch {
             val local = repository.loginEncargadoLocal(usuario, password)
             if (local != null) {
+                registrarTokenPush()
                 _state.value = LoginUiState(success = true)
             } else {
                 val remoto = repository.loginEncargadoRemoto(api, usuario, password)
                 if (remoto) {
+                    registrarTokenPush()
                     _state.value = LoginUiState(success = true)
                 } else {
                     _state.value = _state.value.copy(error = "Usuario o contraseña incorrectos")
                 }
             }
+        }
+    }
+
+    private suspend fun registrarTokenPush() {
+        try {
+            val email = repository.currentEncargado()?.email ?: return
+            if (email.isBlank()) return
+            val token = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
+            api.registrarFcmToken(email, token)
+        } catch (e: Exception) {
+            Log.e("PickingVE", "Registro token FCM fallido", e)
         }
     }
 }
