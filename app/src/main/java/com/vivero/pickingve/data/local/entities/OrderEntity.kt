@@ -19,6 +19,11 @@ data class OrderEntity(
     val modificado: Boolean = false, // True: el pedido cambió en el último sync (cantidades, líneas, estado)
     val matriculaCamion: String = "",
     val matriculaRemolque: String = "",
+    val matriculaRemolqueB: String = "",
+    val muelleCarga: String = "",
+    val fotoMatriculaCamion: String = "",
+    val fotoMatriculaRemolqueA: String = "",
+    val fotoMatriculaRemolqueB: String = "",
     val cargado: Boolean = false, // True: se envió el parte final (control de carga)
     val sobrante: Boolean = false, // True: camión terminado -> escaneos descuentan (sobrante)
     val pickingActual: Int = 0 // Mayor picking_numero enviado a BigQuery por cualquier dispositivo

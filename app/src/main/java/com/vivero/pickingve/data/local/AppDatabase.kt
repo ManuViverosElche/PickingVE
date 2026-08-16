@@ -27,7 +27,7 @@ import com.vivero.pickingve.data.local.entities.ProductEntity
         EncargadoEntity::class,
         LitrajeEntity::class
     ],
-    version = 15,
+    version = 17,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -250,6 +250,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE picking_records ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE orders ADD COLUMN matriculaRemolqueB TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE orders ADD COLUMN muelleCarga TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE orders ADD COLUMN fotoMatriculaCamion TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE orders ADD COLUMN fotoMatriculaRemolqueA TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE orders ADD COLUMN fotoMatriculaRemolqueB TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -261,7 +279,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-                        MIGRATION_13_14, MIGRATION_14_15
+                        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17
                     )
                     .build()
                 INSTANCE = instance

@@ -1,5 +1,8 @@
 package com.vivero.pickingve.ui.picking
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,8 +13,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,36 +30,45 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.vivero.pickingve.data.local.AppDatabase
 import com.vivero.pickingve.data.remote.ApiComentario
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.repository.SettingsRepository
+import io.ktor.http.ContentType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
+import java.time.Instant
 
 @Composable
 fun ChatDialog(
     pedidoId: String,
+    linea: String? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val api = remember { PickingApiClient() }
     val settings = remember { SettingsRepository(context.applicationContext).settings.value }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
     var mensajes by remember { mutableStateOf<List<ApiComentario>>(emptyList()) }
     var texto by remember { mutableStateOf("") }
     var enviando by remember { mutableStateOf(false) }
+    var subiendoFoto by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
     suspend fun cargar() {
         try {
-            mensajes = api.fetchComentarios(pedidoId)
+            mensajes = api.fetchComentarios(pedidoId, linea)
             if (mensajes.isNotEmpty()) {
                 listState.scrollToItem(mensajes.lastIndex)
             }
@@ -63,7 +77,7 @@ fun ChatDialog(
         }
     }
 
-    LaunchedEffect(pedidoId) {
+    LaunchedEffect(pedidoId, linea) {
         cargar()
         while (true) {
             delay(10_000)
@@ -82,14 +96,16 @@ fun ChatDialog(
                     .firstOrNull { it.email == settings.operatorEmail }?.rol ?: "ENCARGADO"
                 api.crearComentario(
                     pedido = pedidoId,
-                    linea = null,
+                    linea = linea,
                     texto = cuerpo,
                     autorEmail = settings.operatorEmail.ifBlank { "app@pickingve" },
                     autorNombre = settings.operatorName.ifBlank { "Encargado" },
                     rol = rol
                 )
-                cargar()
                 error = null
+                cargar()
+                delay(2_000)
+                cargar()
             } catch (e: Exception) {
                 error = "No se pudo enviar el mensaje"
                 texto = cuerpo
@@ -99,9 +115,66 @@ fun ChatDialog(
         }
     }
 
+    fun enviarFoto(uri: Uri) {
+        if (enviando || subiendoFoto) return
+        subiendoFoto = true
+        scope.launch {
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("No se pudo leer la foto")
+                val rol = AppDatabase.getDatabase(context).encargadoDao().getAll()
+                    .firstOrNull { it.email == settings.operatorEmail }?.rol ?: "ENCARGADO"
+                val nombre = "foto_${System.currentTimeMillis()}.jpg"
+                api.subirAdjunto(
+                    pedido = pedidoId,
+                    linea = linea,
+                    texto = texto.trim(),
+                    autorEmail = settings.operatorEmail.ifBlank { "app@pickingve" },
+                    autorNombre = settings.operatorName.ifBlank { "Encargado" },
+                    rol = rol,
+                    nombreArchivo = nombre,
+                    bytes = bytes,
+                    contentType = ContentType.Image.JPEG
+                )
+                texto = ""
+                error = null
+                cargar()
+                delay(2_000)
+                cargar()
+            } catch (e: Exception) {
+                error = "No se pudo enviar la foto"
+            } finally {
+                subiendoFoto = false
+            }
+        }
+    }
+
+    var fotoUri by remember { mutableStateOf<Uri?>(null) }
+    val tomarFoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (ok) fotoUri?.let { enviarFoto(it) }
+    }
+
+    fun lanzarCamara() {
+        if (enviando || subiendoFoto) return
+        val archivo = File.createTempFile("chat_", ".jpg", context.cacheDir)
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            archivo
+        )
+        fotoUri = uri
+        tomarFoto.launch(uri)
+    }
+
+    val titulo = if (linea == null) {
+        "Mensajes · Pedido $pedidoId"
+    } else {
+        "Mensajes · Pedido $pedidoId · Línea $linea"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Mensajes · Pedido $pedidoId") },
+        title = { Text(titulo) },
         text = {
             Column(
                 modifier = Modifier
@@ -145,12 +218,19 @@ fun ChatDialog(
                         value = texto,
                         onValueChange = { texto = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("Escribe un mensaje…") },
-                        maxLines = 3
+                        placeholder = { Text(if (subiendoFoto) "Subiendo foto…" else "Escribe un mensaje…") },
+                        maxLines = 3,
+                        enabled = !subiendoFoto
                     )
                     IconButton(
+                        onClick = { lanzarCamara() },
+                        enabled = !enviando && !subiendoFoto
+                    ) {
+                        Icon(Icons.Filled.PhotoCamera, contentDescription = "Enviar foto")
+                    }
+                    IconButton(
                         onClick = { enviar() },
-                        enabled = texto.isNotBlank() && !enviando
+                        enabled = texto.isNotBlank() && !enviando && !subiendoFoto
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar")
                     }
@@ -165,46 +245,60 @@ fun ChatDialog(
 
 @Composable
 private fun MensajeBurbuja(m: ApiComentario, esMio: Boolean) {
-    Surface(
-        color = if (esMio) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
+    Row(
+        horizontalArrangement = if (esMio) Arrangement.End else Arrangement.Start,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    m.autorNombre.ifBlank { m.autorEmail },
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    color = if (esMio) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
+        Surface(
+            color = if (esMio) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(
+                topStart = 14.dp,
+                topEnd = 14.dp,
+                bottomStart = if (esMio) 14.dp else 4.dp,
+                bottomEnd = if (esMio) 4.dp else 14.dp
+            ),
+            modifier = Modifier.widthIn(max = 320.dp)
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                if (!esMio && m.autorNombre.isNotBlank()) {
+                    Text(
+                        m.autorNombre,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (m.adjuntoUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = m.adjuntoUrl,
+                        contentDescription = "Foto adjunta",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp)
+                    )
+                }
+                if (m.texto.isNotBlank()) {
+                    Text(
+                        m.texto,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 Text(
                     formatearFecha(m.creadoEn),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.End)
                 )
             }
-            Text(
-                m.texto,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.widthIn(max = 300.dp)
-            )
         }
     }
 }
 
 private fun formatearFecha(iso: String): String = try {
-    val instante = java.time.Instant.parse(iso)
+    val instante = Instant.parse(iso)
     java.time.ZonedDateTime.ofInstant(instante, java.time.ZoneId.systemDefault())
-        .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm"))
+        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
 } catch (e: Exception) {
     ""
 }

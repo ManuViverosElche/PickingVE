@@ -1,0 +1,25 @@
+# Regla Global de Ejecución de Comandos Anti-Bloqueo
+
+1. **Gestión de ADB y Procesos Demonios:**
+   - La ruta del ejecutable de ADB en Windows es: `$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe`
+   - No ejecutar `adb devices` si la llamada puede iniciar el demonio en modo bloqueante dentro de la consola del entorno.
+   - Si se requiere comprobar dispositivos, ejecutar con timeout explícito o asumir la conexión tras la primera comprobación.
+
+2. **Límite de Espera de Comandos CLI:**
+   - Queda prohibido reintentar comandos en bucle sin intervención o sin modificar parámetros tras 2 intentos fallidos.
+   - Todo proceso que no devuelva stdout/stderr en <10s debe ser abortado con señal de cancelación.
+
+3. **Regla obligatoria para compilaciones Gradle:**
+   - Prohibido ejecutar gradlew con pipes (`2>&1 | Select-Object`) o comandos que dejen descriptores de salida abiertos.
+   - Compilar siempre con `--no-daemon` (evita que el demonio de Gradle mantenga escuchando la salida de la terminal) y redirigir a log:
+     ```powershell
+     cmd /c "gradlew.bat assembleDebug --no-daemon > build.log 2>&1" ; Get-Content build.log -Tail 10
+     ```
+   - Control: si la subShell no devuelve el control en el tiempo estimado, cancelar sin reintentar y leer `build.log` para confirmar si el APK se generó en `app/build/outputs/apk/debug/`.
+
+4. **Regla obligatoria para despliegues a Cloud Run:**
+   - Prohibido usar pipes de PowerShell (`2>&1 | Select-Object`) o encadenamientos que mantengan la consola abierta.
+   - Ejecutar el comando directo, sin redirecciones:
+     ```powershell
+     gcloud run deploy pickingve-api --source backend --region europe-west1 --project dashboard-439511 --quiet
+     ```

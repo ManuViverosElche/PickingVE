@@ -175,6 +175,7 @@ fun ConfirmPickingDialog(
                     labelOption = labelOption,
                     labelFormat = labelFormat,
                     litrajes = litrajes,
+                    mostrarNoEtiqueta = false,
                     onOptionChange = { labelOption = it; if (it != 3) labelFormat = "" },
                     onFormatChange = { labelFormat = it }
                 )
@@ -188,7 +189,7 @@ fun ConfirmPickingDialog(
                         liters,
                         measure.ifBlank { null },
                         caliber.ifBlank { null },
-                        labelOption != 1,
+                        labelOption == 2 || labelOption == 3,
                         when (labelOption) {
                             2 -> "MACETA_ROTA"
                             3 -> "CAMBIO_FORMATO"
@@ -213,12 +214,19 @@ internal fun LabelOptionSelector(
     labelFormat: String,
     litrajes: List<LitrajeEntity>,
     onOptionChange: (Int) -> Unit,
-    onFormatChange: (String) -> Unit
+    onFormatChange: (String) -> Unit,
+    mostrarNoEtiqueta: Boolean = true
 ) {
     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = labelOption == 1, onClick = { onOptionChange(1) })
-        Text("No lleva etiqueta: hay que sacar etiquetas")
+        RadioButton(selected = labelOption == 0, onClick = { onOptionChange(0) })
+        Text("Ninguna (sin incidencia)")
+    }
+    if (mostrarNoEtiqueta) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = labelOption == 1, onClick = { onOptionChange(1) })
+            Text("No lleva etiqueta: hay que sacar etiquetas")
+        }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         RadioButton(selected = labelOption == 2, onClick = { onOptionChange(2) })
@@ -274,7 +282,7 @@ internal fun LitrajeSearchField(
                 filtered.forEach { litraje ->
                     DropdownMenuItem(
                         text = {
-                            Text("${litraje.id} · ${litraje.descripcion}")
+                            Text(litraje.descripcion)
                         },
                         onClick = {
                             onSelected(litraje.descripcion)

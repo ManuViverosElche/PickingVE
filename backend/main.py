@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 import re
@@ -12,8 +13,10 @@ from urllib.error import HTTPError
 
 import google.auth
 import google.auth.transport.requests
-from fastapi import FastAPI, HTTPException, Query, Header, Request
-from google.cloud import bigquery
+from fastapi import FastAPI, File, Form, HTTPException, Query, Header, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from google.cloud import bigquery, storage
 from google.cloud.exceptions import NotFound
 from pydantic import BaseModel, Field
 
@@ -27,10 +30,18 @@ API_KEY = os.getenv("API_KEY", "")
 PASSWORD_SALT = os.getenv("PASSWORD_SALT", "pickingve-2026")
 MAX_REGISTROS = 1000
 TELEGRAM_API = "https://api.telegram.org"
+CHAT_BUCKET = os.getenv("CHAT_BUCKET", "pickingve-chat")
 
 client = bigquery.Client(project=PROJECT)
 
-app = FastAPI(title="PickingVE API", version="1.2.0")
+app = FastAPI(title="PickingVE API", version="1.3.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["X-API-Key"],
+)
 
 _rate_lock = threading.Lock()
 _rate_hits: dict[str, list[float]] = {}
@@ -293,6 +304,7 @@ def _startup() -> None:
     _ensure_encargados_table()
     _ensure_fincas_table()
     _ensure_notificaciones_tables()
+    _ensure_matriculas_table()
 
 
 @app.get("/health")
@@ -369,6 +381,7 @@ FCM_URL = f"https://fcm.googleapis.com/v1/projects/{PROJECT}/messages:send"
 FCM_TOKENS_TABLE = "fcm_tokens"
 COMENTARIOS_TABLE = "comentarios"
 NOTIFICACIONES_META_TABLE = "notificaciones_meta"
+MATRICULAS_TABLE = "matriculas_pedido"
 
 _fcm_token_cache: dict[str, tuple[float, str]] = {}
 
@@ -401,6 +414,7 @@ def _ensure_notificaciones_tables() -> None:
             rol STRING,
             canal STRING,
             texto STRING,
+            adjunto_url STRING,
             creado_en TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{NOTIFICACIONES_META_TABLE}` (
@@ -411,6 +425,22 @@ def _ensure_notificaciones_tables() -> None:
         """
     ).result()
     _ensure_column(NOTIFICACIONES_META_TABLE, "valor_texto", "valor_texto STRING")
+    _ensure_column(COMENTARIOS_TABLE, "adjunto_url", "adjunto_url STRING")
+
+
+def _ensure_matriculas_table() -> None:
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` (
+            pedido_id STRING NOT NULL,
+            tipo STRING NOT NULL,
+            matricula STRING,
+            muelle STRING,
+            foto_url STRING,
+            creado_en TIMESTAMP
+        )
+        """
+    ).result()
 
 
 def _fcm_access_token() -> str:
@@ -491,13 +521,85 @@ def _insertar_comentario(
     rol: str,
     canal: str,
     texto: str,
+    adjunto_url: Optional[str] = None,
 ) -> None:
     client.query(
         f"INSERT INTO `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
-        f"(comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, creado_en) "
+        f"(comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, adjunto_url, creado_en) "
         f"VALUES ({_esc(str(uuid.uuid4()))}, {_esc(pedido)}, {_esc(linea)}, {_esc(email)}, "
-        f"{_esc(nombre)}, {_esc(rol)}, {_esc(canal)}, {_esc(texto)}, CURRENT_TIMESTAMP())"
+        f"{_esc(nombre)}, {_esc(rol)}, {_esc(canal)}, {_esc(texto)}, {_esc(adjunto_url)}, CURRENT_TIMESTAMP())"
     ).result()
+
+
+def _posicion_linea(pedido: str, huella: Optional[str]) -> Optional[int]:
+    if not huella:
+        return None
+    rows = _query(
+        f"SELECT POSICION_PEDIDO FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` "
+        f"WHERE NUMERO_PEDIDO = {_esc(pedido)} AND HUELLA_DIGITAL = {_esc(huella)} LIMIT 1"
+    )
+    if not rows:
+        return None
+    pos = rows[0].get("POSICION_PEDIDO")
+    return int(pos) if pos is not None else None
+
+
+_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+def _muelle_pedido(pedido: str) -> str:
+    try:
+        rows = _query(
+            f"SELECT muelle FROM `{PROJECT}.{PICKING_DATASET}.matriculas_pedido` "
+            f"WHERE pedido_id = {_esc(pedido)} AND muelle IS NOT NULL AND muelle != '' "
+            f"ORDER BY creado_en DESC LIMIT 1"
+        )
+    except Exception:
+        return ""
+    return (rows[0].get("muelle") or "").strip() if rows else ""
+
+
+def _contexto_pedido(pedido: str) -> str:
+    """Bloque de contexto del pedido para los avisos a la oficina: fecha de carga
+    con día de la semana, finca/sector/muelle, cliente (y fiscal si difiere) y comercial."""
+    if not pedido:
+        return ""
+    rows = _query(
+        f"""
+        SELECT p.FINCA_CARGA, p.SECTOR_CARGA, p.FECHA_CARGA, p.NUMERO_CLIENTE,
+               c.N_FISCAL, c.N_COMERCIAL, a.NOMBRE_AGENTE
+        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+        LEFT JOIN `{PROJECT}.{DATASET}.AGENTE` a ON a.ID_AGENTE = p.CODIGO_AGENTE
+        WHERE p.NUMERO_PEDIDO = {_esc(pedido)} LIMIT 1
+        """
+    )
+    if not rows:
+        return ""
+    r = rows[0]
+    lineas: list[str] = []
+    fecha = r.get("FECHA_CARGA")
+    if fecha is not None:
+        dia = _DIAS_ES[fecha.weekday()]
+        lineas.append(f"📅 {fecha.strftime('%d/%m/%Y')} · {dia}")
+    partes = [p for p in [
+        (r.get("FINCA_CARGA") or "").strip(),
+        (r.get("SECTOR_CARGA") or "").strip(),
+        _muelle_pedido(pedido),
+    ] if p]
+    if partes:
+        lineas.append("📍 " + " · ".join(partes))
+    n_comercial = (r.get("N_COMERCIAL") or "").strip()
+    n_fiscal = (r.get("N_FISCAL") or "").strip()
+    if n_comercial:
+        cliente = f"👤 Cliente: {n_comercial}"
+        if n_fiscal and n_fiscal.upper() != n_comercial.upper():
+            cliente += f" · 🏢 Fiscal: {n_fiscal}"
+        lineas.append(cliente)
+    comercial = (r.get("NOMBRE_AGENTE") or "").strip()
+    if comercial:
+        lineas.append(f"🤝 Comercial: {comercial}")
+    return "\n".join(lineas)
 
 
 class FcmTokenRequest(BaseModel):
@@ -557,7 +659,7 @@ def lista_comentarios(
     if desde:
         where.append(f"creado_en > TIMESTAMP({_esc(desde)})")
     rows = _query(
-        f"SELECT comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, "
+        f"SELECT comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, adjunto_url, "
         f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ', creado_en) AS creado_en "
         f"FROM `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
         f"WHERE " + " AND ".join(where) + " ORDER BY creado_en"
@@ -581,6 +683,104 @@ def crear_comentario(
         req.autor_nombre or req.autor_email, req.rol, req.canal, texto,
     )
     return {"ok": True}
+
+
+@app.post("/api/comentarios/adjunto")
+def crear_comentario_adjunto(
+    request: Request,
+    pedido_id: str = Form(...),
+    linea_huella: Optional[str] = Form(default=None),
+    autor_email: str = Form(...),
+    autor_nombre: Optional[str] = Form(default=None),
+    rol: str = Form(default="ENCARGADO"),
+    texto: str = Form(default=""),
+    archivo: UploadFile = File(...),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    datos = archivo.file.read()
+    if len(datos) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="La foto supera los 10 MB")
+    ext = (archivo.filename or "").rsplit(".", 1)[-1].lower() or "jpg"
+    if ext not in {"jpg", "jpeg", "png", "webp"}:
+        raise HTTPException(status_code=415, detail="Formato no permitido")
+    nombre_archivo = f"chat/{datetime.now(timezone.utc).strftime('%Y%m%d')}/{uuid.uuid4().hex}.{ext}"
+    bucket = storage.Client(project=PROJECT).bucket(CHAT_BUCKET)
+    bucket.blob(nombre_archivo).upload_from_string(
+        datos,
+        content_type="image/jpeg" if ext in {"jpg", "jpeg"} else f"image/{ext}",
+    )
+    url = f"https://storage.googleapis.com/{CHAT_BUCKET}/{nombre_archivo}"
+    _insertar_comentario(
+        pedido_id, linea_huella, autor_email,
+        autor_nombre or autor_email, rol, "app", texto.strip(), url,
+    )
+    return {"ok": True, "adjunto_url": url}
+
+
+@app.get("/api/pedidos/matriculas")
+def lista_matriculas(
+    pedido: str = Query(...),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_key(x_api_key)
+    rows = _query(
+        f"SELECT pedido_id, tipo, matricula, muelle, foto_url, "
+        f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ', creado_en) AS creado_en "
+        f"FROM `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` "
+        f"WHERE pedido_id = {_esc(pedido)} ORDER BY creado_en"
+    )
+    return {"matriculas": rows}
+
+
+@app.post("/api/pedidos/matriculas")
+def guardar_matricula(
+    request: Request,
+    pedido_id: str = Form(...),
+    tipo: str = Form(...),
+    matricula: str = Form(default=""),
+    muelle: str = Form(default=""),
+    archivo: Optional[UploadFile] = File(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    if tipo not in {"CAMION", "REMOLQUE_A", "REMOLQUE_B"}:
+        raise HTTPException(status_code=422, detail="Tipo no válido")
+    foto_url = ""
+    if archivo is not None:
+        datos = archivo.file.read()
+        if len(datos) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="La foto supera los 10 MB")
+        ext = (archivo.filename or "").rsplit(".", 1)[-1].lower() or "jpg"
+        if ext not in {"jpg", "jpeg", "png", "webp"}:
+            raise HTTPException(status_code=415, detail="Formato no permitido")
+        nombre_archivo = f"matriculas/{pedido_id}/{tipo}_{uuid.uuid4().hex}.{ext}"
+        bucket = storage.Client(project=PROJECT).bucket(CHAT_BUCKET)
+        bucket.blob(nombre_archivo).upload_from_string(
+            datos,
+            content_type="image/jpeg" if ext in {"jpg", "jpeg"} else f"image/{ext}",
+        )
+        foto_url = f"https://storage.googleapis.com/{CHAT_BUCKET}/{nombre_archivo}"
+    matricula_limpia = matricula.strip().upper()
+    muelle_limpio = muelle.strip()
+    client.query(
+        f"""
+        MERGE `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` T
+        USING (SELECT {_esc(pedido_id)} AS pedido_id, {_esc(tipo)} AS tipo) S
+        ON T.pedido_id = S.pedido_id AND T.tipo = S.tipo
+        WHEN MATCHED THEN
+            UPDATE SET matricula = {_esc(matricula_limpia)}, muelle = {_esc(muelle_limpio)},
+                       foto_url = CASE WHEN {_esc(foto_url)} != '' THEN {_esc(foto_url)} ELSE T.foto_url END,
+                       creado_en = CURRENT_TIMESTAMP()
+        WHEN NOT MATCHED THEN
+            INSERT (pedido_id, tipo, matricula, muelle, foto_url, creado_en)
+            VALUES ({_esc(pedido_id)}, {_esc(tipo)}, {_esc(matricula_limpia)},
+                    {_esc(muelle_limpio)}, {_esc(foto_url)}, CURRENT_TIMESTAMP())
+        """
+    ).result()
+    return {"ok": True, "foto_url": foto_url}
 
 
 def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str, Any]:
@@ -660,7 +860,7 @@ def notificar_cambios(
                 enviadas += 1
 
     comentarios = _query(
-        f"SELECT pedido_id, linea_huella, autor_nombre, rol, canal, texto "
+        f"SELECT pedido_id, linea_huella, autor_nombre, rol, canal, texto, adjunto_url "
         f"FROM `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
         f"WHERE creado_en > TIMESTAMP({_esc(wm_str)})"
     )
@@ -697,12 +897,32 @@ def notificar_cambios(
             bot_token = os.getenv("TELEGRAM_MESSAGES_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "")
             chat_id = _oficina_chat_id(bot_token) if bot_token else None
             if chat_id and bot_token:
+                pos = _posicion_linea(pedido, c.get("linea_huella"))
+                ref = f"Pedido {pedido}" + (f" · Línea {pos}" if pos else "")
+                adjunto = c.get("adjunto_url") or ""
+                contexto = _contexto_pedido(pedido)
+                cuerpo = f"💬 {nombre} ({ref}): {texto}"
+                if contexto:
+                    cuerpo = f"💬 {nombre} ({ref})\n{contexto}\n———\n{texto}"
                 try:
-                    _telegram_request(
-                        bot_token,
-                        "sendMessage",
-                        {"chat_id": chat_id, "text": f"💬 {nombre} (pedido {pedido}): {texto}"},
-                    )
+                    if adjunto:
+                        _telegram_request(
+                            bot_token,
+                            "sendPhoto",
+                            {"chat_id": chat_id, "photo": adjunto,
+                             "caption": f"{nombre} ({ref})"},
+                        )
+                        _telegram_request(
+                            bot_token,
+                            "sendMessage",
+                            {"chat_id": chat_id, "text": cuerpo},
+                        )
+                    else:
+                        _telegram_request(
+                            bot_token,
+                            "sendMessage",
+                            {"chat_id": chat_id, "text": cuerpo},
+                        )
                 except Exception:
                     pass
 
@@ -1236,6 +1456,132 @@ def pedidos(
     }
 
 
+TRUFFAUT_STORES = {
+    "001CHE": "Chennevières-sur-Marne",
+    "004NAN": "Nantes",
+    "008BAI": "Baillet-en-France",
+    "009VIL": "Villeparisis",
+    "1026NICE PETRUCCIOLI": "Nice",
+    "011PLA": "Plaisir",
+    "012HER": "Herblay",
+    "013SER": "Servon",
+    "014LVB": "La Ville du Bois",
+    "019AMI": "Amiens",
+    "020TOB": "Toulouse-Blagnac",
+    "024ORL": "Orléans",
+    "031PAU": "Pau",
+    "033CHM": "Chambourcy",
+    "035PGS": "La Queue-en-Brie",
+    "036NIM": "Nîmes",
+    "040IVR": "Ivry-sur-Seine",
+    "045CAB": "Cabriès",
+    "047MON": "Montpellier",
+    "050AUB": "Aubagne",
+    "051MER": "Mérignac",
+    "052ROS": "Rosny-Sous-Bois",
+    "053GRI": "Grisy-Suisnes",
+    "073FQX": "La Crau",
+    "075TPM": "Toulon",
+    "076BRS-BOULOGNE": "Boulogne-Billancourt",
+    "085MTL": "Montélimar",
+    "086ADP": "Saint-Ouen-L'Aumône",
+}
+TRUFFAUT_SIN_30 = {"260857"}
+TRUFFAUT_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "truffaut")
+TRUFFAUT_WEB_TOKEN = "truffaut-otono-2026"
+
+
+@app.get("/api/truffaut/reporte")
+def get_truffaut_reporte(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    cached = _cache_get("truffaut_reporte")
+    if cached is not None:
+        return cached
+    rows = _query(f"""
+        SELECT p.NUMERO_PEDIDO AS n, p.REFERENCIA_PEDIDO AS ref, p.NUMERO_CLIENTE AS cli,
+               c.N_COMERCIAL AS ncom, p.FECHA_PEDIDO AS fp, p.FECHA_CARGA AS fc,
+               p.MODO_PORTES AS mp, CAST(p.TOTAL_PEDIDO AS FLOAT64) AS tot
+        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+        WHERE (p.REFERENCIA_PEDIDO LIKE 'TRUFFAUT OTOÑO' OR p.REFERENCIA_PEDIDO LIKE '%/D30')
+          AND p.NUMERO_CLIENTE != '34999'
+          AND CAST(p.TOTAL_PEDIDO AS FLOAT64) > 0
+          AND CAST(p.ESTADO_PEDIDO AS INT64) = 0
+        ORDER BY p.NUMERO_PEDIDO
+    """)
+    orders = []
+    nums = []
+    for r in rows:
+        nums.append(r["n"])
+        orders.append({
+            "n": r["n"],
+            "ref": r["ref"] or "",
+            "cli": r["cli"] or "",
+            "ncom": r["ncom"] or "",
+            "store": TRUFFAUT_STORES.get(r["ncom"], r["ncom"] or ""),
+            "fp": r["fp"].strftime("%d/%m/%Y") if r["fp"] else None,
+            "fc": r["fc"].strftime("%d/%m/%Y") if r["fc"] else None,
+            "mp": int(r["mp"] or 0),
+            "tot": float(r["tot"] or 0),
+            "pal": 0,
+            "no30": r["n"] in TRUFFAUT_SIN_30,
+            "lin": [],
+        })
+    if nums:
+        inlist = ",".join("'" + n + "'" for n in nums)
+        lines = _query(f"""
+            SELECT NUMERO_PEDIDO AS n, POSICION_PEDIDO AS p, REFERENCIA_ARTICULO AS r,
+                   DESCRIPCION_ARTICULO AS d, CAST(UNIDADES AS INT64) AS u,
+                   CODIGO_LITRAJE AS l, PRECIO AS pr, UBICACION_EXTRA AS ubi,
+                   FINCA_RELEVADA AS f, SECTOR_RELEVADO AS s, LINEA_ACTIVA AS act
+            FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO`
+            WHERE NUMERO_PEDIDO IN ({inlist})
+              AND LINEA_ACTIVA = TRUE
+            ORDER BY NUMERO_PEDIDO, POSICION_PEDIDO
+        """)
+        by_n = {o["n"]: o for o in orders}
+        for r in lines:
+            o = by_n.get(r["n"])
+            if not o:
+                continue
+            if r["r"] == "99998" and r["l"] == "EUR" and r["act"]:
+                o["pal"] += int(r["u"] or 0)
+            o["lin"].append({
+                "p": int(r["p"] or 0),
+                "r": r["r"] or "",
+                "d": r["d"] or "",
+                "u": int(r["u"] or 0),
+                "l": r["l"] or "",
+                "pr": float(r["pr"] or 0),
+                "ubi": r["ubi"] or "",
+                "f": r["f"] or "",
+                "s": r["s"] or "",
+            })
+        for o in orders:
+            o["lin"].sort(key=lambda x: x["p"])
+    payload = {"generated": date.today().isoformat(), "orders": orders}
+    _cache_set("truffaut_reporte", payload)
+    return payload
+
+
+@app.get("/truffaut")
+def truffaut_web(k: Optional[str] = Query(default=None)):
+    if k != TRUFFAUT_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(TRUFFAUT_WEB_DIR, "index.html"))
+
+
+@app.get("/truffaut/data.json")
+def truffaut_web_data(k: Optional[str] = Query(default=None)):
+    if k != TRUFFAUT_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(TRUFFAUT_WEB_DIR, "data.json"))
+
+
 @app.get("/api/catalogo")
 def catalogo(
     request: Request,
@@ -1301,7 +1647,7 @@ class RegistroPicking(BaseModel):
     litros: Optional[float] = Field(default=None, ge=0, le=10000)
     medida: str = Field(default="", max_length=64)
     calibre: str = Field(default="", max_length=64)
-    cantidad_partida: float = Field(default=0, ge=0, le=1_000_000)
+    cantidad_partida: float = Field(default=0, ge=-1_000_000, le=1_000_000)
     fecha_hora: str = Field(min_length=1, max_length=64)
     empleado_email: str = Field(default="", max_length=128)
     empleado_nombre: str = Field(default="", max_length=128)
@@ -1321,7 +1667,7 @@ def upload(
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     _ensure_picking_table()
     if not body.registros:
-        return {"ok": 0, "duplicados": 0}
+        return {"ok": 0, "duplicados": 0, "accepted_ids": []}
 
     pending_ids = [r.record_id for r in body.registros]
     existing = client.query(
@@ -1337,7 +1683,7 @@ def upload(
 
     nuevos = [r for r in body.registros if r.record_id not in existing_ids]
     if not nuevos:
-        return {"ok": 0, "duplicados": len(body.registros)}
+        return {"ok": 0, "duplicados": len(body.registros), "accepted_ids": []}
 
     errors = client.insert_rows_json(
         f"{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}",
@@ -1345,7 +1691,7 @@ def upload(
     )
     if errors:
         raise HTTPException(status_code=500, detail=str(errors[:5]))
-    return {"ok": len(nuevos), "duplicados": len(pending_ids) - len(nuevos)}
+    return {"ok": len(nuevos), "duplicados": len(pending_ids) - len(nuevos), "accepted_ids": [r.record_id for r in nuevos]}
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ interface PickingDao {
     @Query(
         """
         SELECT * FROM picking_records
-        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 0
+        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 0 AND deleted = 0
         ORDER BY timestamp
         """
     )
@@ -42,7 +42,7 @@ interface PickingDao {
     @Query(
         """
         SELECT * FROM picking_records
-        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 0
+        WHERE orderId = :orderId AND needsLabel = 1 AND labelSent = 0 AND deleted = 0
         ORDER BY timestamp
         """
     )
@@ -119,7 +119,7 @@ interface PickingDao {
     )
     suspend fun incrementBatchQty(recordId: String, addQty: Int)
 
-    @Query("UPDATE picking_records SET batchQty = batchQty - :qty WHERE recordId = :recordId")
+    @Query("UPDATE picking_records SET batchQty = batchQty - :qty, syncedBigQuery = 0 WHERE recordId = :recordId")
     suspend fun decrementBatchQty(recordId: String, qty: Int)
 
     @Query("UPDATE picking_records SET needsLabel = 1, syncedBigQuery = 0 WHERE recordId = :recordId")
@@ -134,9 +134,21 @@ interface PickingDao {
     )
     suspend fun markLabelRequested(recordId: String, labelReason: String, labelFormat: String)
 
-    @Query("DELETE FROM picking_records WHERE recordId = :recordId")
+    @Query("UPDATE picking_records SET deleted = 1, syncedBigQuery = 0 WHERE recordId = :recordId")
     suspend fun deleteRecord(recordId: String)
 
-    @Query("DELETE FROM picking_records WHERE recordId IN (:recordIds)")
+    @Query("UPDATE picking_records SET deleted = 1, syncedBigQuery = 0 WHERE recordId IN (:recordIds)")
     suspend fun deleteRecordsByIds(recordIds: List<String>)
+
+    @Query(
+        "UPDATE picking_records SET batchQty = batchQty - 1, syncedBigQuery = 0 " +
+            "WHERE recordId = :recordId AND batchQty > 1"
+    )
+    suspend fun decrementLabelQty(recordId: String): Int
+
+    @Query(
+        "UPDATE picking_records SET needsLabel = 0, labelReason = '', labelFormat = '', syncedBigQuery = 0 " +
+            "WHERE recordId = :recordId"
+    )
+    suspend fun clearLabel(recordId: String)
 }

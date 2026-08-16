@@ -35,6 +35,7 @@ object XlsxReportGenerator {
         finca: String = "",
         zona: String = "",
         pesoCarga: String = "",
+        muelle: String = "",
         employeeEmail: String,
         orderNumber: String,
         rows: List<ReportRow>
@@ -48,7 +49,8 @@ object XlsxReportGenerator {
             matriculaRemolque = matriculaRemolque,
             finca = finca,
             zona = zona,
-            pesoCarga = pesoCarga
+            pesoCarga = pesoCarga,
+            muelle = muelle
         )
         writeZip(file, sheetXml)
     }
@@ -62,7 +64,8 @@ object XlsxReportGenerator {
         matriculaRemolque: String,
         finca: String,
         zona: String,
-        pesoCarga: String
+        pesoCarga: String,
+        muelle: String
     ): String {
         val sb = StringBuilder()
         sb.append(
@@ -79,6 +82,7 @@ object XlsxReportGenerator {
                 inlineStrCell("D1", "Finca: " + finca) +
                 inlineStrCell("E1", "Zona: " + zona) +
                 inlineStrCell("F1", "Peso de la carga: " + pesoCarga) +
+                inlineStrCell("G1", "Muelle: " + muelle) +
                 "</row>"
         )
 

@@ -109,7 +109,11 @@ data class ApiRegistro(
 data class ApiUploadBody(val registros: List<ApiRegistro>)
 
 @Serializable
-data class ApiUploadResponse(val ok: Int = 0)
+data class ApiUploadResponse(
+    val ok: Int = 0,
+    val duplicados: Int = 0,
+    @SerialName("accepted_ids") val acceptedIds: List<String> = emptyList()
+)
 
 @Serializable
 data class ApiEncargado(
@@ -203,11 +207,18 @@ data class ApiComentario(
     val rol: String = "",
     val canal: String = "",
     val texto: String = "",
+    @SerialName("adjunto_url") val adjuntoUrl: String = "",
     @SerialName("creado_en") val creadoEn: String = ""
 )
 
 @Serializable
 data class ApiComentariosResponse(val comentarios: List<ApiComentario> = emptyList())
+
+@Serializable
+data class ApiMatriculaResponse(
+    val ok: Boolean = false,
+    @SerialName("foto_url") val fotoUrl: String = ""
+)
 
 @Serializable
 data class ComentarioRequest(
@@ -218,4 +229,10 @@ data class ComentarioRequest(
     @SerialName("autor_nombre") val autorNombre: String = "",
     val rol: String = "ENCARGADO",
     val canal: String = "app"
+)
+
+@Serializable
+data class ApiAdjuntoResponse(
+    val ok: Boolean = true,
+    @SerialName("adjunto_url") val adjuntoUrl: String? = null
 )

@@ -14,6 +14,7 @@ import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
 import com.vivero.pickingve.data.remote.ApiEncargado
 import com.vivero.pickingve.data.remote.ApiRegistro
+import com.vivero.pickingve.data.remote.ApiUploadResponse
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.remote.XlsxReportGenerator
 import com.vivero.pickingve.data.remote.TelegramReporter
@@ -232,8 +233,53 @@ class PickingRepository(
     suspend fun orderLinesList(orderId: String): List<OrderLineEntity> =
         orderDao.getLinesForOrder(orderId)
 
-    suspend fun registerTruckArrival(orderId: String, matriculaCamion: String, matriculaRemolque: String) =
-        orderDao.updateMatriculas(orderId, matriculaCamion, matriculaRemolque)
+    suspend fun registerTruckArrival(
+        orderId: String,
+        matriculaCamion: String,
+        matriculaRemolque: String,
+        matriculaRemolqueB: String = "",
+        muelle: String = "",
+        fotos: Map<String, ByteArray> = emptyMap()
+    ) {
+        orderDao.updateMatriculas(orderId, matriculaCamion, matriculaRemolque, matriculaRemolqueB, muelle)
+        val subir = matriculaCamion.isNotBlank() || matriculaRemolque.isNotBlank() ||
+            matriculaRemolqueB.isNotBlank() || muelle.isNotBlank() || fotos.isNotEmpty()
+        if (!subir) return
+        try {
+            val api = PickingApiClient()
+            val tipos = listOf("CAMION", "REMOLQUE_A", "REMOLQUE_B")
+            val urls = mutableMapOf<String, String>()
+            for (tipo in tipos) {
+                val matricula = when (tipo) {
+                    "CAMION" -> matriculaCamion
+                    "REMOLQUE_A" -> matriculaRemolque
+                    else -> matriculaRemolqueB
+                }
+                val foto = fotos[tipo]
+                if (tipo != "CAMION" && matricula.isBlank() && foto == null) continue
+                val muelleTipo = if (tipo == "CAMION") muelle else ""
+                val url = api.guardarMatricula(
+                    pedido = orderId,
+                    tipo = tipo,
+                    matricula = matricula,
+                    muelle = muelleTipo,
+                    bytes = foto,
+                    nombreArchivo = "matricula_${tipo}.jpg"
+                )
+                if (!url.isNullOrBlank()) urls[tipo] = url
+            }
+            if (urls.isNotEmpty()) {
+                orderDao.updateMatriculaFotos(
+                    orderId,
+                    camion = urls["CAMION"] ?: "",
+                    remolqueA = urls["REMOLQUE_A"] ?: "",
+                    remolqueB = urls["REMOLQUE_B"] ?: ""
+                )
+            }
+        } catch (e: Exception) {
+            // La matrícula queda guardada en Room aunque la subida a BigQuery falle
+        }
+    }
 
     suspend fun markOrderSobrante(orderId: String, on: Boolean) = orderDao.setOrderSobrante(orderId, on)
 
@@ -249,6 +295,16 @@ class PickingRepository(
         pickingDao.observeSubstitutedByLine(orderId)
 
     fun observeLabelsHistory(orderId: String) = pickingDao.observeLabelsHistory(orderId)
+
+    /** Resta una etiqueta pendiente; si el registro quedaba en 1, lo limpia (sale de la cola). */
+    suspend fun decrementPendingLabel(recordId: String) {
+        if (pickingDao.decrementLabelQty(recordId) == 0) {
+            pickingDao.clearLabel(recordId)
+        }
+    }
+
+    /** Quita la etiqueta pendiente de un registro sin tocar el acopio. */
+    suspend fun removePendingLabel(recordId: String) = pickingDao.clearLabel(recordId)
 
     // ---- Picking ----
     suspend fun insertPickingRecord(record: PickingRecordEntity) {
@@ -368,6 +424,7 @@ class PickingRepository(
             finca = finca,
             zona = zona,
             pesoCarga = pesoCarga,
+            muelle = orderDao.getOrder(orderId)?.muelleCarga.orEmpty(),
             employeeEmail = employeeEmail,
             orderNumber = orderId,
             rows = rows
@@ -822,11 +879,12 @@ class PickingRepository(
         }
     }
 
-    /** Uploads all not-yet-synced picking records to the backend. Returns count uploaded. */
+    /** Uploads all not-yet-synced picking records to the backend with exponential backoff and explicit ack. */
     suspend fun uploadPendingRegistros(api: PickingApiClient): Int {
         val pending = pickingDao.observePendingBigQuery().first()
         if (pending.isEmpty()) return 0
         val registros = pending.map { r ->
+            val qty = if (r.deleted) -r.batchQty.toDouble() else r.batchQty.toDouble()
             ApiRegistro(
                 recordId = r.recordId,
                 orderId = r.orderId,
@@ -841,15 +899,37 @@ class PickingRepository(
                 litros = r.liters?.toDouble(),
                 medida = r.measure.orEmpty(),
                 calibre = r.caliber.orEmpty(),
-                cantidadPartida = r.batchQty.toDouble(),
+                cantidadPartida = qty,
                 fechaHora = Instant.ofEpochMilli(r.timestamp).toString(),
                 empleadoEmail = r.empleadoEmail,
                 empleadoNombre = r.empleadoNombre
             )
         }
-        val ok = api.uploadRegistros(registros)
-        pickingDao.markSyncedBigQuery(pending.map { it.recordId })
-        return ok
+
+        var attempt = 0
+        val maxAttempts = 3
+        var response: ApiUploadResponse? = null
+
+        while (attempt < maxAttempts) {
+            try {
+                response = api.uploadRegistros(registros)
+                break
+            } catch (e: Exception) {
+                attempt++
+                if (attempt >= maxAttempts) throw e
+                kotlinx.coroutines.delay(1000L * (1L shl (attempt - 1)))
+            }
+        }
+
+        val accepted = response?.acceptedIds.orEmpty()
+        if (accepted.isNotEmpty()) {
+            pickingDao.markSyncedBigQuery(accepted)
+            pending.filter { it.deleted && it.recordId in accepted }.forEach {
+                pickingDao.deleteRecord(it.recordId) // physical cleanup after sync
+            }
+        }
+
+        return response?.ok ?: 0
     }
 
     private fun estadoLabel(estado: Int?): String = when (estado) {

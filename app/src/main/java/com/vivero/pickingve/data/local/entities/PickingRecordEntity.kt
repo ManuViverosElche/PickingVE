@@ -28,5 +28,6 @@ data class PickingRecordEntity(
     val syncedBigQuery: Boolean = false,
     val syncedTelegram: Boolean = false,
     val empleadoEmail: String = "",
-    val empleadoNombre: String = ""
+    val empleadoNombre: String = "",
+    val deleted: Boolean = false
 )

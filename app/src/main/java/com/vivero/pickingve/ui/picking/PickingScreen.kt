@@ -1,6 +1,10 @@
 ﻿package com.vivero.pickingve.ui.picking
 
 import android.Manifest
+import android.content.ClipData
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,12 +38,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Warning
@@ -50,6 +57,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +65,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -78,15 +87,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
+import com.vivero.pickingve.scanner.OcrReader
 import com.vivero.pickingve.ui.theme.DarkOnWarnContainer
 import com.vivero.pickingve.ui.theme.DarkMarkedContainer
 import com.vivero.pickingve.ui.theme.DarkOnMarkedContainer
@@ -97,6 +110,7 @@ import com.vivero.pickingve.ui.theme.LightOnWarnContainer
 import com.vivero.pickingve.ui.theme.LightWarnContainer
 import com.vivero.pickingve.util.formatInstrucciones
 import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,11 +120,12 @@ fun PickingScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val pendingLabels by viewModel.pendingLabels.collectAsState()
+    val context = LocalContext.current
     var showScanner by remember { mutableStateOf(false) }
     var showLabels by remember { mutableStateOf(false) }
     var showSendDialog by remember { mutableStateOf(false) }
     var showOrderInfo by remember { mutableStateOf(false) }
-    var showChat by remember { mutableStateOf(false) }
+    var chatLinea by remember { mutableStateOf<String?>(null) }
     var showTruckArrival by remember { mutableStateOf(false) }
     var showSobranteConfirm by remember { mutableStateOf(false) }
     var showReopenConfirm by remember { mutableStateOf(false) }
@@ -158,6 +173,9 @@ fun PickingScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { chatLinea = "" }) {
+                        Text("💬", style = MaterialTheme.typography.titleMedium)
+                    }
                     if (!cargado) {
                         if (!state.order?.matriculaCamion.isNullOrBlank()) {
                             IconButton(onClick = { showSobranteConfirm = true }) {
@@ -278,7 +296,8 @@ fun PickingScreen(
                         substitutedByLine = state.substitutedByLine,
                         labelsRequestedByLine = state.labelsRequestedByLine,
                         onUnpick = { unpickLine = it },
-                        onManualMark = { manualMarkLine = it }
+                        onManualMark = { manualMarkLine = it },
+                        onOpenChat = { chatLinea = it.orderLineId }
                     )
                 }
             }
@@ -346,6 +365,8 @@ fun PickingScreen(
             history = state.labelsHistory,
             sending = state.sendingLabels,
             onSendToTelegram = viewModel::sendLabelsTelegram,
+            onDecrement = viewModel::decrementPendingLabel,
+            onRemove = viewModel::removePendingLabel,
             onDismiss = { showLabels = false }
         )
     }
@@ -392,11 +413,29 @@ fun PickingScreen(
 
     if (showTruckArrival) {
         TruckArrivalDialog(
+            fincaCarga = state.order?.fincaCarga.orEmpty(),
             defaultMatriculaCamion = state.order?.matriculaCamion.orEmpty(),
             defaultMatriculaRemolque = state.order?.matriculaRemolque.orEmpty(),
-            onConfirm = { matriculaCamion, matriculaRemolque ->
-                viewModel.registerTruckArrival(matriculaCamion, matriculaRemolque)
+            defaultMatriculaRemolqueB = state.order?.matriculaRemolqueB.orEmpty(),
+            defaultMuelle = state.order?.muelleCarga.orEmpty(),
+            onConfirm = { matriculaCamion, matriculaRemolque, matriculaRemolqueB, muelle, fotos, fotoCompartir ->
+                viewModel.registerTruckArrival(
+                    matriculaCamion,
+                    matriculaRemolque,
+                    matriculaRemolqueB,
+                    muelle,
+                    fotos
+                )
                 showTruckArrival = false
+                fotoCompartir?.let { uri ->
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "image/jpeg"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        clipData = ClipData.newRawUri("foto_camion", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Compartir foto del camión"))
+                }
             },
             onDismiss = { showTruckArrival = false }
         )
@@ -454,7 +493,10 @@ fun PickingScreen(
                 },
                 confirmButton = {
                     Row(horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { showChat = true }) { Text("Mensajes") }
+                        TextButton(onClick = {
+                            showOrderInfo = false
+                            chatLinea = ""
+                        }) { Text("Mensajes") }
                         TextButton(onClick = { showOrderInfo = false }) { Text("Cerrar") }
                     }
                 }
@@ -462,10 +504,11 @@ fun PickingScreen(
         }
     }
 
-    if (showChat) {
+    chatLinea?.let { linea ->
         ChatDialog(
             pedidoId = state.selectedOrderId.orEmpty(),
-            onDismiss = { showChat = false }
+            linea = linea.ifBlank { null },
+            onDismiss = { chatLinea = null }
         )
     }
 
@@ -793,7 +836,8 @@ private fun OrderLinesList(
     substitutedByLine: Map<String, Int>,
     labelsRequestedByLine: Map<String, Int>,
     onUnpick: (OrderLineEntity) -> Unit,
-    onManualMark: (OrderLineEntity) -> Unit
+    onManualMark: (OrderLineEntity) -> Unit,
+    onOpenChat: (OrderLineEntity) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
 
@@ -840,7 +884,8 @@ private fun OrderLinesList(
                     substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                     onUnpick = onUnpick,
-                    onManualMark = onManualMark
+                    onManualMark = onManualMark,
+                    onOpenChat = onOpenChat
                 )
             }
             if (complete.isNotEmpty()) {
@@ -860,7 +905,8 @@ private fun OrderLinesList(
                     substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                     onUnpick = onUnpick,
-                    onManualMark = onManualMark
+                    onManualMark = onManualMark,
+                    onOpenChat = onOpenChat
                 )
             }
             if (noVigentes.isNotEmpty()) {
@@ -880,7 +926,8 @@ private fun OrderLinesList(
                     substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                     onUnpick = onUnpick,
-                    onManualMark = onManualMark
+                    onManualMark = onManualMark,
+                    onOpenChat = onOpenChat
                 )
             }
         }
@@ -895,7 +942,8 @@ private fun OrderLineCard(
     substitutedCount: Int,
     labelsRequested: Int,
     onUnpick: (OrderLineEntity) -> Unit,
-    onManualMark: (OrderLineEntity) -> Unit
+    onManualMark: (OrderLineEntity) -> Unit,
+    onOpenChat: (OrderLineEntity) -> Unit
 ) {
     val shownPicked = maxOf(line.pickedQty, line.acopiadoServidor)
     val remotePicked = (line.acopiadoServidor - line.pickedQty).coerceAtLeast(0)
@@ -943,6 +991,11 @@ private fun OrderLineCard(
                         contentDescription = "Completada",
                         tint = MaterialTheme.colorScheme.primary
                     )
+                }
+                if (line.vigente) {
+                    IconButton(onClick = { onOpenChat(line) }) {
+                        Text("💬", style = MaterialTheme.typography.titleMedium)
+                    }
                 }
             }
             Row(
@@ -1395,6 +1448,8 @@ private fun LabelsDialog(
     history: List<PickingRecordEntity>,
     sending: Boolean,
     onSendToTelegram: () -> Unit,
+    onDecrement: (String) -> Unit,
+    onRemove: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -1423,28 +1478,41 @@ private fun LabelsDialog(
                         items(labels, key = { it.recordId }) { r ->
                             val line = lines.firstOrNull { it.orderLineId == r.orderLineId }
                             Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(r.actualProductId, style = MaterialTheme.typography.titleSmall)
-                                    if (line?.productName?.isNotBlank() == true) {
-                                        Text(line.productName, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    if (line?.litrajeDesc?.isNotBlank() == true) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(r.actualProductId, style = MaterialTheme.typography.titleSmall)
+                                        if (line?.productName?.isNotBlank() == true) {
+                                            Text(line.productName, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        if (line?.litrajeDesc?.isNotBlank() == true) {
+                                            Text(
+                                                "Litraje: ${line.litrajeDesc}",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                        if (line?.sectorDesc?.isNotBlank() == true) {
+                                            Text(
+                                                "Sector: ${line.sectorDesc}",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
                                         Text(
-                                            "Litraje: ${line.litrajeDesc}",
-                                            style = MaterialTheme.typography.bodySmall
+                                            "x ${r.batchQty}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                     }
-                                    if (line?.sectorDesc?.isNotBlank() == true) {
-                                        Text(
-                                            "Sector: ${line.sectorDesc}",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
+                                    IconButton(onClick = { onDecrement(r.recordId) }) {
+                                        Icon(Icons.Filled.Remove, contentDescription = "Quitar una etiqueta")
                                     }
-                                    Text(
-                                        "x ${r.batchQty}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    IconButton(onClick = { onRemove(r.recordId) }) {
+                                        Icon(Icons.Filled.DeleteOutline, contentDescription = "Eliminar etiqueta")
+                                    }
                                 }
                             }
                         }
@@ -1625,24 +1693,139 @@ private fun UnpickDialog(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TruckArrivalDialog(
+    fincaCarga: String,
     defaultMatriculaCamion: String,
     defaultMatriculaRemolque: String,
-    onConfirm: (matriculaCamion: String, matriculaRemolque: String) -> Unit,
+    defaultMatriculaRemolqueB: String,
+    defaultMuelle: String,
+    onConfirm: (
+        matriculaCamion: String,
+        matriculaRemolque: String,
+        matriculaRemolqueB: String,
+        muelle: String,
+        fotos: Map<String, ByteArray>,
+        fotoCompartir: Uri?
+    ) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var matriculaCamion by remember { mutableStateOf(defaultMatriculaCamion) }
     var matriculaRemolque by remember { mutableStateOf(defaultMatriculaRemolque) }
+    var matriculaRemolqueB by remember { mutableStateOf(defaultMatriculaRemolqueB) }
+    var muelle by remember { mutableStateOf(defaultMuelle) }
     var confirmCamion by remember { mutableStateOf("") }
+    var escaneando by remember { mutableStateOf(false) }
+    var fotoCamion by remember { mutableStateOf<Uri?>(null) }
+    var fotoRemolqueA by remember { mutableStateOf<Uri?>(null) }
+    var fotoRemolqueB by remember { mutableStateOf<Uri?>(null) }
+    var fotoTarget by remember { mutableStateOf<String?>(null) }
     val isEdit = defaultMatriculaCamion.isNotBlank()
     val doubleCheckOk = !isEdit || confirmCamion.trim() == matriculaCamion.trim()
+
+    val sugerenciasMuelle = when {
+        fincaCarga.contains("FABRICA", ignoreCase = true) -> (1..8).map { "Muelle $it" }
+        fincaCarga.contains("BORISA", ignoreCase = true) -> (1..4).map { "Muelle $it" } + "Explanada"
+        else -> emptyList()
+    }
+
+    fun uriFoto(tipo: String): Uri? = when (tipo) {
+        "CAMION" -> fotoCamion
+        "REMOLQUE_A" -> fotoRemolqueA
+        else -> fotoRemolqueB
+    }
+
+    fun setFoto(tipo: String, uri: Uri?) {
+        when (tipo) {
+            "CAMION" -> fotoCamion = uri
+            "REMOLQUE_A" -> fotoRemolqueA = uri
+            else -> fotoRemolqueB = uri
+        }
+    }
+
+    val tomarFoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val target = fotoTarget ?: return@rememberLauncherForActivityResult
+        if (ok) {
+            setFoto(target, uriFoto(target))
+            if (target == "CAMION") {
+                scope.launch {
+                    escaneando = true
+                    try {
+                        val bmp = context.contentResolver.openInputStream(uriFoto("CAMION")!!)?.use {
+                            BitmapFactory.decodeStream(it)
+                        }
+                        if (bmp != null) {
+                            val texto = OcrReader.readText(bmp)
+                            val matriculaRegex = Regex(
+                                """(?i)\b(?:[A-Z]{2}\d{4}[A-Z]{2}|\d{4}[A-Z]{3}|[A-Z]\d{4}[A-Z]{2})\b"""
+                            )
+                            val encontradas = matriculaRegex.findAll(texto.orEmpty())
+                                .map { it.value.uppercase() }.toList()
+                            if (matriculaCamion.isBlank() && encontradas.isNotEmpty()) {
+                                matriculaCamion = encontradas[0]
+                            }
+                            if (matriculaRemolque.isBlank() && encontradas.size > 1) {
+                                matriculaRemolque = encontradas[1]
+                            }
+                            if (matriculaRemolqueB.isBlank() && encontradas.size > 2) {
+                                matriculaRemolqueB = encontradas[2]
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Sin OCR si la foto no se puede leer
+                    } finally {
+                        escaneando = false
+                    }
+                }
+            }
+        }
+    }
+
+    fun lanzarCamara(tipo: String) {
+        val archivo = File.createTempFile("matricula_${tipo}_", ".jpg", context.cacheDir)
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            archivo
+        )
+        fotoTarget = tipo
+        setFoto(tipo, uri)
+        tomarFoto.launch(uri)
+    }
+
+    fun confirmar() {
+        val fotos = buildMap {
+            fotoCamion?.let { uriFoto("CAMION") }?.let { u ->
+                context.contentResolver.openInputStream(u)?.use { put("CAMION", it.readBytes()) }
+            }
+            fotoRemolqueA?.let { u ->
+                context.contentResolver.openInputStream(u)?.use { put("REMOLQUE_A", it.readBytes()) }
+            }
+            fotoRemolqueB?.let { u ->
+                context.contentResolver.openInputStream(u)?.use { put("REMOLQUE_B", it.readBytes()) }
+            }
+        }
+        onConfirm(
+            matriculaCamion.trim(),
+            matriculaRemolque.trim(),
+            matriculaRemolqueB.trim(),
+            muelle.trim(),
+            fotos,
+            fotoCamion
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (isEdit) "Cambiar matrículas" else "El camión ha llegado") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(
                     "Apunta la matrícula: aparecerá en el parte final.",
                     style = MaterialTheme.typography.labelMedium,
@@ -1652,9 +1835,27 @@ private fun TruckArrivalDialog(
                     value = matriculaCamion,
                     onValueChange = { matriculaCamion = it },
                     label = { Text("Matrícula camión") },
+                    trailingIcon = {
+                        if (escaneando) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        } else {
+                            IconButton(onClick = { lanzarCamara("CAMION") }) {
+                                Icon(Icons.Filled.QrCodeScanner, contentDescription = "Escanear matrícula del camión")
+                            }
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                fotoCamion?.let {
+                    AsyncImage(
+                        model = it,
+                        contentDescription = "Foto del camión",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 160.dp)
+                    )
+                }
                 if (isEdit) {
                     OutlinedTextField(
                         value = confirmCamion,
@@ -1671,16 +1872,101 @@ private fun TruckArrivalDialog(
                 OutlinedTextField(
                     value = matriculaRemolque,
                     onValueChange = { matriculaRemolque = it },
-                    label = { Text("Matrícula remolque") },
+                    label = { Text("Matrícula remolque 1") },
+                    trailingIcon = {
+                        if (escaneando) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        } else {
+                            IconButton(onClick = { lanzarCamara("REMOLQUE_A") }) {
+                                Icon(Icons.Filled.QrCodeScanner, contentDescription = "Escanear matrícula del remolque")
+                            }
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                fotoRemolqueA?.let {
+                    AsyncImage(
+                        model = it,
+                        contentDescription = "Foto del remolque 1",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 120.dp)
+                    )
+                }
+                OutlinedTextField(
+                    value = matriculaRemolqueB,
+                    onValueChange = { matriculaRemolqueB = it },
+                    label = { Text("Matrícula remolque 2") },
+                    trailingIcon = {
+                        if (escaneando) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        } else {
+                            IconButton(onClick = { lanzarCamara("REMOLQUE_B") }) {
+                                Icon(Icons.Filled.QrCodeScanner, contentDescription = "Escanear matrícula del remolque 2")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                fotoRemolqueB?.let {
+                    AsyncImage(
+                        model = it,
+                        contentDescription = "Foto del remolque 2",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 120.dp)
+                    )
+                }
+                OutlinedTextField(
+                    value = muelle,
+                    onValueChange = { muelle = it },
+                    label = { Text("Muelle de carga") },
+                    placeholder = { Text(if (sugerenciasMuelle.isEmpty()) "Opcional" else "Elige o escribe") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (sugerenciasMuelle.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        sugerenciasMuelle.forEach { sugerencia ->
+                            FilterChip(
+                                onClick = { muelle = sugerencia },
+                                label = { Text(sugerencia) },
+                                selected = muelle == sugerencia
+                            )
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { lanzarCamara("CAMION") },
+                        enabled = !escaneando
+                    ) {
+                        Icon(Icons.Filled.PhotoCamera, contentDescription = null)
+                        Text("Foto camión", modifier = Modifier.padding(start = 4.dp))
+                    }
+                    OutlinedButton(
+                        onClick = { lanzarCamara("REMOLQUE_A") },
+                        enabled = !escaneando
+                    ) {
+                        Icon(Icons.Filled.PhotoCamera, contentDescription = null)
+                        Text("Remolque 1", modifier = Modifier.padding(start = 4.dp))
+                    }
+                    OutlinedButton(
+                        onClick = { lanzarCamara("REMOLQUE_B") },
+                        enabled = !escaneando
+                    ) {
+                        Icon(Icons.Filled.PhotoCamera, contentDescription = null)
+                        Text("Remolque 2", modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
-                enabled = matriculaCamion.isNotBlank() && doubleCheckOk,
-                onClick = { onConfirm(matriculaCamion.trim(), matriculaRemolque.trim()) }
+                enabled = matriculaCamion.isNotBlank() && doubleCheckOk && !escaneando,
+                onClick = { confirmar() }
             ) {
                 Text("Registrar")
             }
@@ -1700,10 +1986,8 @@ private fun ManualMarkDialog(
 ) {
     val remaining = (line.requestedQty - line.pickedQty).coerceAtLeast(1)
     var qtyText by remember(line.orderLineId) { mutableStateOf(remaining.toString()) }
-    var labelOption by remember(line.orderLineId) { mutableStateOf(1) }
-    var labelFormat by remember(line.orderLineId) {
-        mutableStateOf(line.litraje.ifBlank { line.litrajeDesc })
-    }
+    var labelOption by remember(line.orderLineId) { mutableStateOf(0) }
+    var labelFormat by remember(line.orderLineId) { mutableStateOf("") }
     val qty = qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1
     val willOverPick = (line.pickedQty + qty) > line.requestedQty
 
@@ -1742,6 +2026,7 @@ private fun ManualMarkDialog(
                     labelOption = labelOption,
                     labelFormat = labelFormat,
                     litrajes = litrajes,
+                    mostrarNoEtiqueta = false,
                     onOptionChange = { labelOption = it; if (it != 3) labelFormat = "" },
                     onFormatChange = { labelFormat = it }
                 )

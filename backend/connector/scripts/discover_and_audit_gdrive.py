@@ -12,9 +12,12 @@ if env_path.exists():
 import google.oauth2.credentials
 from googleapiclient.discovery import build
 
-client_id = os.getenv('GDRIVE_CLIENT_ID') or '330123701214-1i1p5530drtdugak7h46cgbog96ht225.apps.googleusercontent.com'
-client_secret = os.getenv('GDRIVE_CLIENT_SECRET') or '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'
-refresh_token = os.getenv('GDRIVE_REFRESH_TOKEN') or '1//04wII4Bi6zTkFCgYIARAAGAQSNwF-L9IrBfd9Lf82elHptKggsdLjiD1OBtnjiZpjXIeKLVCZNZN00MdjuE93gJC8NWteHvD3Wf4'
+client_id = os.getenv('GDRIVE_CLIENT_ID')
+client_secret = os.getenv('GDRIVE_CLIENT_SECRET')
+refresh_token = os.getenv('GDRIVE_REFRESH_TOKEN')
+
+if not client_id or not client_secret or not refresh_token:
+    raise ValueError("Faltan variables de entorno GDRIVE_CLIENT_ID, GDRIVE_CLIENT_SECRET o GDRIVE_REFRESH_TOKEN en el archivo .env o en el entorno.")
 
 print(f"Usando Client ID: {client_id[:10]}...")
 

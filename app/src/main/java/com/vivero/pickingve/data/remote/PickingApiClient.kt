@@ -8,11 +8,15 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -135,12 +139,12 @@ class PickingApiClient(
             auth()
         }.body<ApiCatalogoVersion>().version
 
-    suspend fun uploadRegistros(registros: List<ApiRegistro>): Int =
+    suspend fun uploadRegistros(registros: List<ApiRegistro>): ApiUploadResponse =
         client.post("$baseUrl/picking/upload") {
             auth()
             contentType(ContentType.Application.Json)
             setBody(ApiUploadBody(registros))
-        }.body<ApiUploadResponse>().ok
+        }.body<ApiUploadResponse>()
 
     suspend fun registrarFcmToken(email: String, token: String, plataforma: String = "android") {
         client.post("$baseUrl/fcm-token") {
@@ -180,5 +184,68 @@ class PickingApiClient(
                 )
             )
         }
+    }
+
+    suspend fun subirAdjunto(
+        pedido: String,
+        linea: String?,
+        texto: String,
+        autorEmail: String,
+        autorNombre: String,
+        rol: String,
+        nombreArchivo: String,
+        bytes: ByteArray,
+        contentType: ContentType
+    ): String? {
+        val response = client.post("$baseUrl/comentarios/adjunto") {
+            auth()
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append("pedido_id", pedido)
+                        append("linea_huella", linea ?: "")
+                        append("autor_email", autorEmail)
+                        append("autor_nombre", autorNombre)
+                        append("rol", rol)
+                        append("texto", texto)
+                        append("archivo", bytes, Headers.build {
+                            append(HttpHeaders.ContentType, contentType.toString())
+                            append(HttpHeaders.ContentDisposition, "filename=\"$nombreArchivo\"")
+                        })
+                    }
+                )
+            )
+        }
+        return response.body<ApiAdjuntoResponse>().adjuntoUrl
+    }
+
+    suspend fun guardarMatricula(
+        pedido: String,
+        tipo: String,
+        matricula: String,
+        muelle: String,
+        bytes: ByteArray? = null,
+        nombreArchivo: String = "matricula.jpg"
+    ): String? {
+        val response = client.post("$baseUrl/pedidos/matriculas") {
+            auth()
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append("pedido_id", pedido)
+                        append("tipo", tipo)
+                        append("matricula", matricula)
+                        append("muelle", muelle)
+                        if (bytes != null) {
+                            append("archivo", bytes, Headers.build {
+                                append(HttpHeaders.ContentType, ContentType.Image.JPEG.toString())
+                                append(HttpHeaders.ContentDisposition, "filename=\"$nombreArchivo\"")
+                            })
+                        }
+                    }
+                )
+            )
+        }
+        return response.body<ApiMatriculaResponse>().fotoUrl
     }
 }

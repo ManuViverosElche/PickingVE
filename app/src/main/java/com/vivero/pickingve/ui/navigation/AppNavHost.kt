@@ -95,7 +95,9 @@ fun AppNavHost(
         )
 
         AppScreen.MODE -> ModeSelectScreen(
-            encargadoNombre = repository.currentEncargado()?.nombre ?: "",
+            encargadoNombre = repository.currentEncargado()?.let {
+                it.usuario.ifBlank { it.nombre }
+            } ?: "",
             onPicking = { screen = AppScreen.ORDERS },
             onInventario = { screen = AppScreen.INVENTARIO },
             onLogout = {

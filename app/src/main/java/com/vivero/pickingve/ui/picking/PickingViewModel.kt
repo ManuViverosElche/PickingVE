@@ -510,11 +510,38 @@ class PickingViewModel(
         }
     }
 
+    /** Resta una etiqueta pendiente de la cola (si era la última, la elimina). */
+    fun decrementPendingLabel(recordId: String) {
+        viewModelScope.launch {
+            repository.decrementPendingLabel(recordId)
+        }
+    }
+
+    /** Elimina la etiqueta pendiente de un registro sin desacopiar la planta. */
+    fun removePendingLabel(recordId: String) {
+        viewModelScope.launch {
+            repository.removePendingLabel(recordId)
+        }
+    }
+
     /** Registers the arrival of the truck and stores its license plates in the order. */
-    fun registerTruckArrival(matriculaCamion: String, matriculaRemolque: String) {
+    fun registerTruckArrival(
+        matriculaCamion: String,
+        matriculaRemolque: String,
+        matriculaRemolqueB: String = "",
+        muelle: String = "",
+        fotos: Map<String, ByteArray> = emptyMap()
+    ) {
         val orderId = selectedOrderId.value ?: return
         viewModelScope.launch {
-            repository.registerTruckArrival(orderId, matriculaCamion, matriculaRemolque)
+            repository.registerTruckArrival(
+                orderId,
+                matriculaCamion,
+                matriculaRemolque,
+                matriculaRemolqueB,
+                muelle,
+                fotos
+            )
             lastMessage.value = "Camión registrado: $matriculaCamion"
         }
     }

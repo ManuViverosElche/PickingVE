@@ -129,9 +129,22 @@ interface OrderDao {
     suspend fun getOrder(orderId: String): OrderEntity?
 
     @Query(
-        "UPDATE orders SET matriculaCamion = :matriculaCamion, matriculaRemolque = :matriculaRemolque WHERE orderId = :orderId"
+        "UPDATE orders SET matriculaCamion = :matriculaCamion, matriculaRemolque = :matriculaRemolque, " +
+            "matriculaRemolqueB = :matriculaRemolqueB, muelleCarga = :muelle WHERE orderId = :orderId"
     )
-    suspend fun updateMatriculas(orderId: String, matriculaCamion: String, matriculaRemolque: String)
+    suspend fun updateMatriculas(
+        orderId: String,
+        matriculaCamion: String,
+        matriculaRemolque: String,
+        matriculaRemolqueB: String,
+        muelle: String
+    )
+
+    @Query(
+        "UPDATE orders SET fotoMatriculaCamion = :camion, fotoMatriculaRemolqueA = :remolqueA, " +
+            "fotoMatriculaRemolqueB = :remolqueB WHERE orderId = :orderId"
+    )
+    suspend fun updateMatriculaFotos(orderId: String, camion: String, remolqueA: String, remolqueB: String)
 
     @Query("UPDATE orders SET cargado = 1 WHERE orderId = :orderId")
     suspend fun setOrderCargado(orderId: String)
