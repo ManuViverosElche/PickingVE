@@ -96,6 +96,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
+import com.vivero.pickingve.data.local.entities.ChatEstadoEntity
 import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
@@ -120,6 +121,7 @@ fun PickingScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val pendingLabels by viewModel.pendingLabels.collectAsState()
+    val chatEstados by viewModel.chatEstados.collectAsState()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(false) }
     var showLabels by remember { mutableStateOf(false) }
@@ -173,8 +175,15 @@ fun PickingScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { chatLinea = "" }) {
-                        Text("💬", style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = {
+                        chatLinea = ""
+                        viewModel.marcarChatLeido("")
+                    }) {
+                        Text(
+                            "💬",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = chatColor(chatEstados, "")
+                        )
                     }
                     if (!cargado) {
                         if (!state.order?.matriculaCamion.isNullOrBlank()) {
@@ -295,6 +304,7 @@ fun PickingScreen(
                         lines = state.lines,
                         substitutedByLine = state.substitutedByLine,
                         labelsRequestedByLine = state.labelsRequestedByLine,
+                        chatEstados = chatEstados,
                         onUnpick = { unpickLine = it },
                         onManualMark = { manualMarkLine = it },
                         onOpenChat = { chatLinea = it.orderLineId }
@@ -508,7 +518,11 @@ fun PickingScreen(
         ChatDialog(
             pedidoId = state.selectedOrderId.orEmpty(),
             linea = linea.ifBlank { null },
-            onDismiss = { chatLinea = null }
+            lineaInfo = if (linea.isBlank()) null else state.lines.firstOrNull { it.orderLineId == linea },
+            onDismiss = {
+                viewModel.marcarChatLeido(linea)
+                chatLinea = null
+            }
         )
     }
 
@@ -830,11 +844,19 @@ private fun CargadoSummary(
 }
 
 @Composable
+private fun chatColor(estados: List<ChatEstadoEntity>, hilo: String): Color {
+    val estado = estados.firstOrNull { it.hiloId == hilo }
+        ?: return MaterialTheme.colorScheme.onSurfaceVariant
+    return if (estado.sinLeer > 0) Color(0xFFF9A825) else MaterialTheme.colorScheme.primary
+}
+
+@Composable
 private fun OrderLinesList(
     order: com.vivero.pickingve.data.local.entities.OrderEntity?,
     lines: List<OrderLineEntity>,
     substitutedByLine: Map<String, Int>,
     labelsRequestedByLine: Map<String, Int>,
+    chatEstados: List<ChatEstadoEntity>,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
     onOpenChat: (OrderLineEntity) -> Unit
@@ -883,6 +905,7 @@ private fun OrderLinesList(
                     line = line,
                     substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
+                    chatEstados = chatEstados,
                     onUnpick = onUnpick,
                     onManualMark = onManualMark,
                     onOpenChat = onOpenChat
@@ -904,6 +927,7 @@ private fun OrderLinesList(
                     line = line,
                     substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
+                    chatEstados = chatEstados,
                     onUnpick = onUnpick,
                     onManualMark = onManualMark,
                     onOpenChat = onOpenChat
@@ -925,6 +949,7 @@ private fun OrderLinesList(
                     line = line,
                     substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
+                    chatEstados = chatEstados,
                     onUnpick = onUnpick,
                     onManualMark = onManualMark,
                     onOpenChat = onOpenChat
@@ -941,6 +966,7 @@ private fun OrderLineCard(
     line: OrderLineEntity,
     substitutedCount: Int,
     labelsRequested: Int,
+    chatEstados: List<ChatEstadoEntity>,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
     onOpenChat: (OrderLineEntity) -> Unit
@@ -994,7 +1020,11 @@ private fun OrderLineCard(
                 }
                 if (line.vigente) {
                     IconButton(onClick = { onOpenChat(line) }) {
-                        Text("💬", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "💬",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = chatColor(chatEstados, line.orderLineId)
+                        )
                     }
                 }
             }

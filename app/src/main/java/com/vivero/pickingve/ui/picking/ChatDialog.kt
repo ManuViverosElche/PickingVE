@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.vivero.pickingve.data.local.AppDatabase
+import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.remote.ApiComentario
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.repository.SettingsRepository
@@ -53,6 +56,7 @@ import java.time.Instant
 fun ChatDialog(
     pedidoId: String,
     linea: String? = null,
+    lineaInfo: OrderLineEntity? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -115,9 +119,26 @@ fun ChatDialog(
         }
     }
 
-    fun enviarFoto(uri: Uri) {
+    var fotoPendiente by remember { mutableStateOf<Uri?>(null) }
+    val tomarFoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { }
+    var fotoEnviando by remember { mutableStateOf(false) }
+
+    fun lanzarCamara() {
         if (enviando || subiendoFoto) return
-        subiendoFoto = true
+        val archivo = File.createTempFile("chat_", ".jpg", context.cacheDir)
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            archivo
+        )
+        fotoPendiente = uri
+        tomarFoto.launch(uri)
+    }
+
+    fun confirmarFoto() {
+        val uri = fotoPendiente ?: return
+        if (subiendoFoto || fotoEnviando) return
+        fotoEnviando = true
         scope.launch {
             try {
                 val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -137,6 +158,7 @@ fun ChatDialog(
                     contentType = ContentType.Image.JPEG
                 )
                 texto = ""
+                fotoPendiente = null
                 error = null
                 cargar()
                 delay(2_000)
@@ -144,37 +166,43 @@ fun ChatDialog(
             } catch (e: Exception) {
                 error = "No se pudo enviar la foto"
             } finally {
-                subiendoFoto = false
+                fotoEnviando = false
             }
         }
     }
 
-    var fotoUri by remember { mutableStateOf<Uri?>(null) }
-    val tomarFoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        if (ok) fotoUri?.let { enviarFoto(it) }
-    }
-
-    fun lanzarCamara() {
-        if (enviando || subiendoFoto) return
-        val archivo = File.createTempFile("chat_", ".jpg", context.cacheDir)
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            archivo
-        )
-        fotoUri = uri
-        tomarFoto.launch(uri)
+    val pendiente = lineaInfo?.let {
+        it.requestedQty - maxOf(it.pickedQty, it.acopiadoServidor)
     }
 
     val titulo = if (linea == null) {
         "Mensajes · Pedido $pedidoId"
     } else {
-        "Mensajes · Pedido $pedidoId · Línea $linea"
+        "Línea ${lineaInfo?.posicion ?: "?"} · ${lineaInfo?.productName.orEmpty()}"
+    }
+    val subtitulo = if (linea == null) null else {
+        listOfNotNull(
+            lineaInfo?.productId,
+            lineaInfo?.litrajeDesc?.takeIf { it.isNotBlank() },
+            lineaInfo?.sectorDesc?.takeIf { it.isNotBlank() },
+            pendiente?.let { "Pendiente $it" }
+        ).joinToString(" · ")
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(titulo) },
+        title = {
+            Column {
+                Text(titulo, style = MaterialTheme.typography.titleMedium)
+                if (subtitulo != null) {
+                    Text(
+                        subtitulo,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -210,29 +238,67 @@ fun ChatDialog(
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = texto,
-                        onValueChange = { texto = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (subiendoFoto) "Subiendo foto…" else "Escribe un mensaje…") },
-                        maxLines = 3,
-                        enabled = !subiendoFoto
-                    )
-                    IconButton(
-                        onClick = { lanzarCamara() },
-                        enabled = !enviando && !subiendoFoto
-                    ) {
-                        Icon(Icons.Filled.PhotoCamera, contentDescription = "Enviar foto")
+                val foto = fotoPendiente
+                if (foto != null) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        AsyncImage(
+                            model = foto,
+                            contentDescription = "Vista previa de la foto",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 160.dp)
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = texto,
+                                onValueChange = { texto = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("Añade un texto a la foto…") },
+                                maxLines = 3,
+                                enabled = !subiendoFoto && !fotoEnviando
+                            )
+                            IconButton(
+                                onClick = { confirmarFoto() },
+                                enabled = !enviando && !subiendoFoto && !fotoEnviando
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar foto")
+                            }
+                            IconButton(
+                                onClick = { fotoPendiente = null },
+                                enabled = !fotoEnviando
+                            ) {
+                                Icon(Icons.Filled.Close, contentDescription = "Cancelar foto")
+                            }
+                        }
                     }
-                    IconButton(
-                        onClick = { enviar() },
-                        enabled = texto.isNotBlank() && !enviando && !subiendoFoto
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar")
+                        OutlinedTextField(
+                            value = texto,
+                            onValueChange = { texto = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(if (subiendoFoto) "Subiendo foto…" else "Escribe un mensaje…") },
+                            maxLines = 3,
+                            enabled = !subiendoFoto
+                        )
+                        IconButton(
+                            onClick = { lanzarCamara() },
+                            enabled = !enviando && !subiendoFoto
+                        ) {
+                            Icon(Icons.Filled.PhotoCamera, contentDescription = "Enviar foto")
+                        }
+                        IconButton(
+                            onClick = { enviar() },
+                            enabled = texto.isNotBlank() && !enviando && !subiendoFoto
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar")
+                        }
                     }
                 }
             }

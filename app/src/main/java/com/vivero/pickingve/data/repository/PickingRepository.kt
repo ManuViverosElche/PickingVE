@@ -1,17 +1,20 @@
 package com.vivero.pickingve.data.repository
 
 import android.content.Context
+import com.vivero.pickingve.data.local.dao.ChatEstadoDao
 import com.vivero.pickingve.data.local.dao.EncargadoDao
 import com.vivero.pickingve.data.local.dao.LitrajeDao
 import com.vivero.pickingve.data.local.dao.OrderDao
 import com.vivero.pickingve.data.local.dao.PickingDao
 import com.vivero.pickingve.data.local.dao.ProductDao
+import com.vivero.pickingve.data.local.entities.ChatEstadoEntity
 import com.vivero.pickingve.data.local.entities.EncargadoEntity
 import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
+import com.vivero.pickingve.data.remote.ApiComentario
 import com.vivero.pickingve.data.remote.ApiEncargado
 import com.vivero.pickingve.data.remote.ApiRegistro
 import com.vivero.pickingve.data.remote.ApiUploadResponse
@@ -37,7 +40,8 @@ class PickingRepository(
     private val orderDao: OrderDao,
     private val pickingDao: PickingDao,
     private val encargadoDao: EncargadoDao,
-    private val litrajeDao: LitrajeDao
+    private val litrajeDao: LitrajeDao,
+    private val chatEstadoDao: ChatEstadoDao
 ) {
 
     private val prefs = context.getSharedPreferences("pickingve_flags", Context.MODE_PRIVATE)
@@ -1064,6 +1068,27 @@ class PickingRepository(
         )
         orderDao.upsertOrders(listOf(order))
         orderDao.upsertLines(lines)
+    }
+
+    // ---- Chat estados (badge 💬) ----
+    fun observeChatEstados(): Flow<List<ChatEstadoEntity>> = chatEstadoDao.observeAll()
+
+    suspend fun actualizarChatEstados(comentarios: List<ApiComentario>) {
+        val porHilo = comentarios.groupBy { it.linea?.takeIf(String::isNotBlank) ?: "" }
+        for ((hilo, msgs) in porHilo) {
+            val ultimo = msgs.maxOf { it.creadoEn }
+            val previo = chatEstadoDao.get(hilo)
+            val sinLeer = if (previo == null) {
+                msgs.size
+            } else {
+                previo.sinLeer + msgs.count { it.creadoEn > previo.ultimoCreadoEn }
+            }
+            chatEstadoDao.upsert(hilo, ultimo, sinLeer)
+        }
+    }
+
+    suspend fun marcarChatLeido(hiloId: String) {
+        chatEstadoDao.marcarLeido(hiloId)
     }
 
     private companion object {

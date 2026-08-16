@@ -331,47 +331,291 @@ async def telegram_webhook(
     if not API_KEY or x_telegram_bot_api_secret_token != API_KEY:
         raise HTTPException(status_code=401, detail="Secret token inválido o ausente")
     update = await request.json()
-    callback = update.get("callback_query")
-    if not callback:
-        return _telegram_mensaje_texto(bot_token, update)
+    if update.get("callback_query"):
+        return _telegram_callback(bot_token, update)
+    return _telegram_mensaje_texto(bot_token, update)
+
+
+def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]:
+    callback = update.get("callback_query") or {}
     data = callback.get("data") or ""
-    if not data.startswith("check_"):
-        return {"ok": True}
-    message = callback.get("message") or {}
-    chat_id = (message.get("chat") or {}).get("id")
-    message_id = message.get("message_id")
-    callback_id = callback.get("id")
-    try:
-        _telegram_request(
-            bot_token,
-            "answerCallbackQuery",
-            {
-                "callback_query_id": callback_id,
-                "text": "✅ Marcado como comprobado",
-            },
-        )
-        if chat_id and message_id:
-            _telegram_request(
-                bot_token,
-                "editMessageReplyMarkup",
-                {
-                    "chat_id": chat_id,
-                    "message_id": message_id,
-                    "reply_markup": {
-                        "inline_keyboard": [
-                            [
-                                {
-                                    "text": "✅ Comprobado",
-                                    "callback_data": data,
-                                }
-                            ]
-                        ]
-                    },
-                },
-            )
-    except Exception:
+    chat_id = str((callback.get("message") or {}).get("chat", {}).get("id") or "")
+    message_id = (callback.get("message") or {}).get("message_id")
+    callback_id = callback.get("id") or ""
+
+    def responder(texto: str) -> None:
+        try:
+            _telegram_request(bot_token, "answerCallbackQuery", {"callback_query_id": callback_id, "text": texto})
+        except Exception:
+            pass
+
+    def enviar(texto: str, teclado: Optional[list[list[dict[str, Any]]]] = None) -> None:
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": texto}
+        if teclado:
+            payload["reply_markup"] = {"inline_keyboard": teclado}
+        _telegram_request(bot_token, "sendMessage", payload)
+
+    if not chat_id:
         return {"ok": False}
+
+    if data.startswith("check_"):
+        try:
+            responder("✅ Marcado como comprobado")
+            if message_id:
+                _telegram_request(
+                    bot_token,
+                    "editMessageReplyMarkup",
+                    {
+                        "chat_id": chat_id,
+                        "message_id": message_id,
+                        "reply_markup": {
+                            "inline_keyboard": [[{"text": "✅ Comprobado", "callback_data": data}]]
+                        },
+                    },
+                )
+        except Exception:
+            return {"ok": False}
+        return {"ok": True}
+
+    if data == "sinop":
+        return {"ok": True}
+
+    if data == "cancelar":
+        _flujo_clear(bot_token, chat_id)
+        responder("✖️ Cancelado")
+        enviar("✖️ Operación cancelada.")
+        return {"ok": True}
+
+    if data in {"menu_pedido", "menu_linea"}:
+        modo = "linea" if data == "menu_linea" else "pedido"
+        _enviar_lista_pedidos(bot_token, chat_id, modo, 0)
+        return {"ok": True}
+
+    if data.startswith("pedidos:"):
+        _, modo, offset = data.split(":")
+        _enviar_lista_pedidos(bot_token, chat_id, modo, int(offset or 0))
+        return {"ok": True}
+
+    if data.startswith("pedido:"):
+        _, modo, pedido = data.split(":", 2)
+        if modo == "linea":
+            _flujo_set(bot_token, chat_id, {"paso": "linea", "pedido": pedido})
+            _enviar_lista_lineas(bot_token, chat_id, pedido, 0)
+        else:
+            _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido})
+            responder(f"Pedido {pedido} seleccionado")
+            enviar(
+                f"✍️ Escribe el mensaje para el pedido **{pedido}**:",
+                _teclado_cancelar(),
+            )
+        return {"ok": True}
+
+    if data.startswith("lineas:"):
+        _, pedido, offset = data.split(":", 2)
+        _enviar_lista_lineas(bot_token, chat_id, pedido, int(offset or 0))
+        return {"ok": True}
+
+    if data.startswith("linea:"):
+        _, pedido, huella = data.split(":", 2)
+        pos = _posicion_linea(pedido, huella)
+        _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido, "linea": huella})
+        responder(f"Línea {pos} seleccionada")
+        enviar(
+            f"✍️ Escribe el mensaje para el pedido **{pedido}**, línea **{pos}**:",
+            _teclado_cancelar(),
+        )
+        return {"ok": True}
+
+    if data.startswith("responder:"):
+        comentario_id = data.split(":", 1)[1]
+        rows = _query(
+            f"SELECT pedido_id, linea_huella, autor_nombre FROM `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
+            f"WHERE comentario_id = {_esc(comentario_id)} LIMIT 1"
+        )
+        if not rows:
+            responder("Mensaje no encontrado")
+            return {"ok": True}
+        c = rows[0]
+        pedido = str(c.get("pedido_id") or "")
+        linea = (c.get("linea_huella") or "") or None
+        if not pedido:
+            responder("Ese mensaje no tiene pedido asociado")
+            return {"ok": True}
+        autor = str(c.get("autor_nombre") or "encargado")
+        _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido, "linea": linea})
+        pos = _posicion_linea(pedido, linea) if linea else None
+        destino = f"pedido **{pedido}**" + (f", línea **{pos}**" if pos else "")
+        responder("Respondiendo…")
+        enviar(
+            f"✍️ Responde a **{autor}** ({destino}):",
+            _teclado_cancelar(),
+        )
+        return {"ok": True}
+
     return {"ok": True}
+
+
+def _teclado_cancelar() -> list[list[dict[str, Any]]]:
+    return [[{"text": "✖️ Cancelar", "callback_data": "cancelar"}]]
+
+
+def _flujo_get(bot_token: str, chat_id: str) -> dict[str, Any]:
+    rows = _query(
+        f"SELECT valor_texto FROM `{PROJECT}.{PICKING_DATASET}.{NOTIFICACIONES_META_TABLE}` "
+        f"WHERE clave = {_esc('flujo:' + bot_token + ':' + chat_id)}"
+    )
+    if not rows:
+        return {}
+    try:
+        flujo = json.loads(rows[0]["valor_texto"] or "{}")
+        return flujo if isinstance(flujo, dict) else {}
+    except Exception:
+        return {}
+
+
+def _flujo_set(bot_token: str, chat_id: str, flujo: dict[str, Any]) -> None:
+    client.query(
+        f"""
+        MERGE INTO `{PROJECT}.{PICKING_DATASET}.{NOTIFICACIONES_META_TABLE}` AS t
+        USING (SELECT {_esc('flujo:' + bot_token + ':' + chat_id)} AS clave, {_esc(json.dumps(flujo))} AS valor_texto) AS s
+        ON t.clave = s.clave
+        WHEN MATCHED THEN UPDATE SET valor_texto = s.valor_texto
+        WHEN NOT MATCHED THEN INSERT (clave, valor_texto) VALUES (s.clave, s.valor_texto)
+        """
+    ).result()
+
+
+def _flujo_clear(bot_token: str, chat_id: str) -> None:
+    client.query(
+        f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{NOTIFICACIONES_META_TABLE}` "
+        f"WHERE clave = {_esc('flujo:' + bot_token + ':' + chat_id)}"
+    ).result()
+
+
+def _pedidos_activos() -> list[dict[str, Any]]:
+    return _query(
+        f"""
+        SELECT p.NUMERO_PEDIDO, p.FINCA_CARGA, p.FECHA_CARGA, c.N_COMERCIAL
+        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+        WHERE p.ESTADO_PEDIDO IN (2, 3)
+        ORDER BY p.FECHA_CARGA DESC, p.NUMERO_PEDIDO DESC
+        LIMIT 300
+        """
+    )
+
+
+def _lineas_pedido(pedido: str) -> list[dict[str, Any]]:
+    return _query(
+        f"""
+        SELECT HUELLA_DIGITAL, POSICION_PEDIDO, REFERENCIA_ARTICULO, DESCRIPCION_ARTICULO,
+               DESCRIPCION_SISTEMA, CODIGO_LITRAJE, CODIGO_SECTOR
+        FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO`
+        WHERE NUMERO_PEDIDO = {_esc(pedido)} AND LINEA_ACTIVA = 'true'
+        ORDER BY CAST(POSICION_PEDIDO AS INT64)
+        """
+    )
+
+
+def _pedido_existe(pedido: str) -> bool:
+    rows = _query(
+        f"SELECT NUMERO_PEDIDO FROM `{PROJECT}.{DATASET}.PEDIDOS` "
+        f"WHERE NUMERO_PEDIDO = {_esc(pedido)} LIMIT 1"
+    )
+    return bool(rows)
+
+
+def _formato_pedido(r: dict[str, Any]) -> str:
+    fecha = r.get("FECHA_CARGA")
+    fecha_txt = ""
+    if fecha is not None:
+        try:
+            fecha_txt = " · " + fecha.strftime("%d/%m")
+        except Exception:
+            fecha_txt = ""
+    cliente = str(r.get("N_COMERCIAL") or "").strip()
+    finca = str(r.get("FINCA_CARGA") or "").strip()
+    return f"{r.get('NUMERO_PEDIDO')} · {cliente or 's/cliente'} · {finca or 's/finca'}{fecha_txt}"
+
+
+def _formato_linea(r: dict[str, Any]) -> str:
+    pos = str(r.get("POSICION_PEDIDO") or "")
+    ref = str(r.get("REFERENCIA_ARTICULO") or "").strip()
+    desc = str(r.get("DESCRIPCION_ARTICULO") or "").strip() or str(r.get("DESCRIPCION_SISTEMA") or "").strip()
+    litraje = str(r.get("CODIGO_LITRAJE") or "").strip()
+    sector = str(r.get("CODIGO_SECTOR") or "").strip()
+    partes = [p for p in [f"L{pos}", ref, desc, litraje, sector] if p]
+    return " · ".join(partes)
+
+
+def _enviar_lista_pedidos(bot_token: str, chat_id: str, modo: str, offset: int) -> None:
+    pedidos = _pedidos_activos()
+    pagina = pedidos[offset:offset + 10]
+    if not pagina:
+        _telegram_request(
+            bot_token, "sendMessage",
+            {"chat_id": chat_id, "text": "No hay pedidos activos en este momento."},
+        )
+        return
+    teclado: list[list[dict[str, Any]]] = []
+    for p in pagina:
+        teclado.append([
+            {
+                "text": _formato_pedido(p),
+                "callback_data": f"pedido:{modo}:{p.get('NUMERO_PEDIDO')}",
+            }
+        ])
+    total_paginas = (len(pedidos) + 9) // 10
+    nav: list[dict[str, Any]] = []
+    if offset > 0:
+        nav.append({"text": "◀️", "callback_data": f"pedidos:{modo}:{max(0, offset - 10)}"})
+    nav.append({"text": f"{offset // 10 + 1}/{total_paginas}", "callback_data": "sinop"})
+    if offset + 10 < len(pedidos):
+        nav.append({"text": "▶️", "callback_data": f"pedidos:{modo}:{offset + 10}"})
+    teclado.append(nav)
+    teclado.append([{"text": "✖️ Cancelar", "callback_data": "cancelar"}])
+    titulo = "📦 Mensaje al pedido: elige un pedido activo:" if modo == "pedido" \
+        else "📋 Mensaje a línea: elige primero el pedido:"
+    _telegram_request(
+        bot_token, "sendMessage",
+        {"chat_id": chat_id, "text": titulo, "reply_markup": {"inline_keyboard": teclado}},
+    )
+
+
+def _enviar_lista_lineas(bot_token: str, chat_id: str, pedido: str, offset: int) -> None:
+    lineas = _lineas_pedido(pedido)
+    pagina = lineas[offset:offset + 12]
+    if not pagina:
+        _telegram_request(
+            bot_token, "sendMessage",
+            {"chat_id": chat_id, "text": f"El pedido {pedido} no tiene líneas activas."},
+        )
+        return
+    teclado: list[list[dict[str, Any]]] = []
+    for l in pagina:
+        teclado.append([
+            {
+                "text": _formato_linea(l),
+                "callback_data": f"linea:{pedido}:{l.get('HUELLA_DIGITAL')}",
+            }
+        ])
+    total_paginas = (len(lineas) + 11) // 12
+    nav: list[dict[str, Any]] = []
+    if offset > 0:
+        nav.append({"text": "◀️", "callback_data": f"lineas:{pedido}:{max(0, offset - 12)}"})
+    nav.append({"text": f"{offset // 12 + 1}/{total_paginas}", "callback_data": "sinop"})
+    if offset + 12 < len(lineas):
+        nav.append({"text": "▶️", "callback_data": f"lineas:{pedido}:{offset + 12}"})
+    teclado.append(nav)
+    teclado.append([{"text": "✖️ Cancelar", "callback_data": "cancelar"}])
+    _telegram_request(
+        bot_token, "sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": f"📋 Líneas del pedido {pedido} (elige una):",
+            "reply_markup": {"inline_keyboard": teclado},
+        },
+    )
 
 
 # ---------------- Notificaciones push (FCM) y chat oficina <-> encargados ----------------
@@ -523,6 +767,7 @@ def _insertar_comentario(
     texto: str,
     adjunto_url: Optional[str] = None,
 ) -> None:
+    linea = (linea or "").strip() or None
     client.query(
         f"INSERT INTO `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
         f"(comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, adjunto_url, creado_en) "
@@ -592,10 +837,9 @@ def _contexto_pedido(pedido: str) -> str:
     n_comercial = (r.get("N_COMERCIAL") or "").strip()
     n_fiscal = (r.get("N_FISCAL") or "").strip()
     if n_comercial:
-        cliente = f"👤 Cliente: {n_comercial}"
+        lineas.append(f"👤 Cliente: {n_comercial}")
         if n_fiscal and n_fiscal.upper() != n_comercial.upper():
-            cliente += f" · 🏢 Fiscal: {n_fiscal}"
-        lineas.append(cliente)
+            lineas.append(f"🏢 Fiscal: {n_fiscal}")
     comercial = (r.get("NOMBRE_AGENTE") or "").strip()
     if comercial:
         lineas.append(f"🤝 Comercial: {comercial}")
@@ -788,43 +1032,110 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
     text = (message.get("text") or "").strip()
     if not text:
         return {"ok": True}
-    chat_id = (message.get("chat") or {}).get("id")
+    chat_id = str((message.get("chat") or {}).get("id") or "")
     from_user = message.get("from") or {}
     nombre = f"{(from_user.get('first_name') or '')} {(from_user.get('last_name') or '')}".strip() or "Oficina"
-    if chat_id:
-        client.query(
-            f"""
-            MERGE INTO `{PROJECT}.{PICKING_DATASET}.{NOTIFICACIONES_META_TABLE}` AS t
-            USING (SELECT {_esc('oficina_chat_id:' + bot_token)} AS clave, {_esc(str(chat_id))} AS valor_texto) AS s
-            ON t.clave = s.clave
-            WHEN MATCHED THEN UPDATE SET valor_texto = s.valor_texto
-            WHEN NOT MATCHED THEN INSERT (clave, valor_texto) VALUES (s.clave, s.valor_texto)
-            """
-        ).result()
+    if not chat_id:
+        return {"ok": True}
+
+    def responder_chat(mensaje: str, teclado: Optional[list[list[dict[str, Any]]]] = None) -> None:
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": mensaje}
+        if teclado:
+            payload["reply_markup"] = {"inline_keyboard": teclado}
+        try:
+            _telegram_request(bot_token, "sendMessage", payload)
+        except Exception:
+            pass
+
+    def publicar(pedido: str, linea: Optional[str], cuerpo: str) -> None:
+        _insertar_comentario(pedido, linea, "oficina@telegram", nombre, "SUPERUSUARIO", "telegram", cuerpo)
+        if pedido:
+            finca = _finca_pedido(pedido)
+            destinos = _encargados_finca(finca)
+        else:
+            finca = ""
+            destinos = [r["email"] for r in _query(
+                f"SELECT email FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`"
+            )]
+        for email in destinos:
+            try:
+                _enviar_fcm(
+                    email,
+                    f"Mensaje de la oficina · Pedido {pedido}" if pedido else "Aviso de la oficina",
+                    cuerpo,
+                    {"tipo": "comentario", "pedido": pedido, "linea": linea or "", "canal": "telegram"},
+                )
+            except Exception:
+                pass
+
+    # --- Responder nativo de Telegram: reply_to_message sobre un mensaje del bot ---
+    reply = message.get("reply_to_message") or {}
+    reply_text = f"{(reply.get('text') or '')} {(reply.get('caption') or '')}"
+    pm = re.search(r"Pedido\s+(\d+)", reply_text) if reply_text else None
+    if pm:
+        flujo = _flujo_get(bot_token, chat_id)
+        if flujo.get("paso") != "texto":
+            pedido_reply = pm.group(1)
+            lm = re.search(r"Línea\s+(\d+)", reply_text)
+            huella = None
+            if lm:
+                rows = _query(
+                    f"SELECT HUELLA_DIGITAL FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` "
+                    f"WHERE NUMERO_PEDIDO = {_esc(pedido_reply)} AND POSICION_PEDIDO = {_esc(lm.group(1))} "
+                    f"AND LINEA_ACTIVA = 'true' LIMIT 1"
+                )
+                if rows:
+                    huella = rows[0]["HUELLA_DIGITAL"]
+            publicar(pedido_reply, huella, text)
+            pos = _posicion_linea(pedido_reply, huella) if huella else None
+            destino = f"pedido {pedido_reply}" + (f", línea {pos}" if pos else "")
+            responder_chat(f"✅ Mensaje enviado a los encargados del {destino}.")
+            return {"ok": True}
+
+    # --- Flujo de menú pendiente (esperando texto) ---
+    flujo = _flujo_get(bot_token, chat_id)
+    if flujo.get("paso") == "texto":
+        pedido = str(flujo.get("pedido") or "")
+        linea = (flujo.get("linea") or "") or None
+        _flujo_clear(bot_token, chat_id)
+        publicar(pedido, linea, text)
+        if pedido:
+            pos = _posicion_linea(pedido, linea) if linea else None
+            destino = f"pedido {pedido}" + (f", línea {pos}" if pos else "")
+            responder_chat(f"✅ Mensaje enviado a los encargados del {destino}.")
+        else:
+            responder_chat("✅ Mensaje enviado a todos los encargados.")
+        return {"ok": True}
+
+    # --- Atajo directo: #pedido texto ---
     m = re.match(r"^\s*#(\d+)\b\s*(.*)$", text, re.S)
-    pedido = m.group(1) if m else ""
-    cuerpo = (m.group(2) if m else text).strip() or "(sin texto)"
-    _insertar_comentario(pedido, None, "oficina@telegram", nombre, "SUPERUSUARIO", "telegram", f"{pedido and ('#' + pedido + ' ') or ''}{cuerpo}")
-    if pedido:
-        finca = _finca_pedido(pedido)
-        destinos = _encargados_finca(finca)
-    else:
-        finca = ""
-        destinos = [r["email"] for r in _query(
-            f"SELECT email FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`"
-        )]
-    for email in destinos:
-        _enviar_fcm(
-            email,
-            f"Mensaje de la oficina · Pedido {pedido}" if pedido else "Aviso de la oficina",
-            cuerpo,
-            {"tipo": "comentario", "pedido": pedido, "linea": "", "canal": "telegram"},
-        )
-    try:
-        _telegram_request(bot_token, "sendMessage", {"chat_id": chat_id, "text": "📨 Mensaje registrado y enviado a los encargados."})
-    except Exception:
-        pass
+    if m:
+        pedido = m.group(1)
+        cuerpo = (m.group(2) or "").strip() or "(sin texto)"
+        if not _pedido_existe(pedido):
+            responder_chat(
+                f"⚠️ El pedido **#{pedido}** no existe. Revisa el número.",
+                _teclado_principal(),
+            )
+            return {"ok": True}
+        publicar(pedido, None, f"#{pedido} {cuerpo}")
+        responder_chat(f"✅ Mensaje registrado y enviado a los encargados del pedido {pedido}.")
+        return {"ok": True}
+
+    # --- Sin # ni flujo: menú principal ---
+    responder_chat(
+        "¿Qué quieres enviar a los encargados?",
+        _teclado_principal(),
+    )
     return {"ok": True}
+
+
+def _teclado_principal() -> list[list[dict[str, Any]]]:
+    return [
+        [{"text": "📦 Mensaje al pedido", "callback_data": "menu_pedido"}],
+        [{"text": "📋 Mensaje a línea de pedido", "callback_data": "menu_linea"}],
+        [{"text": "✖️ Cancelar", "callback_data": "cancelar"}],
+    ]
 
 
 @app.post("/api/notificar")
@@ -860,7 +1171,7 @@ def notificar_cambios(
                 enviadas += 1
 
     comentarios = _query(
-        f"SELECT pedido_id, linea_huella, autor_nombre, rol, canal, texto, adjunto_url "
+        f"SELECT comentario_id, pedido_id, linea_huella, autor_nombre, rol, canal, texto, adjunto_url "
         f"FROM `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
         f"WHERE creado_en > TIMESTAMP({_esc(wm_str)})"
     )
@@ -915,13 +1226,19 @@ def notificar_cambios(
                         _telegram_request(
                             bot_token,
                             "sendMessage",
-                            {"chat_id": chat_id, "text": cuerpo},
+                            {"chat_id": chat_id, "text": cuerpo,
+                             "reply_markup": {"inline_keyboard": [[
+                                 {"text": "↩️ Responder", "callback_data": f"responder:{c.get('comentario_id')}"}
+                             ]]}},
                         )
                     else:
                         _telegram_request(
                             bot_token,
                             "sendMessage",
-                            {"chat_id": chat_id, "text": cuerpo},
+                            {"chat_id": chat_id, "text": cuerpo,
+                             "reply_markup": {"inline_keyboard": [[
+                                 {"text": "↩️ Responder", "callback_data": f"responder:{c.get('comentario_id')}"}
+                             ]]}},
                         )
                 except Exception:
                     pass

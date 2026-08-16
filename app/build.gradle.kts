@@ -14,7 +14,10 @@ android {
 
     val secrets = Properties().apply {
         val file = rootProject.file("secrets.properties")
-        if (file.exists()) file.inputStream().use { load(it) }
+        if (file.exists()) {
+            val contenido = file.readText().trimStart('\uFEFF')
+            load(contenido.toByteArray().inputStream())
+        }
     }
 
     defaultConfig {

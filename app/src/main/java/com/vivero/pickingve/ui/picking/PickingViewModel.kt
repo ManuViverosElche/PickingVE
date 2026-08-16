@@ -2,6 +2,7 @@ package com.vivero.pickingve.ui.picking
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vivero.pickingve.data.local.entities.ChatEstadoEntity
 import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
@@ -9,7 +10,8 @@ import com.vivero.pickingve.data.local.entities.ProductEntity
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
-import com.vivero.pickingve.domain.usecase.MatchOcrUseCase
+import com.vivero.pickingve.domain.usecase.ParsePlantPassportUseCase
+import com.vivero.pickingve.domain.usecase.PassportData
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -195,6 +197,26 @@ class PickingViewModel(
     fun selectOrder(orderId: String) {
         selectedOrderId.value = orderId
         viewModelScope.launch { repository.clearOrderModificado(orderId) }
+        actualizarChatEstados()
+    }
+
+    val chatEstados: StateFlow<List<ChatEstadoEntity>> = repository.observeChatEstados()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun actualizarChatEstados() {
+        val pedidoId = selectedOrderId.value ?: return
+        viewModelScope.launch {
+            try {
+                val comentarios = PickingApiClient().fetchComentarios(pedidoId)
+                repository.actualizarChatEstados(comentarios)
+            } catch (e: Exception) {
+                // Sin red: se mantiene el último estado conocido
+            }
+        }
+    }
+
+    fun marcarChatLeido(hiloId: String) {
+        viewModelScope.launch { repository.marcarChatLeido(hiloId) }
     }
 
     suspend fun getNextPickingNumber(): Int {
@@ -224,18 +246,26 @@ class PickingViewModel(
         }
     }
 
-    /** Raw text captured via OCR fallback (label without EAN). */
+    /** Raw text captured via OCR fallback (plant passport label without EAN). */
     fun onOcrText(text: String) {
         viewModelScope.launch {
-            val (product, score) = MatchOcrUseCase().bestMatch(text, repository.allProducts())
-            if (product == null) {
-                lastMessage.value = "Sin coincidencia clara (score $score) para: ${text.take(60)}"
+            val passport = ParsePlantPassportUseCase().parse(text)
+            if (passport == null) {
+                lastMessage.value = "No se detectó la referencia C: en la etiqueta"
+                return@launch
+            }
+            val producto = ParsePlantPassportUseCase().bestMatch(passport, repository.allProducts())
+            if (producto == null) {
+                val leido = "C: ${passport.referencia}" +
+                    (passport.litraje?.let { " · Litraje $it" } ?: "") +
+                    (passport.sector?.let { " · Sector $it" } ?: "")
+                lastMessage.value = "No encontrado en el catálogo ($leido)"
             } else {
                 val currentState = uiState.value
                 when {
-                    currentState.unpickingMode -> unpickByScanProduct(product)
-                    currentState.sobrante -> unpickSobranteByScan(product)
-                    else -> resolveProduct(product)
+                    currentState.unpickingMode -> unpickByScanProduct(producto)
+                    currentState.sobrante -> unpickSobranteByScan(producto)
+                    else -> resolveProduct(producto)
                 }
             }
         }
