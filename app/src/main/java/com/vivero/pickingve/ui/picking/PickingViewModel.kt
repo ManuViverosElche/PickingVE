@@ -38,6 +38,7 @@ data class PickingUiState(
     val substitutedByLine: Map<String, Int> = emptyMap(),
     val litrajes: List<LitrajeEntity> = emptyList(),
     val sectores: List<SectorEntity> = emptyList(),
+    val compensacionesPorLinea: Map<String, Int> = emptyMap(),
     val lastMessage: String? = null,
     val sendingReport: Boolean = false,
     val sendingLabels: Boolean = false,
@@ -138,6 +139,14 @@ class PickingViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    private val compensacionesPorLinea: StateFlow<Map<String, Int>> = selectedOrderId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyMap())
+            else repository.observeCompensacionesPendientes(id)
+                .map { rows -> rows.mapNotNull { it.orderLineId?.let { id2 -> id2 to it.cnt } }.toMap() }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     private val litrajes: StateFlow<List<LitrajeEntity>> = repository.observeLitrajes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -208,6 +217,8 @@ class PickingViewModel(
         base.copy(availableProducts = products)
     }.combine(repository.observeSectores()) { base, sectores ->
         base.copy(sectores = sectores)
+    }.combine(compensacionesPorLinea) { base, compensaciones ->
+        base.copy(compensacionesPorLinea = compensaciones)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PickingUiState())
 
     private data class Quint(
@@ -413,6 +424,7 @@ class PickingViewModel(
             return
         }
         val ok = repository.unpickLineByScan(orderId, target.orderLineId)
+        if (ok) subirPendientesBestEffort()
         lastMessage.value = if (ok) {
             "Desacopiado ${target.productId} x 1 (escaneo)"
         } else {
@@ -426,11 +438,26 @@ class PickingViewModel(
             return
         }
         val success = repository.unpickSobrante(orderId, product.reference)
+        if (success) subirPendientesBestEffort()
         if (success) {
             lastMessage.value = "Sobrante devuelto: ${product.name}"
         } else {
             lastMessage.value = "No hay sobrante acopiado de ${product.name}"
         }
+    }
+
+    private suspend fun subirPendientesBestEffort() {
+        try {
+            repository.uploadPendingRegistros(PickingApiClient())
+        } catch (e: Exception) {
+            // Sin red: la compensación se sube en el siguiente ciclo
+        }
+    }
+
+    /** Cuánto muestra la UI como acopiado, descontando compensaciones pendientes de subir. */
+    private suspend fun shownPicked(line: OrderLineEntity, comps: Map<String, Int>): Int {
+        val compensado = comps[line.orderLineId] ?: 0
+        return maxOf(line.pickedQty, line.acopiadoServidor - compensado)
     }
 
     /**
@@ -444,8 +471,12 @@ class PickingViewModel(
             return
         }
         val lines = repository.orderLinesList(orderId)
+        val comps = repository.compensacionesPendientes(orderId)
+            .mapNotNull { it.orderLineId?.let { l -> l to it.cnt } }.toMap()
         val vigenteLines = lines.filter { it.vigente }
-        val pendingLines = vigenteLines.filter { (it.requestedQty - maxOf(it.pickedQty, it.acopiadoServidor)) > 0 }
+        val pendingLines = vigenteLines.filter {
+            (it.requestedQty - shownPicked(it, comps)) > 0
+        }
 
         val pendingMatches = pendingLines.filter { line ->
             line.productId == product.reference || line.productId == product.id
@@ -541,8 +572,12 @@ class PickingViewModel(
         val orderId = selectedOrderId.value ?: return
         viewModelScope.launch {
             val lines = repository.orderLinesList(orderId)
+            val comps = repository.compensacionesPendientes(orderId)
+                .mapNotNull { it.orderLineId?.let { l -> l to it.cnt } }.toMap()
             val vigenteLines = lines.filter { it.vigente }
-            val pendingLines = vigenteLines.filter { (it.requestedQty - maxOf(it.pickedQty, it.acopiadoServidor)) > 0 }
+            val pendingLines = vigenteLines.filter {
+                (it.requestedQty - shownPicked(it, comps)) > 0
+            }
             pendingLinePick.value = PendingLinePick(
                 orderId = orderId,
                 product = warning.product,
@@ -766,6 +801,7 @@ fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
     fun unpickLine(line: OrderLineEntity, qty: Int) {
         viewModelScope.launch {
             repository.unpickLine(line.orderId, line.orderLineId, qty)
+            subirPendientesBestEffort()
             lastMessage.value = "Desacopiado ${line.productId} x $qty"
         }
     }

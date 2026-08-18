@@ -4,17 +4,12 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
-import android.graphics.YuvImage
-import android.media.Image
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.CameraUnavailableException
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -57,13 +52,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 enum class CameraModo { SCAN, PASAPORTE, AMBOS }
 
-@OptIn(ExperimentalGetImage::class)
 @Composable
 fun CameraScannerScreen(
     viewModel: PickingViewModel,
@@ -178,7 +171,7 @@ fun CameraScannerScreen(
             return
         }
         ocrLoading = true
-        runOcr(capture, viewModel) { ocrLoading = false }
+        runOcr(context, capture, executor, viewModel) { ocrLoading = false }
     }
 
     fun onCodigoLeido(codigo: String) {
@@ -326,14 +319,25 @@ fun CameraScannerScreen(
 }
 
 private fun runOcr(
+    context: android.content.Context,
     imageCapture: ImageCapture,
+    executor: Executor,
     viewModel: PickingViewModel,
     onDone: () -> Unit
 ) {
     CoroutineScope(Dispatchers.Main).launch {
         try {
-            val bitmap = imageCapture.takePictureBitmap()
-            val text = withContext(Dispatchers.Default) { bitmap?.let { OcrReader.readText(it) } }
+            val file = java.io.File(context.cacheDir, "ocr_${System.currentTimeMillis()}.jpg")
+            val ok = imageCapture.takePictureToFile(file, executor)
+            val text = if (ok) {
+                withContext(Dispatchers.Default) {
+                    val bitmap = decodeSampled(file, 1600)
+                    bitmap?.let { OcrReader.readText(it) }
+                }
+            } else {
+                null
+            }
+            file.delete()
             if (text != null) {
                 viewModel.onOcrText(text)
             } else {
@@ -346,39 +350,30 @@ private fun runOcr(
     }
 }
 
-private suspend fun ImageCapture.takePictureBitmap(): Bitmap? = suspendCoroutine { cont ->
-    takePicture(
-        Executors.newSingleThreadExecutor(),
-        object : ImageCapture.OnImageCapturedCallback() {
-            override fun onCaptureSuccess(image: ImageProxy) {
-                val bitmap = image.toBitmapCompat()
-                image.close()
-                cont.resume(bitmap)
+private suspend fun ImageCapture.takePictureToFile(file: java.io.File, executor: Executor): Boolean =
+    suspendCoroutine { cont ->
+        val options = ImageCapture.OutputFileOptions.Builder(file).build()
+        takePicture(
+            options,
+            executor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    cont.resume(true)
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    cont.resume(false)
+                }
             }
+        )
+    }
 
-            override fun onError(exception: ImageCaptureException) {
-                cont.resume(null)
-            }
-        }
-    )
-}
-
-/** Converts a YUV_420_888 ImageProxy to an ARGB Bitmap. */
-private fun ImageProxy.toBitmapCompat(): Bitmap {
-    val yBuffer = planes[0].buffer
-    val uBuffer = planes[1].buffer
-    val vBuffer = planes[2].buffer
-    val ySize = yBuffer.remaining()
-    val uSize = uBuffer.remaining()
-    val vSize = vBuffer.remaining()
-
-    val nv21 = ByteArray(ySize + uSize + vSize)
-    yBuffer.get(nv21, 0, ySize)
-    vBuffer.get(nv21, ySize, vSize)
-    uBuffer.get(nv21, ySize + vSize, uSize)
-
-    val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-    val out = ByteArrayOutputStream()
-    yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 95, out)
-    return BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+/** Decodes a JPEG file capping the longest side to maxDim (avoids OOM on 12MP captures). */
+private fun decodeSampled(file: java.io.File, maxDim: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    var sample = 1
+    while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) sample *= 2
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    return BitmapFactory.decodeFile(file.absolutePath, options)
 }

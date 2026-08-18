@@ -80,8 +80,29 @@ interface PickingDao {
     )
     suspend fun markLabelsSent(ids: List<String>, at: Long)
 
-    @Query("UPDATE picking_records SET syncedBigQuery = 1 WHERE recordId IN (:ids)")
+    @Query("UPDATE picking_records SET syncedBigQuery = 1, wasUploaded = 1 WHERE recordId IN (:ids)")
     suspend fun markSyncedBigQuery(ids: List<String>)
+
+    @Query("DELETE FROM picking_records WHERE recordId = :recordId")
+    suspend fun deleteRecordPhysical(recordId: String)
+
+    @Query(
+        """
+        SELECT orderLineId, COALESCE(SUM(batchQty), 0) AS cnt FROM picking_records
+        WHERE orderId = :orderId AND deleted = 1 AND syncedBigQuery = 0
+        GROUP BY orderLineId
+        """
+    )
+    fun observeCompensacionesPendientes(orderId: String): Flow<List<LabelsRequestedByLine>>
+
+    @Query(
+        """
+        SELECT orderLineId, COALESCE(SUM(batchQty), 0) AS cnt FROM picking_records
+        WHERE orderId = :orderId AND deleted = 1 AND syncedBigQuery = 0
+        GROUP BY orderLineId
+        """
+    )
+    suspend fun getCompensacionesPendientes(orderId: String): List<LabelsRequestedByLine>
 
     @Query(
         "SELECT COALESCE(MAX(pickingNumber), 0) FROM picking_records WHERE orderId = :orderId"

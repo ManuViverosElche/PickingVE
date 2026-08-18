@@ -206,6 +206,18 @@ class PickingRepository(
             .apply()
     }
 
+    fun selectedDays(): Set<String> = prefs.getString(KEY_SELECTED_DAYS, "")
+        ?.split(",")
+        ?.map { it.trim() }
+        ?.filter { it.isNotEmpty() }
+        ?.toSet() ?: emptySet()
+
+    fun saveSelectedDays(days: Set<String>) {
+        prefs.edit()
+            .putString(KEY_SELECTED_DAYS, days.sorted().joinToString(","))
+            .apply()
+    }
+
     private fun ApiEncargado.toEntity() = EncargadoEntity(
         id = id,
         nombre = nombre,
@@ -331,7 +343,7 @@ class PickingRepository(
             orderDao.addLinePickedQty(lineId, -decrement)
             var remaining = decrement
             pickingDao.getRecordsForLine(lineId)
-                .filter { it.batchQty > 0 }
+                .filter { it.batchQty > 0 && !it.deleted }
                 .sortedByDescending { it.timestamp }
                 .forEach { record ->
                     if (remaining <= 0) return@forEach
@@ -349,7 +361,7 @@ class PickingRepository(
 
     suspend fun unpickSobrante(orderId: String, productRef: String): Boolean {
         val record = pickingDao.getRecordsForOrder(orderId)
-            .filter { it.batchQty > 0 && it.actualProductId == productRef }
+            .filter { it.batchQty > 0 && !it.deleted && it.actualProductId == productRef }
             .sortedByDescending { it.timestamp }
             .firstOrNull() ?: return false
         if (record.batchQty > 1) {
@@ -366,6 +378,12 @@ class PickingRepository(
 
     fun observePendingBigQuery(): Flow<List<PickingRecordEntity>> =
         pickingDao.observePendingBigQuery()
+
+    fun observeCompensacionesPendientes(orderId: String) =
+        pickingDao.observeCompensacionesPendientes(orderId)
+
+    suspend fun compensacionesPendientes(orderId: String) =
+        pickingDao.getCompensacionesPendientes(orderId)
 
     suspend fun recordsForOrder(orderId: String): List<PickingRecordEntity> =
         pickingDao.getRecordsForOrder(orderId)
@@ -936,27 +954,32 @@ class PickingRepository(
     suspend fun uploadPendingRegistros(api: PickingApiClient): Int {
         val pending = pickingDao.observePendingBigQuery().first()
         if (pending.isEmpty()) return 0
-        val registros = pending.map { r ->
-            val qty = if (r.deleted) -r.batchQty.toDouble() else r.batchQty.toDouble()
-            ApiRegistro(
-                recordId = r.recordId,
-                orderId = r.orderId,
-                pickingNumero = r.pickingNumber,
-                pickingTipo = r.pickingType,
-                orderLineId = r.orderLineId.orEmpty(),
-                eanEscaneado = r.scannedEan.orEmpty(),
-                ocrTexto = r.ocrRawText.orEmpty(),
-                refOriginal = r.originalProductId,
-                refServida = r.actualProductId,
-                sustituido = r.isSubstituted,
-                litros = r.liters?.toDouble(),
-                medida = r.measure.orEmpty(),
-                calibre = r.caliber.orEmpty(),
-                cantidadPartida = qty,
-                fechaHora = Instant.ofEpochMilli(r.timestamp).toString(),
-                empleadoEmail = r.empleadoEmail,
-                empleadoNombre = r.empleadoNombre
-            )
+        val registros = pending.mapNotNull { r ->
+            if (r.deleted && !r.wasUploaded) {
+                pickingDao.deleteRecordPhysical(r.recordId)
+                null
+            } else {
+                val qty = if (r.deleted) -r.batchQty.toDouble() else r.batchQty.toDouble()
+                ApiRegistro(
+                    recordId = r.recordId,
+                    orderId = r.orderId,
+                    pickingNumero = r.pickingNumber,
+                    pickingTipo = r.pickingType,
+                    orderLineId = r.orderLineId.orEmpty(),
+                    eanEscaneado = r.scannedEan.orEmpty(),
+                    ocrTexto = r.ocrRawText.orEmpty(),
+                    refOriginal = r.originalProductId,
+                    refServida = r.actualProductId,
+                    sustituido = r.isSubstituted,
+                    litros = r.liters?.toDouble(),
+                    medida = r.measure.orEmpty(),
+                    calibre = r.caliber.orEmpty(),
+                    cantidadPartida = qty,
+                    fechaHora = Instant.ofEpochMilli(r.timestamp).toString(),
+                    empleadoEmail = r.empleadoEmail,
+                    empleadoNombre = r.empleadoNombre
+                )
+            }
         }
 
         var attempt = 0
@@ -977,8 +1000,8 @@ class PickingRepository(
         val accepted = response?.acceptedIds.orEmpty()
         if (accepted.isNotEmpty()) {
             pickingDao.markSyncedBigQuery(accepted)
-            pending.filter { it.deleted && it.recordId in accepted }.forEach {
-                pickingDao.deleteRecord(it.recordId) // physical cleanup after sync
+            pending.filter { it.deleted && it.wasUploaded && it.recordId in accepted }.forEach {
+                pickingDao.deleteRecordPhysical(it.recordId) // physical cleanup after sync
             }
         }
 
@@ -1035,7 +1058,8 @@ class PickingRepository(
      * cantidad de la línea asociada.
      */
     suspend fun unpickRecordsByLine(orderId: String, recordIds: List<String>) {
-        val records = pickingDao.getRecordsForOrder(orderId).filter { it.recordId in recordIds }
+        val records = pickingDao.getRecordsForOrder(orderId)
+            .filter { it.recordId in recordIds && !it.deleted }
         if (records.isEmpty()) return
         pickingDao.deleteRecordsByIds(recordIds)
         val linesById = orderDao.getLinesForOrder(orderId).associateBy { it.orderLineId }
@@ -1059,7 +1083,7 @@ class PickingRepository(
      */
     suspend fun unpickLineByScan(orderId: String, lineId: String): Boolean {
         val records = pickingDao.getRecordsForOrder(orderId)
-            .filter { it.orderLineId == lineId }
+            .filter { it.orderLineId == lineId && !it.deleted }
             .sortedByDescending { it.timestamp }
         val record = records.firstOrNull()
             ?: return false
@@ -1169,5 +1193,6 @@ class PickingRepository(
         const val KEY_ENCARGADO_EMAIL = "encargado_email"
         const val KEY_ENCARGADO_ACTIVO = "encargado_activo"
         const val KEY_SELECTED_FINCAS = "selected_fincas"
+        const val KEY_SELECTED_DAYS = "selected_days"
     }
 }

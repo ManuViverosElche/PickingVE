@@ -29,5 +29,6 @@ data class PickingRecordEntity(
     val syncedTelegram: Boolean = false,
     val empleadoEmail: String = "",
     val empleadoNombre: String = "",
-    val deleted: Boolean = false
+    val deleted: Boolean = false,
+    val wasUploaded: Boolean = false
 )

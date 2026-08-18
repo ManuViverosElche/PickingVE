@@ -47,7 +47,7 @@ class OrderListViewModel(
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    private val _selectedDays = MutableStateFlow(setOf(LocalDate.now()))
+    private val _selectedDays = MutableStateFlow(initialSelectedDays())
     val selectedDays: StateFlow<Set<LocalDate>> = _selectedDays
 
     private val _assignedFincas = MutableStateFlow(parseFincas(repository.currentEncargado()?.fincasCarga))
@@ -102,7 +102,9 @@ class OrderListViewModel(
 
     fun toggleDay(date: LocalDate) {
         val current = _selectedDays.value
-        _selectedDays.value = if (date in current) current - date else current + date
+        val next = if (date in current) current - date else current + date
+        _selectedDays.value = next
+        repository.saveSelectedDays(next.map { it.toString() }.toSet())
     }
 
     fun toggleFinca(finca: String) {
@@ -152,6 +154,15 @@ class OrderListViewModel(
         val assigned = _assignedFincas.value
         val valid = saved.intersect(assigned.toSet())
         return if (valid.isNotEmpty()) valid else assigned.toSet()
+    }
+
+    private fun initialSelectedDays(): Set<LocalDate> {
+        val hoy = LocalDate.now()
+        val saved = repository.selectedDays()
+            .mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }
+            .filter { !it.isBefore(hoy) }
+            .toSet()
+        return if (saved.isNotEmpty()) saved else setOf(hoy)
     }
 
     private fun reconcileSelection(assigned: List<String>) {

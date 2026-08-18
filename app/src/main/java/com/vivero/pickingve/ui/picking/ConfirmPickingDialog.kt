@@ -41,6 +41,7 @@ fun ConfirmPickingDialog(
     pending: PendingConfirm,
     line: OrderLineEntity?,
     litrajes: List<LitrajeEntity>,
+    compensaciones: Map<String, Int>,
     onConfirm: (
         liters: Float?,
         measure: String?,
@@ -62,8 +63,15 @@ fun ConfirmPickingDialog(
     var caliber by remember { mutableStateOf(product.defaultCaliber.orEmpty()) }
     var labelOption by remember { mutableStateOf(0) }
     var labelFormat by remember { mutableStateOf("") }
-    var qtyText by remember { mutableStateOf("1") }
-    val ventaDirecta = product.reference.startsWith("90000")
+    val ventaDirecta = product.reference.startsWith("9")
+    val shownPicked = remember(line, compensaciones) {
+        if (line == null) 0
+        else maxOf(line.pickedQty, line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0))
+    }
+    val defaultQty = if (ventaDirecta && line != null) {
+        (line.requestedQty - shownPicked).coerceAtLeast(1)
+    } else 1
+    var qtyText by remember(pending, line) { mutableStateOf(defaultQty.toString()) }
     val qty = if (ventaDirecta) (qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1) else 1
     val measureValid = !requiresMeasure || measure.isNotBlank()
 
@@ -127,17 +135,17 @@ fun ConfirmPickingDialog(
                                 )
                             }
                             if (line != null) {
-                                val remaining = line.requestedQty - line.pickedQty
+                                val remaining = line.requestedQty - shownPicked
                                 if (remaining < 0) {
                                     Text(
-                                        "⚠ Línea ya completada (${line.pickedQty}/${line.requestedQty}). Se acopiará MÁS de lo pedido (sobreacopio: ${-remaining}).",
+                                        "⚠ Línea ya completada (${shownPicked}/${line.requestedQty}). Se acopiará MÁS de lo pedido (sobreacopio: ${-remaining}).",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.error,
                                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                                     )
                                 } else if (remaining == 0) {
                                     Text(
-                                        "⚠ Línea ya completada (${line.pickedQty}/${line.requestedQty}). Al añadir se superará lo pedido.",
+                                        "⚠ Línea ya completada (${shownPicked}/${line.requestedQty}). Al añadir se superará lo pedido.",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.error,
                                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
@@ -201,6 +209,9 @@ fun ConfirmPickingDialog(
                         value = qtyText,
                         onValueChange = { qtyText = it.filter(Char::isDigit) },
                         label = { Text("Cantidad a acopiar") },
+                        supportingText = {
+                            Text("Venta directa: valida la cantidad antes de continuar")
+                        },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                         ),
@@ -208,9 +219,9 @@ fun ConfirmPickingDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                if (ventaDirecta && line != null && (line.pickedQty + qty) > line.requestedQty) {
+                if (ventaDirecta && line != null && (shownPicked + qty) > line.requestedQty) {
                     Text(
-                        "⚠ AVISO: Se acopiará más de lo pedido (${line.pickedQty + qty} en total para ${line.requestedQty} pedidas).",
+                        "⚠ AVISO: Se acopiará más de lo pedido (${shownPicked + qty} en total para ${line.requestedQty} pedidas).",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold

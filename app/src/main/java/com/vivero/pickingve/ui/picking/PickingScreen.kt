@@ -315,6 +315,7 @@ fun PickingScreen(
                     CargadoSummary(
                         order = state.order,
                         lines = state.lines,
+                        compensaciones = state.compensacionesPorLinea,
                         onReopen = { showReopenConfirm = true }
                     )
                 } else if (showScanner) {
@@ -333,6 +334,7 @@ fun PickingScreen(
                         substitutedByLine = state.substitutedByLine,
                         labelsRequestedByLine = state.labelsRequestedByLine,
                         chatEstados = chatEstados,
+                        compensaciones = state.compensacionesPorLinea,
                         onUnpick = { unpickLine = it },
                         onManualMark = { manualMarkLine = it },
                         onOpenChat = { chatLinea = it.orderLineId }
@@ -347,6 +349,7 @@ fun PickingScreen(
             pending = pending,
             line = state.lines.firstOrNull { it.orderLineId == pending.orderLineId },
             litrajes = state.litrajes,
+            compensaciones = state.compensacionesPorLinea,
             onConfirm = { liters, measure, caliber, needsLabel, labelReason, labelFormat, qty ->
                 viewModel.confirmPicking(
                     pickingType = "I",
@@ -366,6 +369,7 @@ fun PickingScreen(
     state.pendingLinePick?.let { pick ->
         LinePickDialog(
             pick = pick,
+            compensaciones = state.compensacionesPorLinea,
             onPick = viewModel::assignToLine,
             onAmpliacion = viewModel::confirmAmpliacion,
             onDismiss = viewModel::dismissLinePick
@@ -422,6 +426,7 @@ fun PickingScreen(
     unpickLine?.let { line ->
         UnpickConfirmDialog(
             line = line,
+            compensaciones = state.compensacionesPorLinea,
             onConfirmUnpick = { qty ->
                 viewModel.unpickLine(line, qty)
                 unpickLine = null
@@ -566,10 +571,30 @@ fun PickingScreen(
     }
 
     manualMarkLine?.let { line ->
+        val productosRef = state.availableProducts.filter {
+            it.reference == line.productId || it.id == line.productId
+        }
+        val litrajesRef = state.litrajes.filter { litraje ->
+            productosRef.any { it.litraje == litraje.id }
+        }
+        val sectoresRef = state.sectores.filter { sector ->
+            productosRef.any { it.sector == sector.id }
+        }
+        val litrajesFinal = if (litrajesRef.isNotEmpty()) litrajesRef
+        else productosRef.mapNotNull { it.litraje.takeIf(String::isNotBlank) }
+            .distinct()
+            .map { LitrajeEntity(id = it, descripcion = it) }
+            .ifEmpty { if (line.litrajeDesc.isBlank()) emptyList() else listOf(LitrajeEntity(id = line.litraje, descripcion = line.litrajeDesc)) }
+        val sectoresFinal = if (sectoresRef.isNotEmpty()) sectoresRef
+        else productosRef.mapNotNull { it.sector.takeIf(String::isNotBlank) }
+            .distinct()
+            .map { SectorEntity(id = it, descripcion = it) }
+            .ifEmpty { if (line.sectorDesc.isBlank()) emptyList() else listOf(SectorEntity(id = line.sector, descripcion = line.sectorDesc)) }
         ManualMarkDialog(
             line = line,
-            litrajes = state.litrajes,
-            sectores = state.sectores,
+            litrajes = litrajesFinal,
+            sectores = sectoresFinal,
+            compensaciones = state.compensacionesPorLinea,
             onDirecto = {
                 viewModel.marcarDirecto(line)
                 manualMarkLine = null
@@ -628,7 +653,7 @@ private fun PickingBottomBar(
             icon = {
                 Icon(Icons.Filled.DocumentScanner, contentDescription = "Etiqueta sin EAN")
             },
-            label = { Text("Etiqueta sin EAN") }
+            label = { Text("Sin EAN") }
         )
         NavigationBarItem(
             selected = false,
@@ -751,11 +776,14 @@ private fun OrderHeader(
 private fun CargadoSummary(
     order: com.vivero.pickingve.data.local.entities.OrderEntity?,
     lines: List<OrderLineEntity>,
+    compensaciones: Map<String, Int>,
     onReopen: () -> Unit
 ) {
     if (order == null) return
     val vigentes = lines.filter { it.vigente && it.requestedQty > 0 }
-    val totalPicked = vigentes.sumOf { maxOf(it.pickedQty, it.acopiadoServidor) }
+    val totalPicked = vigentes.sumOf {
+        maxOf(it.pickedQty, (it.acopiadoServidor - (compensaciones[it.orderLineId] ?: 0)).coerceAtLeast(0))
+    }
     val totalRequested = vigentes.sumOf { it.requestedQty }
     val customer = if (order.customerFiscal.isNotBlank() && order.customerFiscal != order.customerName) {
         "${order.customerName} · ${order.customerFiscal}"
@@ -866,7 +894,7 @@ private fun CargadoSummary(
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                "${maxOf(line.pickedQty, line.acopiadoServidor)} / ${line.requestedQty}",
+                                "${maxOf(line.pickedQty, (line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0)).coerceAtLeast(0))} / ${line.requestedQty}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -908,6 +936,7 @@ private fun OrderLinesList(
     substitutedByLine: Map<String, Int>,
     labelsRequestedByLine: Map<String, Int>,
     chatEstados: List<ChatEstadoEntity>,
+    compensaciones: Map<String, Int>,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
     onOpenChat: (OrderLineEntity) -> Unit
@@ -956,6 +985,7 @@ private fun OrderLinesList(
                     substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                     chatEstados = chatEstados,
+                    compensaciones = compensaciones,
                     onUnpick = onUnpick,
                     onManualMark = onManualMark,
                     onOpenChat = onOpenChat
@@ -973,12 +1003,14 @@ private fun OrderLineCard(
     substitutedCount: Int,
     labelsRequested: Int,
     chatEstados: List<ChatEstadoEntity>,
+    compensaciones: Map<String, Int>,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
     onOpenChat: (OrderLineEntity) -> Unit
 ) {
-    val shownPicked = maxOf(line.pickedQty, line.acopiadoServidor)
-    val remotePicked = (line.acopiadoServidor - line.pickedQty).coerceAtLeast(0)
+    val compensado = compensaciones[line.orderLineId] ?: 0
+    val shownPicked = maxOf(line.pickedQty, (line.acopiadoServidor - compensado).coerceAtLeast(0))
+    val remotePicked = (line.acopiadoServidor - compensado - line.pickedQty).coerceAtLeast(0)
     val complete = line.vigente && line.requestedQty > 0 && shownPicked >= line.requestedQty
     val overPicked = line.vigente && shownPicked > line.requestedQty
     val marcaDistinta = order?.marcaPedido?.isNotBlank() == true &&
@@ -1317,6 +1349,7 @@ private fun LineBadge(
 @Composable
 private fun LinePickDialog(
     pick: PendingLinePick,
+    compensaciones: Map<String, Int>,
     onPick: (OrderLineEntity) -> Unit,
     onAmpliacion: () -> Unit,
     onDismiss: () -> Unit
@@ -1349,7 +1382,7 @@ private fun LinePickDialog(
                                 Text(line.productName, style = MaterialTheme.typography.titleSmall)
                                 Text(line.productId, style = MaterialTheme.typography.bodySmall)
                                 Text(
-                                    "${maxOf(line.pickedQty, line.acopiadoServidor)} / ${line.requestedQty}",
+                                    "${maxOf(line.pickedQty, (line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0)).coerceAtLeast(0))} / ${line.requestedQty}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -1654,12 +1687,14 @@ private fun LabelsDialog(
 @Composable
 private fun UnpickConfirmDialog(
     line: OrderLineEntity,
+    compensaciones: Map<String, Int>,
     onConfirmUnpick: (qty: Int) -> Unit,
     onEnableScanUnpick: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val ventaDirecta = line.productId.startsWith("90000")
-    var qtyText by remember(line.orderLineId) { mutableStateOf("1") }
+    val ventaDirecta = line.productId.startsWith("9")
+    val shownPicked = maxOf(line.pickedQty, (line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0)).coerceAtLeast(0))
+    var qtyText by remember(line.orderLineId) { mutableStateOf(if (ventaDirecta) shownPicked.coerceAtLeast(1).toString() else "1") }
     val qty = if (ventaDirecta) (qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1) else 1
 
     AlertDialog(
@@ -1676,7 +1711,7 @@ private fun UnpickConfirmDialog(
                     "${line.productId}" +
                         (if (line.litrajeDesc.isNotBlank()) " · ${line.litrajeDesc}" else "") +
                         (if (line.sectorDesc.isNotBlank()) " · ${line.sectorDesc}" else "") +
-                        " · Acopiadas: ${line.pickedQty} · Pedido: ${line.requestedQty}",
+                        " · Acopiadas: $shownPicked · Pedido: ${line.requestedQty}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2020,6 +2055,7 @@ private fun ManualMarkDialog(
     line: OrderLineEntity,
     litrajes: List<LitrajeEntity>,
     sectores: List<SectorEntity>,
+    compensaciones: Map<String, Int>,
     onDirecto: () -> Unit,
     onVariant: (litrajeDesc: String?, sectorDesc: String?) -> Unit,
     onConfirm: (referencia: String, litrajeDesc: String?, sectorDesc: String?) -> Unit,
@@ -2070,7 +2106,7 @@ private fun ManualMarkDialog(
                     "${line.productId}" +
                         (if (line.litrajeDesc.isNotBlank()) " · ${line.litrajeDesc}" else "") +
                         (if (line.sectorDesc.isNotBlank()) " · ${line.sectorDesc}" else "") +
-                        " · Pedido: ${line.requestedQty} · Acopiadas: ${maxOf(line.pickedQty, line.acopiadoServidor)}",
+                        " · Pedido: ${line.requestedQty} · Acopiadas: ${maxOf(line.pickedQty, (line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0)).coerceAtLeast(0))}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
