@@ -28,15 +28,27 @@ class ParsePlantPassportUseCase {
             .trim()
         if (normalized.isBlank()) return null
 
-        val refMatch = Regex("\\bc[\\s.:]*\\s*([a-z0-9][a-z0-9\\-./ ]{0,30}?)(?:\\s+[a-z]|$)")
-            .find(normalized)
-        val referencia = refMatch?.groupValues?.get(1)?.trim()?.uppercase() ?: return null
-        if (referencia.length < 2) return null
+        val referencia = detectarReferencia(normalized) ?: return null
 
         val litrajeDesc = detectarLitraje(normalized, referencia)
         val sectorDesc = detectarSector(normalized)
 
         return PassportData(referencia, litrajeDesc = litrajeDesc, sectorDesc = sectorDesc)
+    }
+
+    private fun detectarReferencia(normalized: String): String? {
+        val conPrefijo = Regex("\\bc[\\s.:]*\\s*([a-z0-9][a-z0-9./\\-]{1,30})")
+            .find(normalized)
+        if (conPrefijo != null) {
+            val ref = conPrefijo.groupValues[1].trimEnd('.', ',', '/', '-').uppercase()
+            if (ref.length >= 2) return ref
+        }
+        return Regex("\\b([0-9][a-z0-9./\\-]{2,30})\\b")
+            .find(normalized)
+            ?.groupValues?.get(1)
+            ?.trimEnd('.', ',', '/', '-')
+            ?.uppercase()
+            ?.takeIf { it.length >= 2 }
     }
 
     /** Devuelve el producto del catálogo que encaja, o null si no hay match claro. */

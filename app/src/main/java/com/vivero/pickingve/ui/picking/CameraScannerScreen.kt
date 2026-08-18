@@ -19,7 +19,6 @@ import androidx.camera.core.Preview
 import androidx.camera.core.CameraUnavailableException
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,12 +27,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -83,6 +79,7 @@ fun CameraScannerScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var ocrLoading by remember { mutableStateOf(false) }
     var avisoPasaporte by remember { mutableStateOf(false) }
+    var codigoVisto by remember { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf<String?>(null) }
     var permissionDenied by remember { mutableStateOf(false) }
     var permissionGranted by remember {
@@ -185,125 +182,133 @@ fun CameraScannerScreen(
     }
 
     fun onCodigoLeido(codigo: String) {
+        codigoVisto = true
         if (modo == CameraModo.PASAPORTE) return
         val esEan = Regex("^\\d{8}$|^\\d{13}$").matches(codigo)
-        when {
-            esEan -> viewModel.onBarcodeScanned(codigo)
-            modo == CameraModo.AMBOS -> lanzarOcr()
-            else -> avisoPasaporte = true
+        if (esEan) viewModel.onBarcodeScanned(codigo) else avisoPasaporte = true
+    }
+
+    LaunchedEffect(modo, codigoVisto) {
+        if (!codigoVisto) {
+            delay(4000)
+            if (!codigoVisto) avisoPasaporte = true
         }
     }
 
-    AndroidView(
-        factory = { ctx ->
-            val previewView = PreviewView(ctx)
-            val providerFuture = ProcessCameraProvider.getInstance(ctx)
-            providerFuture.addListener({
-                try {
-                    val provider = providerFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-                    val capture = ImageCapture.Builder()
-                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                        .build()
-                    imageCapture = capture
-                    val analysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .also { it.setAnalyzer(executor, BarcodeAnalyzer(debouncer, ::onCodigoLeido)) }
+    Column(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                val previewView = PreviewView(ctx)
+                val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                providerFuture.addListener({
+                    try {
+                        val provider = providerFuture.get()
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        val capture = ImageCapture.Builder()
+                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                            .build()
+                        imageCapture = capture
+                        val analysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                            .also { it.setAnalyzer(executor, BarcodeAnalyzer(debouncer, ::onCodigoLeido)) }
 
-                    provider.unbindAll()
-                    val owner = lifecycleOwner
-                    if (owner == null) {
-                        cameraError = "Contexto de ciclo de vida no disponible"
-                        return@addListener
+                        provider.unbindAll()
+                        val owner = lifecycleOwner
+                        if (owner == null) {
+                            cameraError = "Contexto de ciclo de vida no disponible"
+                            return@addListener
+                        }
+                        provider.bindToLifecycle(
+                            owner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            preview,
+                            capture,
+                            analysis
+                        )
+                    } catch (e: CameraUnavailableException) {
+                        cameraError = "No hay cámara disponible en este dispositivo"
+                    } catch (e: Exception) {
+                        cameraError = e.message ?: "Error desconocido al abrir la cámara"
                     }
-                    provider.bindToLifecycle(
-                        owner,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        capture,
-                        analysis
-                    )
-                } catch (e: CameraUnavailableException) {
-                    cameraError = "No hay cámara disponible en este dispositivo"
-                } catch (e: Exception) {
-                    cameraError = e.message ?: "Error desconocido al abrir la cámara"
-                }
-            }, ContextCompat.getMainExecutor(ctx))
-            previewView
-        },
-        modifier = Modifier.fillMaxSize()
-    )
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
+                }, ContextCompat.getMainExecutor(ctx))
+                previewView
+            },
             modifier = Modifier
-                .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(top = 16.dp)
+                .weight(1f)
+        )
+
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 8.dp
         ) {
-            Text(
-                text = when (modo) {
-                    CameraModo.SCAN -> "Enfoca el código EAN de la etiqueta"
-                    CameraModo.PASAPORTE -> "Captura la etiqueta sin EAN (pasaporte)"
-                    CameraModo.AMBOS -> "Enfoca el código EAN o captura la etiqueta sin EAN"
-                },
+            Column(
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(horizontal = 48.dp),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            Row(
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 8.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                CameraModo.entries.forEach { m ->
-                    val activo = modo == m
+                if (avisoPasaporte) {
                     Surface(
-                        onClick = { modo = m },
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
                         shape = MaterialTheme.shapes.small,
-                        color = if (activo) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = when (m) {
-                                CameraModo.SCAN -> "EAN"
-                                CameraModo.PASAPORTE -> "Pasaporte"
-                                CameraModo.AMBOS -> "Ambos"
-                            },
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (activo) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "¿Etiqueta sin EAN? Pulsa CAPTURAR ETIQUETA SIN EAN",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     }
                 }
-            }
-        }
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-        ) {
-            Icon(Icons.Filled.Close, contentDescription = "Cerrar cámara")
-        }
-
-        if (modo != CameraModo.SCAN) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
+                Text(
+                    text = when (modo) {
+                        CameraModo.SCAN -> "Enfoca el código EAN de la etiqueta"
+                        CameraModo.PASAPORTE -> "Captura la etiqueta sin EAN (pasaporte)"
+                        CameraModo.AMBOS -> "Enfoca el código EAN o captura la etiqueta sin EAN"
+                    },
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 4.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 8.dp)
+                ) {
+                    CameraModo.entries.forEach { m ->
+                        val activo = modo == m
+                        Surface(
+                            onClick = { modo = m; codigoVisto = false },
+                            shape = MaterialTheme.shapes.small,
+                            color = if (activo) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = when (m) {
+                                    CameraModo.SCAN -> "EAN"
+                                    CameraModo.PASAPORTE -> "Pasaporte"
+                                    CameraModo.AMBOS -> "Ambos"
+                                },
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (activo) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
                 Button(
                     onClick = { lanzarOcr() },
                     enabled = !ocrLoading,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
                 ) {
                     if (ocrLoading) {
                         CircularProgressIndicator(
@@ -314,42 +319,6 @@ fun CameraScannerScreen(
                         Icon(Icons.Filled.DocumentScanner, contentDescription = null)
                     }
                     Text(" Capturar etiqueta sin EAN")
-                }
-            }
-        }
-
-        if (avisoPasaporte) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = if (modo == CameraModo.SCAN) 16.dp else 96.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Text(
-                    text = "¿Etiqueta sin EAN? Usa el modo Pasaporte",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-            }
-        }
-
-        if (ocrLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.7f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color.White)
-                    Text(
-                        text = "Analizando etiqueta…",
-                        modifier = Modifier.padding(top = 12.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color.White
-                    )
                 }
             }
         }

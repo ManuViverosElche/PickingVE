@@ -24,8 +24,8 @@ android {
         applicationId = "com.vivero.pickingve"
         minSdk = 26
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.7.3"
+        versionCode = 19
+        versionName = "1.7.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -89,11 +89,17 @@ android {
     }
 }
 
+val apkVersionName = android.defaultConfig.versionName
+
 tasks.matching { it.name == "packageDebug" }.configureEach {
     doLast {
         val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
-        val destino = layout.buildDirectory.file("outputs/apk/debug/PickingVE-debug-1.7.3.apk").get().asFile
-        if (apk.exists()) apk.copyTo(destino, overwrite = true)
+        val destino = rootProject.layout.projectDirectory
+            .file("apks/PickingVE-debug-$apkVersionName.apk").asFile
+        if (apk.exists()) {
+            destino.parentFile?.mkdirs()
+            apk.copyTo(destino, overwrite = true)
+        }
     }
 }
 

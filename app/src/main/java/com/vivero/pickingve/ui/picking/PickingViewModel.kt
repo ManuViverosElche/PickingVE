@@ -7,6 +7,7 @@ import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
+import com.vivero.pickingve.data.local.entities.SectorEntity
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
@@ -36,6 +37,7 @@ data class PickingUiState(
     val labelsRequestedByLine: Map<String, Int> = emptyMap(),
     val substitutedByLine: Map<String, Int> = emptyMap(),
     val litrajes: List<LitrajeEntity> = emptyList(),
+    val sectores: List<SectorEntity> = emptyList(),
     val lastMessage: String? = null,
     val sendingReport: Boolean = false,
     val sendingLabels: Boolean = false,
@@ -139,6 +141,9 @@ class PickingViewModel(
     private val litrajes: StateFlow<List<LitrajeEntity>> = repository.observeLitrajes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val sectores: StateFlow<List<SectorEntity>> = repository.observeSectores()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private val unpickState: StateFlow<Pair<Boolean, Set<String>>> = combine(
         unpickingMode,
         selectedRecordIds
@@ -201,6 +206,8 @@ class PickingViewModel(
         )
     }.combine(repository.observeProducts()) { base, products ->
         base.copy(availableProducts = products)
+    }.combine(repository.observeSectores()) { base, sectores ->
+        base.copy(sectores = sectores)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PickingUiState())
 
     private data class Quint(
@@ -337,6 +344,60 @@ class PickingViewModel(
                 currentState.unpickingMode -> unpickByScanProduct(producto)
                 currentState.sobrante -> unpickSobranteByScan(producto)
                 else -> resolveProduct(producto)
+            }
+        }
+    }
+
+    /** Acopio manual: misma referencia y mismo litraje/sector que la línea → confirmación directa. */
+    fun marcarDirecto(line: OrderLineEntity) {
+        lastOcrText = null
+        viewModelScope.launch {
+            val catalogo = repository.allProducts()
+            val producto = catalogo.firstOrNull {
+                (it.reference == line.productId || it.id == line.productId) &&
+                    (line.litraje.isBlank() || it.litraje.isBlank() || it.litraje == line.litraje) &&
+                    (line.sector.isBlank() || it.sector.isBlank() || it.sector == line.sector)
+            } ?: catalogo.firstOrNull { it.reference == line.productId || it.id == line.productId }
+            if (producto == null) {
+                lastMessage.value = "No se encontró la referencia ${line.productId} en el catálogo"
+                return@launch
+            }
+            resolveProduct(producto)
+        }
+    }
+
+    /** Acopio manual: misma referencia que la línea pero con otro litraje y/o sector de la etiqueta. */
+    fun marcarVariant(line: OrderLineEntity, litrajeDesc: String?, sectorDesc: String?) {
+        val mismoLitraje = litrajeDesc.isNullOrBlank() ||
+            line.litrajeDesc.isBlank() ||
+            litrajeDesc.trim().equals(line.litrajeDesc.trim(), ignoreCase = true)
+        val mismoSector = sectorDesc.isNullOrBlank() ||
+            line.sectorDesc.isBlank() ||
+            sectorDesc.trim().equals(line.sectorDesc.trim(), ignoreCase = true)
+        if (mismoLitraje && mismoSector) {
+            marcarDirecto(line)
+            return
+        }
+        lastOcrText = "C: ${line.productId}" +
+            (litrajeDesc?.takeIf { it.isNotBlank() }?.let { " $it" } ?: "") +
+            (sectorDesc?.takeIf { it.isNotBlank() }?.let { " $it" } ?: "")
+        viewModelScope.launch {
+            val catalogo = repository.allProducts()
+            val passport = PassportData(line.productId, litrajeDesc = litrajeDesc, sectorDesc = sectorDesc)
+            val variante = ParsePlantPassportUseCase().bestMatch(
+                passport,
+                catalogo,
+                repository.litrajesList(),
+                repository.sectoresList()
+            ) ?: catalogo.firstOrNull { it.reference == line.productId || it.id == line.productId }
+            if (variante == null) {
+                lastMessage.value = "No encontrado en el catálogo (C: ${line.productId})"
+                return@launch
+            }
+            if (coincideAtributos(variante, line)) {
+                pendingSectorWarning.value = SectorWarning(variante, line)
+            } else {
+                resolveProduct(variante)
             }
         }
     }

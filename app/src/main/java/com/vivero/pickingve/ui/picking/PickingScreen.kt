@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Label
@@ -104,6 +105,7 @@ import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
+import com.vivero.pickingve.data.local.entities.SectorEntity
 import com.vivero.pickingve.domain.usecase.ParsePlantPassportUseCase
 import com.vivero.pickingve.scanner.OcrReader
 import com.vivero.pickingve.ui.theme.DarkOnWarnContainer
@@ -132,6 +134,7 @@ fun PickingScreen(
     val chatEstados by viewModel.chatEstados.collectAsState()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(false) }
+    var scannerModo by remember { mutableStateOf<CameraModo?>(null) }
     var showLabels by remember { mutableStateOf(false) }
     var showSendDialog by remember { mutableStateOf(false) }
     var showOrderInfo by remember { mutableStateOf(false) }
@@ -241,7 +244,14 @@ fun PickingScreen(
                 PickingBottomBar(
                     pendingLabelCount = state.pendingLabelCount,
                     sendingReport = state.sendingReport,
-                    onScan = { showScanner = true },
+                    onScan = {
+                        scannerModo = null
+                        showScanner = true
+                    },
+                    onManualScan = {
+                        scannerModo = CameraModo.PASAPORTE
+                        showScanner = true
+                    },
                     onLabels = { showLabels = true },
                     onSend = {
                         scope.launch {
@@ -310,7 +320,8 @@ fun PickingScreen(
                 } else if (showScanner) {
                     CameraScannerScreen(
                         viewModel = viewModel,
-                        onClose = { showScanner = false }
+                        onClose = { showScanner = false },
+                        modoInicial = scannerModo ?: CameraModo.AMBOS
                     )
                 } else {
                     OrderHeader(
@@ -418,6 +429,8 @@ fun PickingScreen(
             onEnableScanUnpick = {
                 viewModel.setUnpickingMode(true, line)
                 unpickLine = null
+                scannerModo = null
+                showScanner = true
             },
             onDismiss = { unpickLine = null }
         )
@@ -555,6 +568,16 @@ fun PickingScreen(
     manualMarkLine?.let { line ->
         ManualMarkDialog(
             line = line,
+            litrajes = state.litrajes,
+            sectores = state.sectores,
+            onDirecto = {
+                viewModel.marcarDirecto(line)
+                manualMarkLine = null
+            },
+            onVariant = { litrajeDesc, sectorDesc ->
+                viewModel.marcarVariant(line, litrajeDesc, sectorDesc)
+                manualMarkLine = null
+            },
             onConfirm = { referencia, litrajeDesc, sectorDesc ->
                 viewModel.marcarDesdeEtiqueta(referencia, litrajeDesc, sectorDesc)
                 manualMarkLine = null
@@ -586,6 +609,7 @@ private fun PickingBottomBar(
     pendingLabelCount: Int,
     sendingReport: Boolean,
     onScan: () -> Unit,
+    onManualScan: () -> Unit,
     onLabels: () -> Unit,
     onSend: () -> Unit
 ) {
@@ -597,6 +621,14 @@ private fun PickingBottomBar(
                 Icon(Icons.Filled.QrCodeScanner, contentDescription = "Pistolear")
             },
             label = { Text("Pistolear") }
+        )
+        NavigationBarItem(
+            selected = false,
+            onClick = onManualScan,
+            icon = {
+                Icon(Icons.Filled.DocumentScanner, contentDescription = "Etiqueta sin EAN")
+            },
+            label = { Text("Etiqueta sin EAN") }
         )
         NavigationBarItem(
             selected = false,
@@ -1982,9 +2014,14 @@ private fun TruckArrivalDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ManualMarkDialog(
     line: OrderLineEntity,
+    litrajes: List<LitrajeEntity>,
+    sectores: List<SectorEntity>,
+    onDirecto: () -> Unit,
+    onVariant: (litrajeDesc: String?, sectorDesc: String?) -> Unit,
     onConfirm: (referencia: String, litrajeDesc: String?, sectorDesc: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1993,24 +2030,35 @@ private fun ManualMarkDialog(
     var referencia by remember(line.orderLineId) { mutableStateOf("") }
     var litrajeDesc by remember(line.orderLineId) { mutableStateOf("") }
     var sectorDesc by remember(line.orderLineId) { mutableStateOf("") }
+    var litrajeVariant by remember(line.orderLineId) { mutableStateOf(line.litrajeDesc) }
+    var sectorVariant by remember(line.orderLineId) { mutableStateOf(line.sectorDesc) }
     var errorAnalisis by remember(line.orderLineId) { mutableStateOf<String?>(null) }
 
     fun analizar(texto: String) {
         val passport = ParsePlantPassportUseCase().parse(texto)
         if (passport == null) {
-            errorAnalisis = "No he encontrado la referencia C: en el texto."
+            errorAnalisis = "No he encontrado la referencia en el texto."
             return
         }
         referencia = passport.referencia
         litrajeDesc = passport.litrajeDesc.orEmpty()
         sectorDesc = passport.sectorDesc.orEmpty()
         errorAnalisis = null
-        paso = 1
+        paso = 3
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (paso == 0) "Acopio manual (etiqueta)" else "Verificar referencia") },
+        title = {
+            Text(
+                when (paso) {
+                    0 -> "Acopio manual"
+                    1 -> "Otro litraje/sector"
+                    2 -> "Acopio manual (etiqueta)"
+                    else -> "Verificar referencia"
+                }
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -2027,96 +2075,145 @@ private fun ManualMarkDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 HorizontalDivider()
-                if (paso == 0) {
-                    Text(
-                        "1. Pega o escribe el texto de la etiqueta (recuadro negro C:)",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    OutlinedTextField(
-                        value = etiqueta,
-                        onValueChange = { etiqueta = it; errorAnalisis = null },
-                        label = { Text("Texto de la etiqueta") },
-                        minLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        "Ej.: C: 100042 3 L BLOQUES. Si la etiqueta no trae EAN, escribe la referencia tal y como aparece en el recuadro negro.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    errorAnalisis?.let {
+                when (paso) {
+                    0 -> {
                         Text(
-                            it,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.SemiBold
+                            "1. Elige cómo acopiar",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Button(
+                            onClick = onDirecto,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Acopiar ${line.productId}") }
+                        Text(
+                            "Acopia 1 planta de la línea. Si es venta directa (9...), te pedirá la cantidad.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = { paso = 1 },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Es la misma referencia pero otro litraje/sector") }
+                        OutlinedButton(
+                            onClick = { paso = 2 },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("La etiqueta es otra referencia (C:)") }
+                    }
+                    1 -> {
+                        Text(
+                            "2. El litraje o sector es diferente del de la línea",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        DropdownSearchField(
+                            label = "Litraje",
+                            items = litrajes.map { it.id to it.descripcion },
+                            selected = litrajeVariant,
+                            onSelected = { litrajeVariant = it }
+                        )
+                        DropdownSearchField(
+                            label = "Sector",
+                            items = sectores.map { it.id to it.descripcion },
+                            selected = sectorVariant,
+                            onSelected = { sectorVariant = it }
+                        )
+                        Text(
+                            "Se gestionará igual que un EAN que no está en el pedido: podrás acopiarlo en esta línea, elegir otra línea o añadirlo como referencia nueva.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(
-                        onClick = {
-                            referencia = line.productId
-                            litrajeDesc = line.litrajeDesc
-                            sectorDesc = line.sectorDesc
-                            errorAnalisis = null
-                            paso = 1
-                        }
-                    ) { Text("Usar la referencia de la línea (${line.productId})") }
-                } else {
-                    Text(
-                        "2. Verifica la referencia leída de la etiqueta",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    OutlinedTextField(
-                        value = referencia,
-                        onValueChange = { referencia = it.uppercase() },
-                        label = { Text("Referencia (C:)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = litrajeDesc,
-                        onValueChange = { litrajeDesc = it },
-                        label = { Text("Litraje (descripción)") },
-                        placeholder = { Text("Ej.: 3 L — vacío si no aparece") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = sectorDesc,
-                        onValueChange = { sectorDesc = it },
-                        label = { Text("Sector (descripción)") },
-                        placeholder = { Text("Ej.: BLOQUES — vacío si no aparece") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (referencia.isNotBlank() && referencia != line.productId) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            shape = MaterialTheme.shapes.small,
+                    2 -> {
+                        Text(
+                            "2. Pega o escribe el texto de la etiqueta (recuadro negro C:)",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        OutlinedTextField(
+                            value = etiqueta,
+                            onValueChange = { etiqueta = it; errorAnalisis = null },
+                            label = { Text("Texto de la etiqueta") },
+                            minLines = 3,
                             modifier = Modifier.fillMaxWidth()
-                        ) {
+                        )
+                        Text(
+                            "Ej.: C: 100042 3 L BLOQUES. También vale sin el C: (por ejemplo la referencia de la línea).",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        errorAnalisis?.let {
                             Text(
-                                "La referencia no coincide con la de la línea (${line.productId}). Se tratará como sustitución o ampliación si no pertenece a otra línea del pedido.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                it,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold
                             )
+                        }
+                    }
+                    else -> {
+                        Text(
+                            "3. Verifica la referencia leída de la etiqueta",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        OutlinedTextField(
+                            value = referencia,
+                            onValueChange = { referencia = it.uppercase() },
+                            label = { Text("Referencia (C:)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = litrajeDesc,
+                            onValueChange = { litrajeDesc = it },
+                            label = { Text("Litraje (descripción)") },
+                            placeholder = { Text("Ej.: 3 L — vacío si no aparece") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = sectorDesc,
+                            onValueChange = { sectorDesc = it },
+                            label = { Text("Sector (descripción)") },
+                            placeholder = { Text("Ej.: BLOQUES — vacío si no aparece") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (referencia.isNotBlank() && referencia != line.productId) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "La referencia no coincide con la de la línea (${line.productId}). Se tratará como sustitución o ampliación si no pertenece a otra línea del pedido.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            if (paso == 0) {
-                Button(onClick = { analizar(etiqueta) }, enabled = etiqueta.isNotBlank()) {
+            when (paso) {
+                0 -> {}
+                1 -> Button(
+                    onClick = {
+                        onVariant(litrajeVariant.ifBlank { null }, sectorVariant.ifBlank { null })
+                    }
+                ) { Text("Marcar acopiada") }
+                2 -> Button(onClick = { analizar(etiqueta) }, enabled = etiqueta.isNotBlank()) {
                     Text("Analizar etiqueta")
                 }
-            } else {
-                Button(
+                else -> Button(
                     enabled = referencia.length >= 2,
                     onClick = {
                         onConfirm(referencia, litrajeDesc.ifBlank { null }, sectorDesc.ifBlank { null })
@@ -2125,7 +2222,67 @@ private fun ManualMarkDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar") }
+            if (paso == 0) {
+                TextButton(onClick = onDismiss) { Text("Cancelar") }
+            } else {
+                TextButton(onClick = { paso = 0 }) { Text("Atrás") }
+            }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DropdownSearchField(
+    label: String,
+    items: List<Pair<String, String>>,
+    selected: String,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf(selected) }
+    val filtered = remember(query, items) {
+        if (query.isBlank()) items
+        else items.filter {
+            it.first.contains(query, ignoreCase = true) ||
+                it.second.contains(query, ignoreCase = true)
+        }
+    }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            filtered.forEach { (codigo, descripcion) ->
+                DropdownMenuItem(
+                    text = { Text(descripcion) },
+                    onClick = {
+                        onSelected(descripcion)
+                        query = descripcion
+                        expanded = false
+                    }
+                )
+            }
+            if (filtered.isEmpty()) {
+                Text(
+                    "Sin coincidencias",
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+    }
 }
