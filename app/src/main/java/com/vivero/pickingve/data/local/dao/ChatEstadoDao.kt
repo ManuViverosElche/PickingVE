@@ -27,4 +27,7 @@ interface ChatEstadoDao {
 
     @Query("SELECT * FROM chat_estado")
     fun observeAll(): Flow<List<ChatEstadoEntity>>
+
+    @Query("DELETE FROM chat_estado")
+    suspend fun clearAll()
 }

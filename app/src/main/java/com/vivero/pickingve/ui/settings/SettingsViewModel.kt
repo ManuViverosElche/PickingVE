@@ -120,4 +120,23 @@ class SettingsViewModel(
     fun clearPasswordMessage() {
         _passwordState.value = PasswordUiState()
     }
+
+    private val _limpiezaState = MutableStateFlow(false)
+    val limpiezaState: StateFlow<Boolean> = _limpiezaState
+
+    fun limpiarDatosLocales() {
+        if (_limpiezaState.value) return
+        viewModelScope.launch {
+            _limpiezaState.value = true
+            try {
+                repository.limpiarDatosLocales()
+                _passwordState.value = PasswordUiState(mensaje = "Datos locales borrados")
+            } catch (e: Exception) {
+                Log.e("PickingVE", "limpiar datos locales failed", e)
+                _passwordState.value = PasswordUiState(error = "Error al limpiar: ${e.message}")
+            } finally {
+                _limpiezaState.value = false
+            }
+        }
+    }
 }

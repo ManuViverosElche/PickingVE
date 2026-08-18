@@ -54,7 +54,8 @@ data class ApiLinea(
 data class ApiCatalogo(
     val articulos: List<ApiArticulo> = emptyList(),
     val eans: List<ApiEan> = emptyList(),
-    val litrajes: List<ApiLitraje> = emptyList()
+    val litrajes: List<ApiLitraje> = emptyList(),
+    val sectores: List<ApiSector> = emptyList()
 )
 
 @Serializable
@@ -82,6 +83,12 @@ data class ApiEan(
 data class ApiLitraje(
     @SerialName("ID_LITRAJE") val id: String = "",
     @SerialName("DESCRIPCION_LITRAJE") val descripcion: String = ""
+)
+
+@Serializable
+data class ApiSector(
+    @SerialName("ID_SECTOR") val id: String = "",
+    @SerialName("DESCRIPCION_SECTOR") val descripcion: String = ""
 )
 
 @Serializable

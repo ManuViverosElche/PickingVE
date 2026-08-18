@@ -7,6 +7,7 @@ import com.vivero.pickingve.data.local.dao.LitrajeDao
 import com.vivero.pickingve.data.local.dao.OrderDao
 import com.vivero.pickingve.data.local.dao.PickingDao
 import com.vivero.pickingve.data.local.dao.ProductDao
+import com.vivero.pickingve.data.local.dao.SectorDao
 import com.vivero.pickingve.data.local.entities.ChatEstadoEntity
 import com.vivero.pickingve.data.local.entities.EncargadoEntity
 import com.vivero.pickingve.data.local.entities.LitrajeEntity
@@ -14,6 +15,7 @@ import com.vivero.pickingve.data.local.entities.OrderEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
+import com.vivero.pickingve.data.local.entities.SectorEntity
 import com.vivero.pickingve.data.remote.ApiComentario
 import com.vivero.pickingve.data.remote.ApiEncargado
 import com.vivero.pickingve.data.remote.ApiRegistro
@@ -41,6 +43,7 @@ class PickingRepository(
     private val pickingDao: PickingDao,
     private val encargadoDao: EncargadoDao,
     private val litrajeDao: LitrajeDao,
+    private val sectorDao: SectorDao,
     private val chatEstadoDao: ChatEstadoDao
 ) {
 
@@ -572,6 +575,7 @@ class PickingRepository(
     private fun motivoLabel(reason: String, format: String): String = when (reason) {
         "MACETA_ROTA" -> "Rotura de maceta"
         "CAMBIO_FORMATO" -> "Cambio de formato a $format"
+        "PASAPORTE_MAL_ESTADO" -> "Pasaporte en mal estado"
         else -> ""
     }
 
@@ -597,11 +601,53 @@ class PickingRepository(
         val reporter = TelegramReporter(botToken, chatId)
         return runCatching {
             val order = orderDao.getOrder(orderId)
-            reporter.sendMessage(
-                "Etiquetas a imprimir - Pedido $orderId" +
-                    if (order != null) " (${order.customerName})" else "" +
-                    ": ${labels.sumOf { it.batchQty }} etiquetas. Adjunto el CSV."
-            ).getOrThrow()
+            val lineByRecordId = orderDao.getLinesForOrder(orderId).associateBy { it.orderLineId }
+            val groups = labels
+                .groupBy { record ->
+                    val line = record.orderLineId?.let { lineByRecordId[it] }
+                    listOf(
+                        record.actualProductId,
+                        line?.productName.orEmpty(),
+                        line?.litrajeDesc.orEmpty(),
+                        line?.sectorDesc.orEmpty(),
+                        record.labelReason.orEmpty(),
+                        record.labelFormat.orEmpty()
+                    )
+                }
+                .toSortedMap(compareBy({ it[0] }, { it[5] }))
+            val encargado = currentEncargado()
+            val caption = buildString {
+                appendLine("Etiquetas a imprimir - Pedido $orderId")
+                appendLine("${order?.customerName.orEmpty()}")
+                if (order != null) {
+                    appendLine(
+                        listOfNotNull(
+                            order.fincaCarga.ifBlank { null },
+                            order.sectorCarga.ifBlank { null },
+                            fechaCargaDisplay(order.fechaCarga)
+                        ).joinToString(" - ")
+                    )
+                }
+                appendLine()
+                groups.forEach { (key, records) ->
+                    append(
+                        "${key[0]} ${key[1]}".trim() +
+                            listOfNotNull(
+                                key[2].takeIf { it.isNotBlank() }?.let { "· $it" },
+                                key[3].takeIf { it.isNotBlank() }?.let { "($it)" }
+                            ).joinToString(" ").let { if (it.isBlank()) "" else " $it" }
+                    )
+                    appendLine()
+                    val motivo = motivoLabel(key[4], key[5])
+                    if (motivo.isNotBlank()) {
+                        appendLine("  $motivo")
+                    }
+                    appendLine("  Cantidad: ${records.sumOf { it.batchQty }}")
+                }
+                appendLine()
+                append("Total: ${labels.sumOf { it.batchQty }} etiquetas · ${encargado?.nombre.orEmpty()}")
+            }
+            reporter.sendMessage(caption).getOrThrow()
             reporter.sendCsv(
                 file,
                 caption = "Etiquetas a imprimir (pedido $orderId)",
@@ -699,7 +745,7 @@ class PickingRepository(
         hasta: String? = null,
         finca: String? = null,
         fincas: List<String>? = null,
-        estados: List<Int> = listOf(2, 3)
+        estados: List<Int> = listOf(1, 3)
     ): SyncResult {
         val hasProducts = productDao.count() > 0
         val serverVersion = try {
@@ -831,6 +877,9 @@ class PickingRepository(
         productDao.upsert(products)
         litrajeDao.upsertAll(
             catalogo.litrajes.map { LitrajeEntity(id = it.id, descripcion = it.descripcion) }
+        )
+        sectorDao.upsertAll(
+            catalogo.sectores.map { SectorEntity(id = it.id, descripcion = it.descripcion) }
         )
         if (serverVersion.isNotBlank()) catalogVersion = serverVersion
         return products.size
@@ -972,6 +1021,10 @@ class PickingRepository(
 
     suspend fun litrajesList(): List<LitrajeEntity> = litrajeDao.getAll()
 
+    fun observeSectores(): Flow<List<SectorEntity>> = sectorDao.observeAll()
+
+    suspend fun sectoresList(): List<SectorEntity> = sectorDao.getAll()
+
     suspend fun recordsForLine(lineId: String): List<PickingRecordEntity> =
         pickingDao.getRecordsForLine(lineId)
 
@@ -1089,6 +1142,14 @@ class PickingRepository(
 
     suspend fun marcarChatLeido(hiloId: String) {
         chatEstadoDao.marcarLeido(hiloId)
+    }
+
+    /** Wipes local copies (orders, picking records, chat states) without reinstalling. */
+    suspend fun limpiarDatosLocales() {
+        orderDao.clearLines()
+        orderDao.clearOrders()
+        pickingDao.clearAll()
+        chatEstadoDao.clearAll()
     }
 
     private companion object {

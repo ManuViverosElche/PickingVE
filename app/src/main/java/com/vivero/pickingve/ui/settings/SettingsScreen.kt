@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -50,9 +51,12 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsState()
     val passwordState by viewModel.passwordState.collectAsState()
     val emailState by viewModel.emailState.collectAsState()
+    val limpiando by viewModel.limpiezaState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val encargado = viewModel.currentEncargado()
+
+    var confirmarLimpieza by remember { mutableStateOf(false) }
 
     var token by remember(settings.telegramBotToken) { mutableStateOf(settings.telegramBotToken) }
     var chatId by remember(settings.telegramChatId) { mutableStateOf(settings.telegramChatId) }
@@ -270,6 +274,39 @@ fun SettingsScreen(
                 ) {
                     Text("Gestión de fincas")
                 }
+            }
+
+            HorizontalDivider()
+            Text("Mantenimiento", style = MaterialTheme.typography.titleMedium)
+            Button(
+                onClick = { confirmarLimpieza = true },
+                enabled = !limpiando,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (limpiando) "Borrando..." else "Limpiar datos locales")
+            }
+            Text(
+                "Borra pedidos, registros de picking y chats guardados en este dispositivo. " +
+                    "No afecta a BigQuery ni a la sesión. Tras borrar, pulsa 'Sincronizar' para volver a descargar.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (confirmarLimpieza) {
+                AlertDialog(
+                    onDismissRequest = { confirmarLimpieza = false },
+                    title = { Text("Limpiar datos locales") },
+                    text = { Text("¿Seguro? Se borrarán los pedidos, registros y chats guardados en este dispositivo.") },
+                    confirmButton = {
+                        Button(onClick = {
+                            confirmarLimpieza = false
+                            viewModel.limpiarDatosLocales()
+                        }) { Text("Borrar") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmarLimpieza = false }) { Text("Cancelar") }
+                    }
+                )
             }
         }
     }

@@ -25,6 +25,7 @@ class PickingApplication : Application() {
             pickingDao = database.pickingDao(),
             encargadoDao = database.encargadoDao(),
             litrajeDao = database.litrajeDao(),
+            sectorDao = database.sectorDao(),
             chatEstadoDao = database.chatEstadoDao()
         )
     }
@@ -35,7 +36,7 @@ class PickingApplication : Application() {
     }
 
     private fun scheduleBackgroundSync() {
-        val request = PeriodicWorkRequestBuilder<PickingSyncWorker>(30, TimeUnit.MINUTES)
+        val request = PeriodicWorkRequestBuilder<PickingSyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -45,7 +46,7 @@ class PickingApplication : Application() {
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "picking_sync",
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
     }

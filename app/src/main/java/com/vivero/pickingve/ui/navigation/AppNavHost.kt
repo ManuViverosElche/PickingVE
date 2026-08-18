@@ -1,6 +1,7 @@
 package com.vivero.pickingve.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,7 +27,10 @@ import com.vivero.pickingve.ui.settings.SettingsViewModel
 @Composable
 fun AppNavHost(
     repository: PickingRepository,
-    settingsRepository: SettingsRepository
+    settingsRepository: SettingsRepository,
+    deepLinkPedido: String? = null,
+    deepLinkLinea: String? = null,
+    onDeepLinkConsumed: () -> Unit = {}
 ) {
 
     val loginViewModel: LoginViewModel = viewModel { LoginViewModel(repository) }
@@ -44,6 +48,15 @@ fun AppNavHost(
     var loggedIn by remember { mutableStateOf(repository.currentEncargado() != null) }
     var screen by remember {
         mutableStateOf(initialScreen(repository.currentEncargado()?.modo))
+    }
+    val deepPedido = deepLinkPedido?.takeIf { it.isNotBlank() }
+    val deepLinea = deepLinkLinea?.takeIf { it.isNotBlank() }
+
+    LaunchedEffect(loggedIn, deepPedido) {
+        if (loggedIn && deepPedido != null) {
+            pickingViewModel.selectOrder(deepPedido)
+            screen = AppScreen.PICKING
+        }
     }
 
     if (!loggedIn) {
@@ -73,7 +86,9 @@ fun AppNavHost(
 
         AppScreen.PICKING -> PickingScreen(
             viewModel = pickingViewModel,
-            onBack = { screen = AppScreen.ORDERS }
+            onBack = { screen = AppScreen.ORDERS },
+            deepLinkLinea = if (screen == AppScreen.PICKING && deepPedido != null) deepLinea else null,
+            onDeepLinkConsumed = onDeepLinkConsumed
         )
 
         AppScreen.SETTINGS -> SettingsScreen(

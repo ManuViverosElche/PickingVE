@@ -1,17 +1,22 @@
 package com.vivero.pickingve.domain.usecase
 
+import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
+import com.vivero.pickingve.data.local.entities.SectorEntity
 
 data class PassportData(
     val referencia: String,
     val litraje: String? = null,
-    val sector: String? = null
+    val litrajeDesc: String? = null,
+    val sector: String? = null,
+    val sectorDesc: String? = null
 )
 
 /**
  * OCR post-processing for the plant passport label (recuadro negro "C: ...",
  * litraje debajo del recuadro, descripción y sector debajo).
- * Busca en el catálogo por referencia C: y desambigua con litraje y sector.
+ * Busca en el catálogo por referencia C: y desambigua con litraje y sector,
+ * convirtiendo las descripciones OCR a códigos con las tablas LITRAJES y SECTORES.
  */
 class ParsePlantPassportUseCase {
 
@@ -23,19 +28,24 @@ class ParsePlantPassportUseCase {
             .trim()
         if (normalized.isBlank()) return null
 
-        val refMatch = Regex("\\bc\\s*[:]\\s*([a-z0-9][a-z0-9\\-./ ]{0,30}?)(?:\\s+[a-z]|$)")
+        val refMatch = Regex("\\bc[\\s.:]*\\s*([a-z0-9][a-z0-9\\-./ ]{0,30}?)(?:\\s+[a-z]|$)")
             .find(normalized)
         val referencia = refMatch?.groupValues?.get(1)?.trim()?.uppercase() ?: return null
         if (referencia.length < 2) return null
 
-        val litraje = detectarLitraje(normalized, referencia)
-        val sector = detectarSector(normalized)
+        val litrajeDesc = detectarLitraje(normalized, referencia)
+        val sectorDesc = detectarSector(normalized)
 
-        return PassportData(referencia, litraje, sector)
+        return PassportData(referencia, litrajeDesc = litrajeDesc, sectorDesc = sectorDesc)
     }
 
     /** Devuelve el producto del catálogo que encaja, o null si no hay match claro. */
-    fun bestMatch(passport: PassportData, catalog: List<ProductEntity>): ProductEntity? {
+    fun bestMatch(
+        passport: PassportData,
+        catalog: List<ProductEntity>,
+        litrajes: List<LitrajeEntity> = emptyList(),
+        sectores: List<SectorEntity> = emptyList()
+    ): ProductEntity? {
         val candidatos = catalog.filter {
             it.reference.equals(passport.referencia, ignoreCase = true) ||
                 it.id.equals(passport.referencia, ignoreCase = true)
@@ -43,12 +53,45 @@ class ParsePlantPassportUseCase {
         if (candidatos.isEmpty()) return null
         if (candidatos.size == 1) return candidatos.first()
 
-        return desambiguar(candidatos, passport)
+        val litrajeCodigo = passport.litraje ?: resolveLitraje(passport.litrajeDesc, litrajes)
+        val sectorCodigo = passport.sector ?: resolveSector(passport.sectorDesc, sectores)
+
+        return desambiguar(
+            candidatos,
+            passport.copy(litraje = litrajeCodigo, sector = sectorCodigo)
+        )
     }
 
-    fun bestMatch(rawText: String, catalog: List<ProductEntity>): ProductEntity? {
+    fun bestMatch(
+        rawText: String,
+        catalog: List<ProductEntity>,
+        litrajes: List<LitrajeEntity> = emptyList(),
+        sectores: List<SectorEntity> = emptyList()
+    ): ProductEntity? {
         val passport = parse(rawText) ?: return null
-        return bestMatch(passport, catalog)
+        return bestMatch(passport, catalog, litrajes, sectores)
+    }
+
+    /** Convierte la descripción OCR del litraje en su código (ID_LITRAJE). */
+    fun resolveLitraje(desc: String?, litrajes: List<LitrajeEntity>): String? {
+        if (desc.isNullOrBlank() || litrajes.isEmpty()) return null
+        val norm = desc.lowercase().replace(" ", "")
+        return litrajes.firstOrNull {
+            it.id.lowercase().replace(" ", "") == norm ||
+                it.descripcion.lowercase().replace(" ", "") == norm
+        }?.id
+    }
+
+    /** Convierte la descripción OCR del sector en su código (ID_SECTOR) por subcadena. */
+    fun resolveSector(desc: String?, sectores: List<SectorEntity>): String? {
+        if (desc.isNullOrBlank() || sectores.isEmpty()) return null
+        val norm = desc.lowercase().trim()
+        if (norm.length < 2) return null
+        return sectores.firstOrNull {
+            it.id.equals(norm, ignoreCase = true) ||
+                it.descripcion.lowercase().contains(norm) ||
+                norm.contains(it.descripcion.lowercase())
+        }?.id
     }
 
     private fun desambiguar(candidatos: List<ProductEntity>, passport: PassportData): ProductEntity? {
@@ -72,20 +115,26 @@ class ParsePlantPassportUseCase {
 
     private fun detectarLitraje(texto: String, referencia: String): String? {
         val refNorm = referencia.lowercase()
-        return Regex("\\b(\\d{1,3}(?:[.,]\\d+)?)\\s*l(?:itros|itro|t)?\\b")
+        return Regex("\\b(\\d{1,3}(?:[.,]\\d+)?)\\s*\\+?\\s*l(?:itros|itro|t)?\\b")
             .findAll(texto)
             .mapNotNull { m ->
                 val match = m.value.lowercase()
                 if (refNorm.contains(match.replace(" ", ""))) null else m.groupValues[1]
             }
             .firstOrNull()
+            ?: Regex("\\b(\\d{1,3})\\+\\b").findAll(texto)
+                .mapNotNull { m ->
+                    val match = m.value.lowercase()
+                    if (refNorm.contains(match.replace(" ", ""))) null else m.groupValues[1]
+                }
+                .firstOrNull()
     }
 
     private fun detectarSector(texto: String): String? {
-        Regex("sector\\s*[:]?\\s*([a-z0-9]{1,4})").find(texto)?.let { return it.groupValues[1] }
+        Regex("sector\\s*[:]?\\s*([a-z0-9\\-]{1,12})").find(texto)?.let { return it.groupValues[1] }
         val lineas = texto.split(" ").filter { it.isNotBlank() }
         val ultima = lineas.lastOrNull()?.trim() ?: return null
-        if (Regex("^[a-z0-9]{1,4}$").matches(ultima)) return ultima
+        if (Regex("^[a-z0-9\\-]{1,12}$").matches(ultima)) return ultima
         return null
     }
 }

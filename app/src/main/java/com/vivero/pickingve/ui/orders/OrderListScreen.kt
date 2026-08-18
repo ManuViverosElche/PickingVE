@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Logout
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vivero.pickingve.data.local.dao.OrderWithTotals
+import com.vivero.pickingve.ui.picking.ChatDialog
 import com.vivero.pickingve.util.formatInstrucciones
 import java.time.Instant
 import java.time.LocalDate
@@ -75,6 +77,7 @@ fun OrderListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val syncStarted = remember { mutableStateOf(false) }
     var infoOrder by remember { mutableStateOf<OrderWithTotals?>(null) }
+    var chatOrderId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         if (!syncStarted.value) {
@@ -216,7 +219,8 @@ fun OrderListScreen(
                             OrderCard(
                                 order = order,
                                 onClick = { onOrderSelected(order.orderId) },
-                                onInfo = { infoOrder = order }
+                                onInfo = { infoOrder = order },
+                                onChat = { chatOrderId = order.orderId }
                             )
                         }
                     }
@@ -227,6 +231,9 @@ fun OrderListScreen(
 
     infoOrder?.let { order ->
         OrderInfoDialog(order = order, onDismiss = { infoOrder = null })
+    }
+    chatOrderId?.let { id ->
+        ChatDialog(pedidoId = id, onDismiss = { chatOrderId = null })
     }
 }
 
@@ -246,7 +253,7 @@ private fun dayLabel(epochMillis: Long): String {
 }
 
 @Composable
-private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () -> Unit) {
+private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () -> Unit, onChat: () -> Unit) {
     val progress = if (order.totalRequested == 0) 0f
     else order.totalPicked.toFloat() / order.totalRequested
     val pct = (progress * 100).toInt()
@@ -300,6 +307,13 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
+                }
+                IconButton(onClick = onChat) {
+                    Icon(
+                        Icons.Filled.ChatBubbleOutline,
+                        contentDescription = "Mensajes del pedido",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))

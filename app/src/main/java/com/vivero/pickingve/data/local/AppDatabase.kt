@@ -12,6 +12,7 @@ import com.vivero.pickingve.data.local.dao.LitrajeDao
 import com.vivero.pickingve.data.local.dao.OrderDao
 import com.vivero.pickingve.data.local.dao.PickingDao
 import com.vivero.pickingve.data.local.dao.ProductDao
+import com.vivero.pickingve.data.local.dao.SectorDao
 import com.vivero.pickingve.data.local.entities.ChatEstadoEntity
 import com.vivero.pickingve.data.local.entities.EncargadoEntity
 import com.vivero.pickingve.data.local.entities.LitrajeEntity
@@ -19,6 +20,7 @@ import com.vivero.pickingve.data.local.entities.OrderEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
+import com.vivero.pickingve.data.local.entities.SectorEntity
 
 @Database(
     entities = [
@@ -28,9 +30,10 @@ import com.vivero.pickingve.data.local.entities.ProductEntity
         PickingRecordEntity::class,
         EncargadoEntity::class,
         LitrajeEntity::class,
+        SectorEntity::class,
         ChatEstadoEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -40,6 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pickingDao(): PickingDao
     abstract fun encargadoDao(): EncargadoDao
     abstract fun litrajeDao(): LitrajeDao
+    abstract fun sectorDao(): SectorDao
     abstract fun chatEstadoDao(): ChatEstadoDao
 
     companion object {
@@ -286,6 +290,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sectores (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        descripcion TEXT NOT NULL
+                    )
+                    """
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -298,7 +315,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
-                        MIGRATION_17_18
+                        MIGRATION_17_18, MIGRATION_18_19
                     )
                     .build()
                 INSTANCE = instance

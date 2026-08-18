@@ -43,14 +43,15 @@ class PickingApiClient(
 
     /**
      * Downloads orders from the BigQuery backend in a date range and a set of states.
-     * The deployed backend supports `desde`+`hasta`+`estados=2,3` in a single call.
+     * The deployed backend supports `desde`+`hasta`+`estados=1,3` in a single call.
+     * Estados: 1 = pendiente parcial, 3 = en almacen (mismo criterio que los scripts de las hojas).
      */
     suspend fun fetchPedidos(
         desde: String,
         hasta: String? = null,
         finca: String? = null,
         fincas: List<String>? = null,
-        estados: List<Int> = listOf(2, 3),
+        estados: List<Int> = listOf(1, 3),
         modificadoDesde: String? = null
     ): List<ApiPedido> {
         val result = client.get("$baseUrl/pedidos") {
@@ -203,7 +204,7 @@ class PickingApiClient(
                 MultiPartFormDataContent(
                     formData {
                         append("pedido_id", pedido)
-                        append("linea_huella", linea ?: "")
+                        if (!linea.isNullOrBlank()) append("linea_huella", linea)
                         append("autor_email", autorEmail)
                         append("autor_nombre", autorNombre)
                         append("rol", rol)

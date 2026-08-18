@@ -151,4 +151,7 @@ interface PickingDao {
             "WHERE recordId = :recordId"
     )
     suspend fun clearLabel(recordId: String)
+
+    @Query("DELETE FROM picking_records")
+    suspend fun clearAll()
 }

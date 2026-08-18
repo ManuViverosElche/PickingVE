@@ -56,7 +56,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -100,13 +103,16 @@ import com.vivero.pickingve.data.local.entities.ChatEstadoEntity
 import com.vivero.pickingve.data.local.entities.LitrajeEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
+import com.vivero.pickingve.data.local.entities.ProductEntity
+import com.vivero.pickingve.domain.usecase.ParsePlantPassportUseCase
 import com.vivero.pickingve.scanner.OcrReader
 import com.vivero.pickingve.ui.theme.DarkOnWarnContainer
-import com.vivero.pickingve.ui.theme.DarkMarkedContainer
-import com.vivero.pickingve.ui.theme.DarkOnMarkedContainer
+import com.vivero.pickingve.ui.theme.DarkPickedContainer
+import com.vivero.pickingve.ui.theme.DarkOnPickedContainer
 import com.vivero.pickingve.ui.theme.DarkWarnContainer
-import com.vivero.pickingve.ui.theme.LightMarkedContainer
-import com.vivero.pickingve.ui.theme.LightOnMarkedContainer
+import com.vivero.pickingve.ui.theme.LightPickedContainer
+import com.vivero.pickingve.ui.theme.LightOnPickedContainer
+import com.vivero.pickingve.ui.theme.MarkedBorderColor
 import com.vivero.pickingve.ui.theme.LightOnWarnContainer
 import com.vivero.pickingve.ui.theme.LightWarnContainer
 import com.vivero.pickingve.util.formatInstrucciones
@@ -117,7 +123,9 @@ import java.io.File
 @Composable
 fun PickingScreen(
     viewModel: PickingViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    deepLinkLinea: String? = null,
+    onDeepLinkConsumed: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val pendingLabels by viewModel.pendingLabels.collectAsState()
@@ -128,6 +136,15 @@ fun PickingScreen(
     var showSendDialog by remember { mutableStateOf(false) }
     var showOrderInfo by remember { mutableStateOf(false) }
     var chatLinea by remember { mutableStateOf<String?>(null) }
+    var deepLinkConsumed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(deepLinkLinea) {
+        if (deepLinkLinea != null && !deepLinkConsumed) {
+            chatLinea = deepLinkLinea
+            deepLinkConsumed = true
+            onDeepLinkConsumed()
+        }
+    }
     var showTruckArrival by remember { mutableStateOf(false) }
     var showSobranteConfirm by remember { mutableStateOf(false) }
     var showReopenConfirm by remember { mutableStateOf(false) }
@@ -176,7 +193,7 @@ fun PickingScreen(
                 },
                 actions = {
                     IconButton(onClick = {
-                        chatLinea = ""
+                        chatLinea = null
                         viewModel.marcarChatLeido("")
                     }) {
                         Text(
@@ -319,7 +336,7 @@ fun PickingScreen(
             pending = pending,
             line = state.lines.firstOrNull { it.orderLineId == pending.orderLineId },
             litrajes = state.litrajes,
-            onConfirm = { liters, measure, caliber, needsLabel, labelReason, labelFormat ->
+            onConfirm = { liters, measure, caliber, needsLabel, labelReason, labelFormat, qty ->
                 viewModel.confirmPicking(
                     pickingType = "I",
                     liters = liters,
@@ -327,7 +344,8 @@ fun PickingScreen(
                     caliber = caliber,
                     needsLabel = needsLabel,
                     labelReason = labelReason,
-                    labelFormat = labelFormat
+                    labelFormat = labelFormat,
+                    qty = qty
                 )
             },
             onDismiss = viewModel::dismissConfirm
@@ -340,6 +358,15 @@ fun PickingScreen(
             onPick = viewModel::assignToLine,
             onAmpliacion = viewModel::confirmAmpliacion,
             onDismiss = viewModel::dismissLinePick
+        )
+    }
+
+    state.pendingSectorWarning?.let { warning ->
+        SectorWarningDialog(
+            warning = warning,
+            onConfirm = viewModel::confirmSectorWarning,
+            onChangeLine = viewModel::sectorWarningToLinePick,
+            onDismiss = viewModel::dismissSectorWarning
         )
     }
 
@@ -382,11 +409,10 @@ fun PickingScreen(
     }
 
     unpickLine?.let { line ->
-        UnpickDialog(
+        UnpickConfirmDialog(
             line = line,
-            loadRecords = { viewModel.recordsForLine(line.orderLineId) },
-            onUnpickRecords = { ids ->
-                viewModel.unpickRecords(line, ids)
+            onConfirmUnpick = { qty ->
+                viewModel.unpickLine(line, qty)
                 unpickLine = null
             },
             onEnableScanUnpick = {
@@ -529,15 +555,8 @@ fun PickingScreen(
     manualMarkLine?.let { line ->
         ManualMarkDialog(
             line = line,
-            litrajes = state.litrajes,
-            onConfirm = { qty, labelReason, labelFormat ->
-                viewModel.confirmManualMark(
-                    line,
-                    qty,
-                    needsLabel = labelReason.isNotBlank() || labelFormat.isNotBlank(),
-                    labelReason = labelReason,
-                    labelFormat = labelFormat
-                )
+            onConfirm = { referencia, litrajeDesc, sectorDesc ->
+                viewModel.marcarDesdeEtiqueta(referencia, litrajeDesc, sectorDesc)
                 manualMarkLine = null
             },
             onDismiss = { manualMarkLine = null }
@@ -703,7 +722,7 @@ private fun CargadoSummary(
     onReopen: () -> Unit
 ) {
     if (order == null) return
-    val vigentes = lines.filter { it.vigente }
+    val vigentes = lines.filter { it.vigente && it.requestedQty > 0 }
     val totalPicked = vigentes.sumOf { maxOf(it.pickedQty, it.acopiadoServidor) }
     val totalRequested = vigentes.sumOf { it.requestedQty }
     val customer = if (order.customerFiscal.isNotBlank() && order.customerFiscal != order.customerName) {
@@ -864,15 +883,14 @@ private fun OrderLinesList(
     var query by remember { mutableStateOf("") }
 
     val filtered = lines.filter { line ->
-        query.isBlank() ||
-            line.productName.contains(query, ignoreCase = true) ||
-            line.productId.contains(query, ignoreCase = true) ||
-            line.litrajeDesc.contains(query, ignoreCase = true) ||
-            line.sectorDesc.contains(query, ignoreCase = true)
+        line.vigente && line.requestedQty > 0 && (
+            query.isBlank() ||
+                line.productName.contains(query, ignoreCase = true) ||
+                line.productId.contains(query, ignoreCase = true) ||
+                line.litrajeDesc.contains(query, ignoreCase = true) ||
+                line.sectorDesc.contains(query, ignoreCase = true)
+            )
     }
-    val pending = filtered.filter { it.vigente && maxOf(it.pickedQty, it.acopiadoServidor) < it.requestedQty }
-    val complete = filtered.filter { it.vigente && maxOf(it.pickedQty, it.acopiadoServidor) >= it.requestedQty }
-    val noVigentes = filtered.filter { !it.vigente }
 
     Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -899,51 +917,7 @@ private fun OrderLinesList(
                     )
                 }
             }
-            items(pending, key = { it.orderLineId }) { line ->
-                OrderLineCard(
-                    order = order,
-                    line = line,
-                    substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
-                    labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
-                    chatEstados = chatEstados,
-                    onUnpick = onUnpick,
-                    onManualMark = onManualMark,
-                    onOpenChat = onOpenChat
-                )
-            }
-            if (complete.isNotEmpty()) {
-                item {
-                    Text(
-                        "Completadas",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-            items(complete, key = { it.orderLineId }) { line ->
-                OrderLineCard(
-                    order = order,
-                    line = line,
-                    substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
-                    labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
-                    chatEstados = chatEstados,
-                    onUnpick = onUnpick,
-                    onManualMark = onManualMark,
-                    onOpenChat = onOpenChat
-                )
-            }
-            if (noVigentes.isNotEmpty()) {
-                item {
-                    Text(
-                        "Eliminadas del pedido",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-            items(noVigentes, key = { it.orderLineId }) { line ->
+            items(filtered, key = { it.orderLineId }) { line ->
                 OrderLineCard(
                     order = order,
                     line = line,
@@ -973,25 +947,25 @@ private fun OrderLineCard(
 ) {
     val shownPicked = maxOf(line.pickedQty, line.acopiadoServidor)
     val remotePicked = (line.acopiadoServidor - line.pickedQty).coerceAtLeast(0)
-    val complete = line.vigente && shownPicked >= line.requestedQty
+    val complete = line.vigente && line.requestedQty > 0 && shownPicked >= line.requestedQty
     val overPicked = line.vigente && shownPicked > line.requestedQty
     val marcaDistinta = order?.marcaPedido?.isNotBlank() == true &&
         line.marca.isNotBlank() && line.marca != order.marcaPedido
-    val markedContainer = if (isSystemInDarkTheme()) DarkMarkedContainer else LightMarkedContainer
+    val pickedContainer = if (isSystemInDarkTheme()) DarkPickedContainer else LightPickedContainer
+    val onPickedContainer = if (isSystemInDarkTheme()) DarkOnPickedContainer else LightOnPickedContainer
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = line.vigente) { onManualMark(line) },
+            .clickable { onManualMark(line) },
         colors = CardDefaults.cardColors(
             containerColor = when {
-                !line.vigente -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                line.marcado -> markedContainer
-                complete -> MaterialTheme.colorScheme.surfaceVariant
+                complete -> pickedContainer
                 shownPicked > 0 -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
                 else -> MaterialTheme.colorScheme.surface
             }
-        )
+        ),
+        border = if (line.marcado) BorderStroke(2.dp, MarkedBorderColor) else null
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -999,18 +973,8 @@ private fun OrderLineCard(
                     line.productName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    textDecoration = if (line.vigente) null else TextDecoration.LineThrough,
                     modifier = Modifier.weight(1f)
                 )
-                if (!line.vigente) {
-                    Text(
-                        "ELIMINADA DEL PEDIDO",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(end = 6.dp)
-                    )
-                }
                 if (complete) {
                     Icon(
                         Icons.Filled.CheckCircle,
@@ -1052,13 +1016,11 @@ private fun OrderLineCard(
                     )
                 }
                 if (line.marcado) {
-                    val onMarkedContainer =
-                        if (isSystemInDarkTheme()) DarkOnMarkedContainer else LightOnMarkedContainer
                     Text(
                         "· MARCADA",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
-                        color = onMarkedContainer
+                        color = MarkedBorderColor
                     )
                 }
             }
@@ -1125,6 +1087,16 @@ private fun OrderLineCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.padding(top = 6.dp)
             ) {
+                val pendiente = (line.requestedQty - shownPicked).coerceAtLeast(0)
+                if (pendiente > 0) {
+                    LineBadge(
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+                        border = null,
+                        icon = { Icon(Icons.Filled.CheckCircle, null, Modifier.size(14.dp)) },
+                        text = "Pendiente $pendiente"
+                    )
+                }
                 if (line.pickedQty > 0) {
                     LineBadge(
                         container = MaterialTheme.colorScheme.secondaryContainer,
@@ -1367,6 +1339,57 @@ private fun LinePickDialog(
     )
 }
 
+@Composable
+private fun SectorWarningDialog(
+    warning: SectorWarning,
+    onConfirm: () -> Unit,
+    onChangeLine: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val product = warning.product
+    val line = warning.line
+    val etiquetaAttrs = listOfNotNull(
+        product.litraje.takeIf { it.isNotBlank() }?.let { "litraje $it" },
+        product.sector.takeIf { it.isNotBlank() }?.let { "sector $it" }
+    ).joinToString(" · ")
+    val lineaAttrs = listOfNotNull(
+        line.litrajeDesc.takeIf { it.isNotBlank() },
+        line.sectorDesc.takeIf { it.isNotBlank() }
+    ).joinToString(" · ")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("⚠ La etiqueta no coincide con la línea") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Etiqueta escaneada: ${product.reference} · ${product.name}" +
+                        (if (etiquetaAttrs.isNotBlank()) " · $etiquetaAttrs" else ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Línea del pedido: ${line.productName}" +
+                        (if (lineaAttrs.isNotBlank()) " · $lineaAttrs" else ""),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    "El litraje o sector de la etiqueta no coincide con el de la línea. " +
+                        "Se registrará en esta línea.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Añadir a esta línea") }
+        },
+        dismissButton = {
+            TextButton(onClick = onChangeLine) { Text("Elegir otra línea") }
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SendPickingDialog(
@@ -1597,121 +1620,73 @@ private fun LabelsDialog(
 }
 
 @Composable
-private fun UnpickDialog(
+private fun UnpickConfirmDialog(
     line: OrderLineEntity,
-    loadRecords: suspend () -> List<PickingRecordEntity>,
-    onUnpickRecords: (List<String>) -> Unit,
+    onConfirmUnpick: (qty: Int) -> Unit,
     onEnableScanUnpick: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var records by remember(line.orderLineId) { mutableStateOf<List<PickingRecordEntity>>(emptyList()) }
-    var selected by remember(line.orderLineId) { mutableStateOf<Set<String>>(emptySet()) }
-    var loading by remember(line.orderLineId) { mutableStateOf(true) }
-
-    LaunchedEffect(line.orderLineId) {
-        loading = true
-        records = loadRecords()
-        loading = false
-    }
-
-    fun toggle(id: String) {
-        selected = if (id in selected) selected - id else selected + id
-    }
-
-    val checkedCount = records.count { it.recordId in selected }
+    val ventaDirecta = line.productId.startsWith("90000")
+    var qtyText by remember(line.orderLineId) { mutableStateOf("1") }
+    val qty = if (ventaDirecta) (qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1) else 1
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Desacopiar") },
+        title = { Text("Desacoplar") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     line.productName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Acopiadas: ${line.pickedQty}. Marca los registros que se devuelven o usa el escaneo.",
+                    "${line.productId}" +
+                        (if (line.litrajeDesc.isNotBlank()) " · ${line.litrajeDesc}" else "") +
+                        (if (line.sectorDesc.isNotBlank()) " · ${line.sectorDesc}" else "") +
+                        " · Acopiadas: ${line.pickedQty} · Pedido: ${line.requestedQty}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                } else if (records.isEmpty()) {
+                HorizontalDivider()
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
-                        "No hay registros individuales de esta línea.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        "Se desacoplará $qty de la línea ${line.posicion}. La cantidad vuelve a pendiente y el registro se elimina.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                    )
+                }
+                if (ventaDirecta) {
+                    OutlinedTextField(
+                        value = qtyText,
+                        onValueChange = { qtyText = it.filter(Char::isDigit) },
+                        label = { Text("Cantidad a desacopiar") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "${records.size} registros",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = {
-                            selected = if (selected.size == records.size) {
-                                emptySet()
-                            } else {
-                                records.map { it.recordId }.toSet()
-                            }
-                        }) {
-                            Text(if (selected.size == records.size) "Quitar selección" else "Marcar todos")
-                        }
-                    }
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 240.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        items(records, key = { it.recordId }) { r ->
-                            val whenPicked = java.text.DateFormat.getDateTimeInstance(
-                                java.text.DateFormat.SHORT,
-                                java.text.DateFormat.SHORT
-                            ).format(java.util.Date(r.timestamp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { toggle(r.recordId) },
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = r.recordId in selected,
-                                    onCheckedChange = { toggle(r.recordId) }
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "${r.actualProductId} · x${r.batchQty}",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Text(
-                                        buildString {
-                                            append(whenPicked)
-                                            if (r.measure?.isNotBlank() == true) append(" · ${r.measure}cm")
-                                            if (r.caliber?.isNotBlank() == true) append(" · cal. ${r.caliber}")
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Text(
+                        "Planta propia: se desacopia de 1 en 1.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+                Text(
+                    "También puedes pistolear la planta que se devuelve con el botón Escaneo.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = {
-            Button(
-                enabled = checkedCount > 0,
-                onClick = {
-                    onUnpickRecords(records.filter { it.recordId in selected }.map { it.recordId })
-                }
-            ) {
-                Text("Desacopiar $checkedCount")
+            Button(onClick = { onConfirmUnpick(qty) }) {
+                Text("Desacoplar $qty")
             }
         },
         dismissButton = {
@@ -2010,74 +1985,143 @@ private fun TruckArrivalDialog(
 @Composable
 private fun ManualMarkDialog(
     line: OrderLineEntity,
-    litrajes: List<LitrajeEntity>,
-    onConfirm: (qty: Int, labelReason: String, labelFormat: String) -> Unit,
+    onConfirm: (referencia: String, litrajeDesc: String?, sectorDesc: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val remaining = (line.requestedQty - line.pickedQty).coerceAtLeast(1)
-    var qtyText by remember(line.orderLineId) { mutableStateOf(remaining.toString()) }
-    var labelOption by remember(line.orderLineId) { mutableStateOf(0) }
-    var labelFormat by remember(line.orderLineId) { mutableStateOf("") }
-    val qty = qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1
-    val willOverPick = (line.pickedQty + qty) > line.requestedQty
+    var paso by remember(line.orderLineId) { mutableStateOf(0) }
+    var etiqueta by remember(line.orderLineId) { mutableStateOf("") }
+    var referencia by remember(line.orderLineId) { mutableStateOf("") }
+    var litrajeDesc by remember(line.orderLineId) { mutableStateOf("") }
+    var sectorDesc by remember(line.orderLineId) { mutableStateOf("") }
+    var errorAnalisis by remember(line.orderLineId) { mutableStateOf<String?>(null) }
+
+    fun analizar(texto: String) {
+        val passport = ParsePlantPassportUseCase().parse(texto)
+        if (passport == null) {
+            errorAnalisis = "No he encontrado la referencia C: en el texto."
+            return
+        }
+        referencia = passport.referencia
+        litrajeDesc = passport.litrajeDesc.orEmpty()
+        sectorDesc = passport.sectorDesc.orEmpty()
+        errorAnalisis = null
+        paso = 1
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Acopio sin escaneo") },
+        title = { Text(if (paso == 0) "Acopio manual (etiqueta)" else "Verificar referencia") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    line.productName,
+                    "Línea ${line.posicion} · ${line.productName}",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Pedido: ${line.requestedQty} · Acopiadas actuales: ${line.pickedQty}",
+                    "${line.productId}" +
+                        (if (line.litrajeDesc.isNotBlank()) " · ${line.litrajeDesc}" else "") +
+                        (if (line.sectorDesc.isNotBlank()) " · ${line.sectorDesc}" else "") +
+                        " · Pedido: ${line.requestedQty} · Acopiadas: ${maxOf(line.pickedQty, line.acopiadoServidor)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (willOverPick) {
+                HorizontalDivider()
+                if (paso == 0) {
                     Text(
-                        "⚠ AVISO: Se acopiará más de lo pedido (${line.pickedQty + qty} en total para ${line.requestedQty} pedidas).",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold
+                        "1. Pega o escribe el texto de la etiqueta (recuadro negro C:)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
                     )
+                    OutlinedTextField(
+                        value = etiqueta,
+                        onValueChange = { etiqueta = it; errorAnalisis = null },
+                        label = { Text("Texto de la etiqueta") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "Ej.: C: 100042 3 L BLOQUES. Si la etiqueta no trae EAN, escribe la referencia tal y como aparece en el recuadro negro.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    errorAnalisis?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            referencia = line.productId
+                            litrajeDesc = line.litrajeDesc
+                            sectorDesc = line.sectorDesc
+                            errorAnalisis = null
+                            paso = 1
+                        }
+                    ) { Text("Usar la referencia de la línea (${line.productId})") }
+                } else {
+                    Text(
+                        "2. Verifica la referencia leída de la etiqueta",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    OutlinedTextField(
+                        value = referencia,
+                        onValueChange = { referencia = it.uppercase() },
+                        label = { Text("Referencia (C:)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = litrajeDesc,
+                        onValueChange = { litrajeDesc = it },
+                        label = { Text("Litraje (descripción)") },
+                        placeholder = { Text("Ej.: 3 L — vacío si no aparece") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = sectorDesc,
+                        onValueChange = { sectorDesc = it },
+                        label = { Text("Sector (descripción)") },
+                        placeholder = { Text("Ej.: BLOQUES — vacío si no aparece") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (referencia.isNotBlank() && referencia != line.productId) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "La referencia no coincide con la de la línea (${line.productId}). Se tratará como sustitución o ampliación si no pertenece a otra línea del pedido.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
                 }
-                OutlinedTextField(
-                    value = qtyText,
-                    onValueChange = { qtyText = it.filter(Char::isDigit) },
-                    label = { Text("Cantidad a acopiar") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                LabelOptionSelector(
-                    labelOption = labelOption,
-                    labelFormat = labelFormat,
-                    litrajes = litrajes,
-                    mostrarNoEtiqueta = false,
-                    onOptionChange = { labelOption = it; if (it != 3) labelFormat = "" },
-                    onFormatChange = { labelFormat = it }
-                )
             }
         },
         confirmButton = {
-            Button(
-                enabled = qty > 0 && (labelOption != 3 || labelFormat.isNotBlank()),
-                onClick = {
-                    onConfirm(
-                        qty,
-                        when (labelOption) {
-                            2 -> "MACETA_ROTA"
-                            3 -> "CAMBIO_FORMATO"
-                            else -> ""
-                        },
-                        labelFormat
-                    )
+            if (paso == 0) {
+                Button(onClick = { analizar(etiqueta) }, enabled = etiqueta.isNotBlank()) {
+                    Text("Analizar etiqueta")
                 }
-            ) {
-                Text("Marcar acopiadas")
+            } else {
+                Button(
+                    enabled = referencia.length >= 2,
+                    onClick = {
+                        onConfirm(referencia, litrajeDesc.ifBlank { null }, sectorDesc.ifBlank { null })
+                    }
+                ) { Text("Marcar acopiada") }
             }
         },
         dismissButton = {

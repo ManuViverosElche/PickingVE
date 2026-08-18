@@ -35,3 +35,6 @@ Thumbs.db
 *.log
 
 __pycache__/
+
+# Engram AI agent memory
+.engram/

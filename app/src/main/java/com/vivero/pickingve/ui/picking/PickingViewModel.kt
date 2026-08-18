@@ -29,6 +29,7 @@ data class PickingUiState(
     val lines: List<OrderLineEntity> = emptyList(),
     val pendingConfirm: PendingConfirm? = null,
     val pendingLinePick: PendingLinePick? = null,
+    val pendingSectorWarning: SectorWarning? = null,
     val availableProducts: List<ProductEntity> = emptyList(),
     val pendingLabelCount: Int = 0,
     val labelsHistory: List<PickingRecordEntity> = emptyList(),
@@ -50,7 +51,9 @@ data class PendingConfirm(
     val posicion: Int,
     val orderProductName: String,
     val originalProductId: String,
-    val isAmpliacion: Boolean = false
+    val isAmpliacion: Boolean = false,
+    val ocrText: String? = null,
+    val qty: Int = 1
 )
 
 data class PendingLinePick(
@@ -58,6 +61,11 @@ data class PendingLinePick(
     val product: ProductEntity,
     val candidateLines: List<OrderLineEntity>,
     val isSubstitution: Boolean
+)
+
+data class SectorWarning(
+    val product: ProductEntity,
+    val line: OrderLineEntity
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -69,12 +77,14 @@ class PickingViewModel(
     private val selectedOrderId = MutableStateFlow<String?>(null)
     private val pendingConfirm = MutableStateFlow<PendingConfirm?>(null)
     private val pendingLinePick = MutableStateFlow<PendingLinePick?>(null)
+    private val pendingSectorWarning = MutableStateFlow<SectorWarning?>(null)
     private val lastMessage = MutableStateFlow<String?>(null)
     private val sendingReport = MutableStateFlow(false)
     private val sendingLabels = MutableStateFlow(false)
     private val unpickingMode = MutableStateFlow(false)
     private val selectedRecordIds = MutableStateFlow<Set<String>>(emptySet())
     private var unpickTargetLine: OrderLineEntity? = null
+    private var lastOcrText: String? = null
 
     private val lines: StateFlow<List<OrderLineEntity>> = selectedOrderId
         .flatMapLatest { id ->
@@ -135,20 +145,27 @@ class PickingViewModel(
     ) { mode, selected -> mode to selected }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false to emptySet())
 
+    private val pendingFlags: StateFlow<Triple<PendingConfirm?, PendingLinePick?, SectorWarning?>> = combine(
+        pendingConfirm,
+        pendingLinePick,
+        pendingSectorWarning
+    ) { confirm, pick, sectorWarning -> Triple(confirm, pick, sectorWarning) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Triple(null, null, null))
+
     val uiState: StateFlow<PickingUiState> = combine(
         combine(
             selectedOrderId,
             order,
             lines,
-            pendingConfirm,
-            pendingLinePick
-        ) { orderId, order, orderLines, confirm, pick ->
+            pendingFlags
+        ) { orderId, order, orderLines, pending ->
             PickingUiState(
                 selectedOrderId = orderId,
                 order = order,
                 lines = orderLines,
-                pendingConfirm = confirm,
-                pendingLinePick = pick,
+                pendingConfirm = pending.first,
+                pendingLinePick = pending.second,
+                pendingSectorWarning = pending.third,
                 sobrante = order?.sobrante == true
             )
         },
@@ -196,6 +213,10 @@ class PickingViewModel(
 
     fun selectOrder(orderId: String) {
         selectedOrderId.value = orderId
+        setUnpickingMode(false)
+        pendingConfirm.value = null
+        pendingLinePick.value = null
+        pendingSectorWarning.value = null
         viewModelScope.launch { repository.clearOrderModificado(orderId) }
         actualizarChatEstados()
     }
@@ -251,14 +272,24 @@ class PickingViewModel(
         viewModelScope.launch {
             val passport = ParsePlantPassportUseCase().parse(text)
             if (passport == null) {
-                lastMessage.value = "No se detectó la referencia C: en la etiqueta"
+                val recorte = text.trim().replace('\n', ' ').take(140)
+                lastMessage.value = if (recorte.isBlank()) {
+                    "No se detectó la referencia C: en la etiqueta"
+                } else {
+                    "No se detectó la referencia C: en la etiqueta. Texto: $recorte"
+                }
                 return@launch
             }
-            val producto = ParsePlantPassportUseCase().bestMatch(passport, repository.allProducts())
+            val producto = ParsePlantPassportUseCase().bestMatch(
+                passport,
+                repository.allProducts(),
+                repository.litrajesList(),
+                repository.sectoresList()
+            )
             if (producto == null) {
                 val leido = "C: ${passport.referencia}" +
-                    (passport.litraje?.let { " · Litraje $it" } ?: "") +
-                    (passport.sector?.let { " · Sector $it" } ?: "")
+                    (passport.litrajeDesc?.let { " · Litraje $it" } ?: "") +
+                    (passport.sectorDesc?.let { " · Sector $it" } ?: "")
                 lastMessage.value = "No encontrado en el catálogo ($leido)"
             } else {
                 val currentState = uiState.value
@@ -271,12 +302,51 @@ class PickingViewModel(
         }
     }
 
+    /** Acopio manual desde la etiqueta (pasaporte): referencia C: + litraje + sector. */
+    fun marcarDesdeEtiqueta(referencia: String, litrajeDesc: String?, sectorDesc: String?) {
+        val ref = referencia.trim().replaceFirst(Regex("^[cC]\\s*[:.]?\\s*"), "")
+        if (ref.length < 2) {
+            lastMessage.value = "Escribe la referencia C: de la etiqueta"
+            return
+        }
+        lastOcrText = buildString {
+            append("C: $ref")
+            if (!litrajeDesc.isNullOrBlank()) append(" $litrajeDesc")
+            if (!sectorDesc.isNullOrBlank()) append(" $sectorDesc")
+        }
+        viewModelScope.launch {
+            val catalogo = repository.allProducts()
+            val passport = PassportData(ref, litrajeDesc = litrajeDesc, sectorDesc = sectorDesc)
+            val producto = ParsePlantPassportUseCase().bestMatch(
+                passport,
+                catalogo,
+                repository.litrajesList(),
+                repository.sectoresList()
+            ) ?: catalogo.firstOrNull {
+                it.reference.equals(ref, ignoreCase = true) || it.id.equals(ref, ignoreCase = true)
+            }
+            if (producto == null) {
+                val leido = "C: $ref" +
+                    (litrajeDesc?.let { " · Litraje $it" } ?: "") +
+                    (sectorDesc?.let { " · Sector $it" } ?: "")
+                lastMessage.value = "No encontrado en el catálogo ($leido)"
+                return@launch
+            }
+            val currentState = uiState.value
+            when {
+                currentState.unpickingMode -> unpickByScanProduct(producto)
+                currentState.sobrante -> unpickSobranteByScan(producto)
+                else -> resolveProduct(producto)
+            }
+        }
+    }
+
     private suspend fun unpickByScanProduct(product: ProductEntity) {
         val orderId = selectedOrderId.value ?: return
-        val target = unpickTargetLine
-            ?: repository.orderLinesList(orderId).firstOrNull { line ->
-                line.vigente && (line.productId == product.reference || line.productId == product.id)
-            }
+        val lines = repository.orderLinesList(orderId)
+        val target = lines.firstOrNull { line ->
+            line.vigente && (line.productId == product.reference || line.productId == product.id)
+        } ?: unpickTargetLine?.takeIf { it.vigente }
         if (target == null) {
             lastMessage.value = "No hay una línea de ${product.name} en el pedido"
             return
@@ -320,7 +390,12 @@ class PickingViewModel(
             line.productId == product.reference || line.productId == product.id
         }
         if (pendingMatches.size == 1) {
-            prepareConfirm(product, pendingMatches.first())
+            val line = pendingMatches.first()
+            if (coincideAtributos(product, line)) {
+                prepareConfirm(product, line)
+            } else {
+                pendingSectorWarning.value = SectorWarning(product, line)
+            }
             return
         }
         if (pendingMatches.size > 1) {
@@ -372,12 +447,52 @@ class PickingViewModel(
             posicion = 0,
             orderProductName = pick.product.name,
             originalProductId = pick.product.reference,
-            isAmpliacion = true
+            isAmpliacion = true,
+            ocrText = lastOcrText
         )
     }
 
     fun dismissLinePick() {
         pendingLinePick.value = null
+    }
+
+    /**
+     * True when the scanned variant matches the line's requested attributes.
+     * A blank attribute on either side is not considered a mismatch.
+     */
+    private fun coincideAtributos(product: ProductEntity, line: OrderLineEntity): Boolean {
+        val litrajeOk = line.litraje.isBlank() || product.litraje.isBlank() || line.litraje == product.litraje
+        val sectorOk = line.sector.isBlank() || product.sector.isBlank() || line.sector == product.sector
+        return litrajeOk && sectorOk
+    }
+
+    /** The user accepted the warning: register the scan against the warned line. */
+    fun confirmSectorWarning() {
+        val warning = pendingSectorWarning.value ?: return
+        pendingSectorWarning.value = null
+        prepareConfirm(warning.product, warning.line)
+    }
+
+    /** The user wants to pick another line instead of the warned one. */
+    fun sectorWarningToLinePick() {
+        val warning = pendingSectorWarning.value ?: return
+        pendingSectorWarning.value = null
+        val orderId = selectedOrderId.value ?: return
+        viewModelScope.launch {
+            val lines = repository.orderLinesList(orderId)
+            val vigenteLines = lines.filter { it.vigente }
+            val pendingLines = vigenteLines.filter { (it.requestedQty - maxOf(it.pickedQty, it.acopiadoServidor)) > 0 }
+            pendingLinePick.value = PendingLinePick(
+                orderId = orderId,
+                product = warning.product,
+                candidateLines = pendingLines,
+                isSubstitution = true
+            )
+        }
+    }
+
+    fun dismissSectorWarning() {
+        pendingSectorWarning.value = null
     }
 
     private fun prepareConfirm(product: ProductEntity, line: OrderLineEntity) {
@@ -387,7 +502,8 @@ class PickingViewModel(
             orderLineId = line.orderLineId,
             posicion = line.posicion,
             orderProductName = line.productName,
-            originalProductId = line.productId
+            originalProductId = line.productId,
+            ocrText = lastOcrText
         )
     }
 
@@ -398,9 +514,12 @@ class PickingViewModel(
         caliber: String?,
         needsLabel: Boolean,
         labelReason: String = "",
-        labelFormat: String = ""
+        labelFormat: String = "",
+        qty: Int = 1
     ) {
         val confirm = pendingConfirm.value ?: return
+        pendingConfirm.value = null
+        lastOcrText = null
         viewModelScope.launch {
             val pickingNumber = repository.nextPickingNumber(confirm.orderId)
             repository.createRecord(
@@ -409,14 +528,14 @@ class PickingViewModel(
                 pickingType = pickingType,
                 orderLineId = confirm.orderLineId,
                 scannedEan = confirm.product.ean,
-                ocrRawText = null,
+                ocrRawText = confirm.ocrText,
                 originalProductId = if (confirm.isAmpliacion) confirm.product.reference
                 else confirm.originalProductId,
                 actualProductId = confirm.product.reference,
                 liters = liters ?: confirm.product.defaultLiters,
                 measure = measure ?: confirm.product.defaultMeasure,
                 caliber = caliber ?: confirm.product.defaultCaliber,
-                batchQty = 1,
+                batchQty = qty,
                 needsLabel = needsLabel,
                 labelReason = labelReason,
                 labelFormat = labelFormat
@@ -425,48 +544,14 @@ class PickingViewModel(
             lastMessage.value = if (confirm.isAmpliacion) {
                 "Ampliación: ${confirm.product.name}"
             } else {
-                "Añadido: ${confirm.product.name}"
+                "Añadido: ${confirm.product.name}" + if (qty > 1) " x$qty" else ""
             }
         }
     }
 
     fun dismissConfirm() {
         pendingConfirm.value = null
-    }
-
-    /**
-     * Marks a line as picked without scanning. The checkbox marks the maceta
-     * rota case: a replacement label must be printed (needsLabel -> labels queue).
-     */
-    fun confirmManualMark(
-        line: OrderLineEntity,
-        qty: Int,
-        needsLabel: Boolean,
-        labelReason: String = "",
-        labelFormat: String = ""
-    ) {
-        viewModelScope.launch {
-            val pickingNumber = repository.nextPickingNumber(line.orderId)
-            repository.createRecord(
-                orderId = line.orderId,
-                pickingNumber = pickingNumber,
-                pickingType = "I",
-                orderLineId = line.orderLineId,
-                scannedEan = null,
-                ocrRawText = null,
-                originalProductId = line.productId,
-                actualProductId = line.productId,
-                liters = null,
-                measure = null,
-                caliber = null,
-                batchQty = qty,
-                needsLabel = needsLabel,
-                labelReason = labelReason,
-                labelFormat = labelFormat
-            )
-            lastMessage.value = "Acopio sin escaneo: ${line.productName} x $qty" +
-                if (needsLabel) " · cambio de maceta: etiqueta a sacar" else ""
-        }
+        lastOcrText = null
     }
 
     fun showOcrError() {
@@ -602,55 +687,11 @@ class PickingViewModel(
         }
     }
 
-    fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
+fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
         unpickingMode.value = on
         unpickTargetLine = if (on) targetLine else null
         if (!on) selectedRecordIds.value = emptySet()
     }
-
-    fun toggleRecordSelection(recordId: String) {
-        val current = selectedRecordIds.value
-        selectedRecordIds.value = if (recordId in current) current - recordId else current + recordId
-    }
-
-    /** Desacopio por selección: borra los registros marcados. */
-    fun unpickSelectedRecords() {
-        val orderId = selectedOrderId.value ?: return
-        val ids = selectedRecordIds.value.toList()
-        if (ids.isEmpty()) {
-            lastMessage.value = "Selecciona al menos un registro"
-            return
-        }
-        viewModelScope.launch {
-            repository.unpickRecordsByLine(orderId, ids)
-            setUnpickingMode(false)
-            lastMessage.value = "Desacopiados ${ids.size} registros"
-        }
-    }
-
-    /** Desacopio por selección desde el diálogo de una línea concreta. */
-    fun unpickRecords(line: OrderLineEntity, recordIds: List<String>) {
-        viewModelScope.launch {
-            repository.unpickRecordsByLine(line.orderId, recordIds)
-            lastMessage.value = "Desacopiados ${recordIds.size} registros de ${line.productId}"
-        }
-    }
-
-    /** Desacopio por escaneo: resta 1 unidad de la línea correspondiente. */
-    fun unpickScanned(line: OrderLineEntity) {
-        viewModelScope.launch {
-            val ok = repository.unpickLineByScan(line.orderId, line.orderLineId)
-            lastMessage.value = if (ok) {
-                "Desacopiado ${line.productId} x 1 (escaneo)"
-            } else {
-                "No hay unidades acopiadas de ${line.productId}"
-            }
-        }
-    }
-
-    /** Registros reales de una línea (para el diálogo de desacopio). */
-    suspend fun recordsForLine(lineId: String): List<PickingRecordEntity> =
-        repository.recordsForLine(lineId)
 
     fun clearMessage() {
         lastMessage.value = null

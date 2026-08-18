@@ -22,7 +22,8 @@ object OcrReader {
      * @return the raw concatenated text recognized on the label, or null.
      */
     suspend fun readText(bitmap: Bitmap): String? {
-        val image = InputImage.fromBitmap(bitmap, 0)
+        val scaled = upscale(bitmap)
+        val image = InputImage.fromBitmap(scaled, 0)
         return try {
             val result = recognizer.process(image).await()
             val text = result.text.trim()
@@ -31,6 +32,19 @@ object OcrReader {
             Log.e(TAG, "OCR failed", e)
             null
         }
+    }
+
+    /** MLKit latin recognizer reads small text better when upscaled. */
+    private fun upscale(bitmap: Bitmap): Bitmap {
+        val maxDim = maxOf(bitmap.width, bitmap.height)
+        if (maxDim >= 1600) return bitmap
+        val scale = (1600f / maxDim).coerceAtLeast(2f)
+        return Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * scale).toInt(),
+            (bitmap.height * scale).toInt(),
+            true
+        )
     }
 
     private val TAG = "OcrReader"

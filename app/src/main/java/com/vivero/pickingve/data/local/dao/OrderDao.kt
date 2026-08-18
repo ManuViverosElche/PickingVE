@@ -105,6 +105,12 @@ interface OrderDao {
     @Query("DELETE FROM orders WHERE orderId = :orderId")
     suspend fun deleteOrder(orderId: String)
 
+    @Query("DELETE FROM order_lines")
+    suspend fun clearLines()
+
+    @Query("DELETE FROM orders")
+    suspend fun clearOrders()
+
     @Query(
         """
         UPDATE orders SET status = CASE

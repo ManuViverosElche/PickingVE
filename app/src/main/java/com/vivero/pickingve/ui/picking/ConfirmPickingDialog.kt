@@ -47,7 +47,8 @@ fun ConfirmPickingDialog(
         caliber: String?,
         needsLabel: Boolean,
         labelReason: String,
-        labelFormat: String
+        labelFormat: String,
+        qty: Int
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -61,6 +62,9 @@ fun ConfirmPickingDialog(
     var caliber by remember { mutableStateOf(product.defaultCaliber.orEmpty()) }
     var labelOption by remember { mutableStateOf(0) }
     var labelFormat by remember { mutableStateOf("") }
+    var qtyText by remember { mutableStateOf("1") }
+    val ventaDirecta = product.reference.startsWith("90000")
+    val qty = if (ventaDirecta) (qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1) else 1
     val measureValid = !requiresMeasure || measure.isNotBlank()
 
     AlertDialog(
@@ -73,48 +77,81 @@ fun ConfirmPickingDialog(
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    text = "Referencia: ${product.reference}\n" +
-                        "Línea: ${pending.orderId}-${pending.posicion}\n" +
-                        pending.orderProductName,
+                    text = "Referencia escaneada: ${product.reference}",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                if (line != null) {
-                    val remaining = line.requestedQty - line.pickedQty
-                    if (remaining < 0) {
-                        Text(
-                            text = "⚠ AVISO: Línea ya completada (${line.pickedQty}/${line.requestedQty}). Se acopiará MÁS de lo pedido (sobreacopio: ${-remaining}).",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                    } else if (remaining == 0) {
-                        Text(
-                            text = "⚠ AVISO: Línea ya completada (${line.pickedQty}/${line.requestedQty}). Al añadir se superará lo pedido.",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                    } else {
-                        Text(
-                            text = "Quedan $remaining de ${line.requestedQty} unidades en la línea",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
                 if (pending.isAmpliacion) {
-                    Text(
-                        text = "\u26A0 Ampliaci\u00f3n: referencia nueva no pedida",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                if (pending.originalProductId != product.reference && !pending.isAmpliacion) {
-                    Text(
-                        text = "\u26A0 Sustituci\u00f3n: ${pending.originalProductId} \u2192 ${product.reference}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Text(
+                                "AMPLIACIÓN · No está en el pedido",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                "Esta referencia no existe en el pedido ${pending.orderId}. Se añadirá como referencia nueva.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Text(
+                                "Se añadirá a la línea ${pending.posicion}",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                "${pending.orderProductName} · ${pending.originalProductId}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            if (pending.originalProductId != product.reference) {
+                                Text(
+                                    "Sustitución: el pedido pide ${pending.originalProductId}, esta planta es ${product.reference}.",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            if (line != null) {
+                                val remaining = line.requestedQty - line.pickedQty
+                                if (remaining < 0) {
+                                    Text(
+                                        "⚠ Línea ya completada (${line.pickedQty}/${line.requestedQty}). Se acopiará MÁS de lo pedido (sobreacopio: ${-remaining}).",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                    )
+                                } else if (remaining == 0) {
+                                    Text(
+                                        "⚠ Línea ya completada (${line.pickedQty}/${line.requestedQty}). Al añadir se superará lo pedido.",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                    )
+                                } else {
+                                    Text(
+                                        "Pendiente: $remaining unidades de ${line.requestedQty}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 if (product.ean?.isNotBlank() == true) {
                     Surface(
@@ -136,6 +173,47 @@ fun ConfirmPickingDialog(
                         text = "Litraje: $litrajeInfo",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (!pending.ocrText.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Text(
+                                "Etiqueta",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text = pending.ocrText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+                if (ventaDirecta) {
+                    OutlinedTextField(
+                        value = qtyText,
+                        onValueChange = { qtyText = it.filter(Char::isDigit) },
+                        label = { Text("Cantidad a acopiar") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (ventaDirecta && line != null && (line.pickedQty + qty) > line.requestedQty) {
+                    Text(
+                        "⚠ AVISO: Se acopiará más de lo pedido (${line.pickedQty + qty} en total para ${line.requestedQty} pedidas).",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
                 }
                 if (requiresMeasure) {
@@ -189,17 +267,22 @@ fun ConfirmPickingDialog(
                         liters,
                         measure.ifBlank { null },
                         caliber.ifBlank { null },
-                        labelOption == 2 || labelOption == 3,
+                        labelOption == 2 || labelOption == 3 || labelOption == 4,
                         when (labelOption) {
                             2 -> "MACETA_ROTA"
                             3 -> "CAMBIO_FORMATO"
+                            4 -> "PASAPORTE_MAL_ESTADO"
                             else -> ""
                         },
-                        labelFormat
+                        labelFormat,
+                        qty
                     )
                 }
             ) {
-                Text("A\u00f1adir l\u00ednea")
+                Text(
+                    if (pending.isAmpliacion) "Registrar ampliación"
+                    else "Añadir a línea ${pending.posicion}"
+                )
             }
         },
         dismissButton = {
@@ -235,6 +318,10 @@ internal fun LabelOptionSelector(
     Row(verticalAlignment = Alignment.CenterVertically) {
         RadioButton(selected = labelOption == 3, onClick = { onOptionChange(3) })
         Text("Cambio de maceta a otro formato")
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected = labelOption == 4, onClick = { onOptionChange(4) })
+        Text("Pasaporte en mal estado")
     }
     if (labelOption == 3) {
         LitrajeSearchField(
@@ -312,5 +399,5 @@ internal fun resolveLitraje(line: OrderLineEntity?, product: com.vivero.pickingv
     return product.defaultLiters
 }
 
-private fun parseLitraje(value: String): Float? =
+internal fun parseLitraje(value: String): Float? =
     Regex("""\d+(?:[.,]\d+)?""").find(value)?.value?.replace(',', '.')?.toFloatOrNull()
