@@ -56,6 +56,9 @@ class OrderListViewModel(
     private val _selectedFincas = MutableStateFlow(initialSelectedFincas())
     val selectedFincas: StateFlow<Set<String>> = _selectedFincas
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery
+
     private val allOrders: StateFlow<List<OrderWithTotals>> = repository
         .observeOrdersWithTotals()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -78,7 +81,11 @@ class OrderListViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val orders: StateFlow<List<OrderWithTotals>> =
-        combine(allOrders, availableDays, _selectedDays, _assignedFincas, _selectedFincas) { list, avail, days, fincas, sel ->
+        combine(
+            combine(allOrders, _searchQuery) { list, query -> list to query },
+            availableDays, _selectedDays, _assignedFincas, _selectedFincas
+        ) { base, avail, days, fincas, sel ->
+            val (list, query) = base
             val availSet = avail.toSet()
             val effective = days.filter { it in availSet }.distinct()
             val daysToShow = if (effective.isNotEmpty()) {
@@ -88,17 +95,30 @@ class OrderListViewModel(
                 if (first == null) emptySet() else setOf(first)
             }
             val fincaFilterActive = fincas.isNotEmpty() && sel.isNotEmpty()
+            val q = query.trim()
             list.filter { o ->
                 val date = o.fechaCarga?.let {
                     java.time.Instant.ofEpochMilli(it)
                         .atZone(java.time.ZoneId.systemDefault())
                         .toLocalDate()
                 }
-                val dateOk = date != null && !date.isBefore(today) && date in daysToShow
-                val fincaOk = !fincaFilterActive || sel.any { it.equals(o.fincaCarga, ignoreCase = true) }
-                dateOk && fincaOk
+                val dateOk = if (q.isNotEmpty()) {
+                    true
+                } else {
+                    date != null && !date.isBefore(today) && date in daysToShow
+                }
+                val fincaOk = q.isNotEmpty() || !fincaFilterActive || sel.any { it.equals(o.fincaCarga, ignoreCase = true) }
+                val queryOk = q.isEmpty() || listOf(
+                    o.orderId, o.customerName, o.customerFiscal, o.marcaPedido,
+                    o.fincaCarga, o.sectorCarga, o.muelleCarga, o.observaciones
+                ).any { it.contains(q, ignoreCase = true) }
+                dateOk && fincaOk && queryOk
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
 
     fun toggleDay(date: LocalDate) {
         val current = _selectedDays.value

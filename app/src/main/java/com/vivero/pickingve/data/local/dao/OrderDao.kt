@@ -17,6 +17,7 @@ data class OrderWithTotals(
     val totalLines: Int,
     val fincaCarga: String,
     val sectorCarga: String,
+    val muelleCarga: String,
     val fechaCarga: Long?,
     val marcaPedido: String,
     val observaciones: String,
@@ -45,7 +46,7 @@ interface OrderDao {
     @Query(
         """
         SELECT o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
-               o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
+               o.fincaCarga, o.sectorCarga, o.muelleCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
                o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante,
                COALESCE(SUM(l.requestedQty), 0) AS totalRequested,
                COALESCE(SUM(MAX(l.pickedQty, l.acopiadoServidor)), 0) AS totalPicked
@@ -54,7 +55,7 @@ interface OrderDao {
         AND l.productId NOT BETWEEN '99990' AND '99999'
         AND l.vigente = 1
         GROUP BY o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
-                 o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
+                 o.fincaCarga, o.sectorCarga, o.muelleCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
                  o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante
         ORDER BY COALESCE(o.fechaCarga, o.createdAt) ASC
         """
@@ -64,7 +65,7 @@ interface OrderDao {
     @Query(
         """
         SELECT o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
-               o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
+               o.fincaCarga, o.sectorCarga, o.muelleCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
                o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante,
                COALESCE(SUM(l.requestedQty), 0) AS totalRequested,
                COALESCE(SUM(MAX(l.pickedQty, l.acopiadoServidor)), 0) AS totalPicked
@@ -76,8 +77,10 @@ interface OrderDao {
            OR o.customerName LIKE '%' || :query || '%'
            OR o.customerFiscal LIKE '%' || :query || '%'
            OR o.marcaPedido LIKE '%' || :query || '%'
+           OR o.sectorCarga LIKE '%' || :query || '%'
+           OR o.muelleCarga LIKE '%' || :query || '%'
         GROUP BY o.orderId, o.customerName, o.customerFiscal, o.status, o.totalLines,
-                 o.fincaCarga, o.sectorCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
+                 o.fincaCarga, o.sectorCarga, o.muelleCarga, o.fechaCarga, o.marcaPedido, o.observaciones,
                  o.createdAt, o.modificado, o.matriculaCamion, o.matriculaRemolque, o.cargado, o.sobrante
         ORDER BY COALESCE(o.fechaCarga, o.createdAt) ASC
         """

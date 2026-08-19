@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -29,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -74,6 +76,7 @@ fun OrderListScreen(
     val syncState by viewModel.syncState.collectAsState()
     val uploadState by viewModel.uploadState.collectAsState()
     val pendingUploadCount by viewModel.pendingUploadCount.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val syncStarted = remember { mutableStateOf(false) }
     var infoOrder by remember { mutableStateOf<OrderWithTotals?>(null) }
@@ -132,6 +135,23 @@ fun OrderListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
+                placeholder = { Text("Buscar pedido: cliente, nº, muelle, marca…") },
+                singleLine = true,
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Limpiar búsqueda")
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+
             if (assignedFincas.size > 1) {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -189,7 +209,9 @@ fun OrderListScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (selectedDays.size == 1 && LocalDate.now() in selectedDays) {
+                        text = if (searchQuery.isNotBlank()) {
+                            "Sin pedidos para \"${searchQuery.trim()}\".\nPrueba con otro cliente, nº de pedido o muelle."
+                        } else if (selectedDays.size == 1 && LocalDate.now() in selectedDays) {
                             "No hay pedidos de carga para hoy.\nToca otro día para ver más pedidos."
                         } else {
                             "No hay pedidos para los días seleccionados.\nSincroniza (↻) o toca otro día."
