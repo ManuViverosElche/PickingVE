@@ -24,9 +24,9 @@ android {
         applicationId = "com.vivero.pickingve"
         minSdk = 26
         targetSdk = 34
-versionCode = 21
+versionCode = 22
 
-        versionName = "1.7.6"
+        versionName = "1.7.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true

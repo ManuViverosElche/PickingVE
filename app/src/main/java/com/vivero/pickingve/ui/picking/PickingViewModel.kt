@@ -13,6 +13,7 @@ import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
 import com.vivero.pickingve.domain.usecase.ParsePlantPassportUseCase
 import com.vivero.pickingve.domain.usecase.PassportData
+import com.vivero.pickingve.scanner.OcrLine
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -317,10 +318,12 @@ class PickingViewModel(
     }
 
     /** Raw text captured via OCR fallback (plant passport label without EAN). */
-    fun onOcrText(text: String) {
+    fun onOcrText(text: String, lines: List<OcrLine> = emptyList()) {
         viewModelScope.launch {
             val parser = ParsePlantPassportUseCase()
-            val passport = parser.parse(text)
+            val litrajes = repository.litrajesList()
+            val sectores = repository.sectoresList()
+            val passport = parser.parse(text, lines, litrajes, sectores)
             if (passport == null) {
                 val recorte = text.trim().replace('\n', ' ').take(140)
                 lastMessage.value = if (recorte.isBlank()) {
@@ -330,31 +333,17 @@ class PickingViewModel(
                 }
                 return@launch
             }
-            val catalogo = repository.allProducts()
+            var catalogo = repository.allProducts()
+            if (catalogo.isEmpty()) {
+                try {
+                    repository.syncCatalogIfChanged(PickingApiClient())
+                    catalogo = repository.allProducts()
+                } catch (e: Exception) {
+                    // Sin red: seguir con el catálogo vacío; el modal permite sustitución/ampliación
+                }
+            }
             val candidatos = parser.buscarPorReferencia(passport.referencia, catalogo)
             if (candidatos.isEmpty()) {
-                val leido = "C: ${passport.referencia}" +
-                    (passport.litrajeDesc?.let { " · Litraje $it" } ?: "") +
-                    (passport.sectorDesc?.let { " · Sector $it" } ?: "")
-                lastMessage.value = "No encontrado en el catálogo ($leido)"
-                return@launch
-            }
-            if (candidatos.size > 1) {
-                val litraje = passport.litrajeDesc?.let {
-                    parser.resolveLitraje(it, repository.litrajesList())
-                }
-                val sector = passport.sectorDesc?.let {
-                    parser.resolveSector(it, repository.sectoresList())
-                }
-                val filtrados = candidatos.filter {
-                    (litraje == null || it.litraje.equals(litraje, ignoreCase = true)) &&
-                        (sector == null || it.sector.equals(sector, ignoreCase = true))
-                }
-                if (filtrados.size == 1) {
-                    lastOcrText = text
-                    rutaProducto(filtrados.first())
-                    return@launch
-                }
                 lastOcrText = text
                 pendingOcrMatch.value = PendingOcrMatch(
                     referencia = passport.referencia,
@@ -364,6 +353,29 @@ class PickingViewModel(
                 )
                 return@launch
             }
+            if (candidatos.size == 1) {
+                lastOcrText = text
+                rutaProducto(candidatos.first())
+                return@launch
+            }
+            val litraje = passport.litrajeDesc?.let { parser.resolveLitraje(it, litrajes) }
+            val sector = passport.sectorDesc?.let { parser.resolveSector(it, sectores) }
+            val filtrados = candidatos.filter {
+                (litraje == null || it.litraje.equals(litraje, ignoreCase = true)) &&
+                    (sector == null || it.sector.equals(sector, ignoreCase = true))
+            }
+            if (filtrados.size == 1) {
+                lastOcrText = text
+                rutaProducto(filtrados.first())
+                return@launch
+            }
+            lastOcrText = text
+            pendingOcrMatch.value = PendingOcrMatch(
+                referencia = passport.referencia,
+                litrajeDesc = passport.litrajeDesc,
+                sectorDesc = passport.sectorDesc,
+                ocrText = text
+            )
         }
     }
 
@@ -384,6 +396,25 @@ class PickingViewModel(
             }
             val sector = sectorDesc?.takeIf { it.isNotBlank() }?.let {
                 parser.resolveSector(it, repository.sectoresList())
+            }
+            if (candidatos.isEmpty()) {
+                // La referencia no está en el catálogo: se trata como sustitución o ampliación.
+                pendingOcrMatch.value = null
+                lastOcrText = pending.ocrText
+                rutaProducto(
+                    ProductEntity(
+                        id = ref,
+                        reference = ref,
+                        name = ref,
+                        ean = null,
+                        defaultLiters = null,
+                        defaultMeasure = null,
+                        defaultCaliber = null,
+                        litraje = litraje.orEmpty(),
+                        sector = sector.orEmpty()
+                    )
+                )
+                return@launch
             }
             val filtrados = if (candidatos.size == 1) candidatos
             else candidatos.filter {

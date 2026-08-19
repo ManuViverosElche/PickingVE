@@ -335,17 +335,17 @@ private fun runOcr(
         try {
             val file = java.io.File(context.cacheDir, "ocr_${System.currentTimeMillis()}.jpg")
             val ok = imageCapture.takePictureToFile(file, executor)
-            val text = if (ok) {
+            val ocr = if (ok) {
                 withContext(Dispatchers.Default) {
                     val bitmap = decodeSampled(file, 1600)
-                    bitmap?.let { OcrReader.readText(it) }
+                    bitmap?.let { OcrReader.read(it) }
                 }
             } else {
                 null
             }
             file.delete()
-            if (text != null) {
-                viewModel.onOcrText(text)
+            if (ocr != null) {
+                viewModel.onOcrText(ocr.text, ocr.lines)
             } else {
                 viewModel.showOcrError()
             }

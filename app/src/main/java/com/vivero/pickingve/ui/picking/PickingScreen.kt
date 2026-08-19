@@ -2297,8 +2297,14 @@ private fun ReferenciaVariantePicker(
         if (referencia.isBlank()) emptyList()
         else parser.buscarPorReferencia(referencia, productos)
     }
-    val litrajes = remember(productosRef, litrajesAll) { litrajeOptionsDe(productosRef, litrajesAll, null) }
-    val sectores = remember(productosRef, sectoresAll) { sectorOptionsDe(productosRef, sectoresAll, null) }
+    val litrajes = remember(productosRef, litrajesAll) {
+        if (productosRef.isEmpty()) litrajesAll
+        else litrajeOptionsDe(productosRef, litrajesAll, null)
+    }
+    val sectores = remember(productosRef, sectoresAll) {
+        if (productosRef.isEmpty()) sectoresAll
+        else sectorOptionsDe(productosRef, sectoresAll, null)
+    }
     val sugerencias = remember(referencia, productos, productosRef) {
         if (referencia.length < 3 || productosRef.isNotEmpty()) emptyList()
         else {
