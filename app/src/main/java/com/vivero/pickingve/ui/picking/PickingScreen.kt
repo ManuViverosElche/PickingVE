@@ -955,6 +955,16 @@ private fun OrderLinesList(
             )
     }
 
+    val shownPicked: (OrderLineEntity) -> Int = { line ->
+        val compensado = compensaciones[line.orderLineId] ?: 0
+        maxOf(line.pickedQty, (line.acopiadoServidor - compensado).coerceAtLeast(0))
+    }
+    val isComplete: (OrderLineEntity) -> Boolean = { line ->
+        line.vigente && line.requestedQty > 0 && shownPicked(line) >= line.requestedQty
+    }
+    val pending = filtered.filter { !isComplete(it) }.sortedBy { it.posicion }
+    val completed = filtered.filter { isComplete(it) }.sortedBy { it.posicion }
+
     Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query,
@@ -980,7 +990,7 @@ private fun OrderLinesList(
                     )
                 }
             }
-            items(filtered, key = { it.orderLineId }) { line ->
+            items(pending, key = { it.orderLineId }) { line ->
                 OrderLineCard(
                     order = order,
                     line = line,
@@ -992,6 +1002,30 @@ private fun OrderLinesList(
                     onManualMark = onManualMark,
                     onOpenChat = onOpenChat
                 )
+            }
+            if (completed.isNotEmpty()) {
+                item(key = "lineas-completas") {
+                    Text(
+                        "Líneas completas",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+                items(completed, key = { it.orderLineId }) { line ->
+                    OrderLineCard(
+                        order = order,
+                        line = line,
+                        substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
+                        labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
+                        chatEstados = chatEstados,
+                        compensaciones = compensaciones,
+                        onUnpick = onUnpick,
+                        onManualMark = onManualMark,
+                        onOpenChat = onOpenChat
+                    )
+                }
             }
         }
     }
