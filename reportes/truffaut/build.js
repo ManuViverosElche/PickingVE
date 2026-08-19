@@ -13,11 +13,11 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const API = "https://pickingve-api-938422468946.europe-west1.run.app/api/truffaut/reporte";
-const API_KEY = process.env.API_KEY || "";
-fetch(API, { headers: { 'X-API-Key': API_KEY } })
+const API = "https://pickingve-api-938422468946.europe-west1.run.app/api/truffaut/reporte?k=truffaut-otono-2026";
+fetch(API)
   .then(r => r.json())
   .then(d => {
+    if (!d || !Array.isArray(d.orders)) throw new Error('respuesta inválida: ' + JSON.stringify(d));
     fs.writeFileSync(__dirname + '/data.json', JSON.stringify(d, null, 2));
     console.log('data.json actualizado: ' + d.orders.length + ' pedidos, generado ' + d.generated);
   })

@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0e656d">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>Viveros Elche — Transporte Truffaut · Otoño 2026</title>
 <style>
   :root{
@@ -81,10 +83,19 @@
   .linwrap td.ref{color:var(--blue);font-size:.68rem}
   .linwrap td.desc small{display:block;color:var(--mut);font-size:.64rem;font-weight:400}
   .linwrap tr.pal td{color:var(--mut)}
+  .linwrap .sub{font-weight:600;white-space:nowrap}
+  .linwrap .sub.ok{color:#1a8f4c}
+  .linwrap .sub.low{color:#b98a00}
+  .linwrap .sub.bad{color:#c0392b}
 
   footer{color:var(--mut);font-size:.72rem;text-align:center;margin-top:28px;line-height:1.7}
   .empty{color:var(--mut);text-align:center;padding:28px 0;font-size:.85rem}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script>
+  window.__gmapsReady = function(){};
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCI1d6ecKqtKbFSc_VFqhrPSooLYmv3xEI&loading=async&callback=__gmapsReady&v=weekly"></script>
 </head>
 <body>
 <header class="hero">
@@ -107,46 +118,63 @@
     <div class="kpi warn"><div class="l">Tope medio €/palet</div><div class="v" id="kAvg">—</div><div class="s" id="kRange">—</div></div>
   </div>
 
-  <div class="note">
-    <b>Cómo se calcula:</b> el precio de las líneas lleva el <b>30% del transporte repercutido</b> sobre el precio de planta
-    (verificado contra precios de referencia: relación ≈1,30 en 29 de 30 pedidos), así que:
-    <b>Planta = Total ÷ 1,30</b> y <b>Transporte = Total × 30/130</b> (23,08% del total).
-    El <b>tope por palet</b> = importe transporte ÷ palets del pedido: lo máximo pagable al transportista sin perder dinero.
+    <div class="note" id="routeOriginNote">
+    <b>Cómo se calcula:</b> las líneas de los 6 artículos con <b>precio de venta real</b> (olivo copa 30L 37 €, yucca jewel 30L 54,80 €,
+    washingtonia 48 €, citrus mix 15L 26,50 €, olivo pot blanc 10L 16 €, olivo arbustivo 10L 11 € — decisión D-91) computan su transporte
+    exacto (precio línea − base real); el resto de la planta se calcula con la aproximación verificada <b>÷ 1,30</b> (30% repercutido).
+    <b>Planta</b> = base real + resto ÷ 1,30 · <b>Transporte</b> = total − planta. El <b>tope por palet</b> = transporte ÷ palets del pedido.
   </div>
   <div class="note warn" id="no30note">
     <b>Excepción detectada y verificada:</b> <b>Montpellier (260857)</b> NO lleva el 30% repercutido — sus precios son los de
     planta (relación ≈1,0). No tiene presupuesto de transporte repercutido; el total es íntegramente planta.
   </div>
 
-  <div class="tools">
-    <div class="seg" id="seg">
-      <button data-f="all" class="on">Todos</button>
-      <button data-f="d30">D30</button>
-      <button data-f="oto">Otoño</button>
-      <button data-f="pend">Sin fecha carga</button>
-    </div>
-    <select id="sort">
-      <option value="max">Ordenar: tope €/palet ↓</option>
-      <option value="maxa">Ordenar: tope €/palet ↑</option>
-      <option value="pal">Ordenar: palets ↓</option>
-      <option value="tot">Ordenar: importe ↓</option>
-      <option value="oid">Ordenar: nº pedido</option>
-    </select>
+  <div class="maintabs" style="display:flex;gap:10px;margin:16px 0 10px;">
+    <button id="tabOrders" class="mbtn on" onclick="switchView('orders')" style="flex:1;background:#0e656d;color:#fff;border:1px solid var(--lime);border-radius:10px;padding:10px;font-weight:700;cursor:pointer">📦 Pedidos & Precios Base</button>
+    <button id="tabRoutes" class="mbtn" onclick="switchView('routes')" style="flex:1;background:var(--card);color:var(--mut);border:1px solid var(--line);border-radius:10px;padding:10px;font-weight:700;cursor:pointer">🚚 Rutas Logísticas (5 Camiones · Propuesta Transportista)</button>
   </div>
 
-  <div id="list"></div>
-  <div class="empty" id="empty" hidden>Sin pedidos para este filtro.</div>
+  <div id="viewOrders">
+    <div class="tools">
+      <div class="seg" id="seg">
+        <button data-f="all" class="on">Todos</button>
+        <button data-f="d30">D30</button>
+        <button data-f="oto">Otoño</button>
+        <button data-f="pend">Sin fecha carga</button>
+      </div>
+      <select id="sort">
+        <option value="max">Ordenar: tope €/palet ↓</option>
+        <option value="maxa">Ordenar: tope €/palet ↑</option>
+        <option value="pal">Ordenar: palets ↓</option>
+        <option value="tot">Ordenar: importe ↓</option>
+        <option value="oid">Ordenar: nº pedido</option>
+      </select>
+    </div>
+
+    <div id="list"></div>
+    <div class="empty" id="empty" hidden>Sin pedidos para este filtro.</div>
+  </div>
+
+  <div id="viewRoutes" style="display:none">
+  <div class="note" id="calcNote">
+      <b>Origen común de salida:</b> <span id="origName">Viveros Elche - La Fábrica</span> (<span id="origAddr">CV-845, km 3.5, 03680 Aspe, Alicante</span>).
+      Capacidad máxima por camión: <b>33 palets</b>. Las cantidades de palets se calculan de forma <b>dinámica</b> a partir de los pedidos en curso —
+      el camión 1 puede marcar exceso (rojo) con los palets reales del ERP: son los 2 palets pendientes de encajar.
+      <b>Kilómetros y trazado de Google Maps</b> (ruta real por carretera, perfil conducción), no en línea recta.
+    </div>
+    <div id="routesList"></div>
+  </div>
 
   <footer>
     Generado el <span id="fGen"></span> · Viveros Elche · PickingVE · datos <b>en vivo</b> de <i>GestionComercialVE.PEDIDOS</i> (BigQuery región EU) — si el informe no carga, usa el snapshot <i>data.json</i><br>
-    Palets = líneas REFERENCIA_ARTICULO 99998 / CODIGO_LITRAJE EUR activas · precios de línea ≈ 1,30 × precio base de planta
+    Palets = líneas REFERENCIA_ARTICULO 99998 / CODIGO_LITRAJE EUR activas
   </footer>
 </div>
 
 <script>
-const API = "https://pickingve-api-938422468946.europe-west1.run.app/api/truffaut/reporte";
-const API_KEY = "";
-const FALLBACK = "data.json";
+const API = "https://pickingve-api-938422468946.europe-west1.run.app/api/truffaut/reporte?k=truffaut-otono-2026";
+const FALLBACK = "data.json?k=truffaut-otono-2026";
+const SOLO_RUTAS = location.pathname.indexOf('/rutas') >= 0;
 const fmt = new Intl.NumberFormat('es-ES',{maximumFractionDigits:2,minimumFractionDigits:2});
 const n0 = v => Math.round(v).toLocaleString('es-ES');
 const eur = n => '€' + fmt.format(n);
@@ -156,7 +184,12 @@ function lineRow(L,i){
   const imp = L.u*L.pr;
   const busy = (L.f||L.s||L.ubi) ? '<small>'+[L.ubi,L.f,L.s].filter(Boolean).join(' · ')+'</small>' : '';
   const cls = L.r==='99998' ? ' class="pal"' : '';
-  return '<tr'+cls+'><td>'+(i+1)+'</td><td class="ref">'+esc(L.r)+'</td><td class="desc">'+esc(L.d)+busy+'</td><td>'+esc(L.l)+'</td><td>'+n0(L.u)+'</td><td>'+eur(L.pr)+'</td><td>'+eur(imp)+'</td></tr>';
+  let sub = '—';
+  if(L.sub != null){
+    const c = L.sub >= 30 ? 'ok' : (L.sub >= 25 ? 'low' : 'bad');
+    sub = '<span class="sub '+c+'">+'+L.sub.toFixed(1)+'%</span>';
+  }
+  return '<tr'+cls+'><td>'+(i+1)+'</td><td class="ref">'+esc(L.r)+'</td><td class="desc">'+esc(L.d)+busy+'</td><td>'+esc(L.l)+'</td><td>'+n0(L.u)+'</td><td>'+eur(L.pr)+(L.b?' <small style="color:var(--mut)">(base '+eur(L.b)+')</small>':'')+'</td><td>'+sub+'</td><td>'+eur(imp)+'</td></tr>';
 }
 
 function linBlock(o){
@@ -164,15 +197,22 @@ function linBlock(o){
   const rows = o.lin.map(lineRow).join('');
   return '<button class="linbtn">Líneas ('+o.lin.length+')</button>'
     + '<div class="linwrap"><table>'
-    + '<thead><tr><th>#</th><th>Ref</th><th>Descripción</th><th>Litraje</th><th>Uds</th><th>€/ud</th><th>Importe</th></tr></thead>'
+    + '<thead><tr><th>#</th><th>Ref</th><th>Descripción</th><th>Litraje</th><th>Uds</th><th>€/ud</th><th>% subido</th><th>Importe</th></tr></thead>'
     + '<tbody>'+rows+'</tbody></table></div>';
 }
 
 async function loadData(){
+  const get = async u => { const r = await fetch(u); if(!r.ok) throw new Error(u.split('/').pop()+' '+r.status); return r.json(); };
   try{
-    return await (await fetch(API, {headers:{'X-API-Key': API_KEY}})).json();
-  }catch(e){
-    return await (await fetch(FALLBACK)).json();
+    return await get(API);
+  }catch(e1){
+    try{
+      return await get(FALLBACK);
+    }catch(e2){
+      const err = document.getElementById('list');
+      err.innerHTML = '<div class="empty">No se pudo cargar el informe (API: '+e1.message+', snapshot: '+e2.message+'). Recarga la página en unos segundos.</div>';
+      throw e2;
+    }
   }
 }
 
@@ -180,10 +220,22 @@ loadData().then(D=>{
   document.getElementById('cGen').textContent = D.generated;
   document.getElementById('fGen').textContent = D.generated;
 
+  if(SOLO_RUTAS){
+    document.querySelector('.kpis').style.display = 'none';
+    document.querySelector('.maintabs').style.display = 'none';
+    document.getElementById('calcNote').style.display = 'none';
+    document.getElementById('no30note').style.display = 'none';
+    document.querySelector('#viewOrders').style.display = 'none';
+    const noteEl = document.getElementById('routeOriginNote');
+    if(noteEl) noteEl.style.display = 'none';
+    document.querySelector('.hero .sub').textContent = 'Plan de rutas para el transportista · km y trazado de Google Maps';
+    document.getElementById('viewRoutes').style.display = 'block';
+  }
+
   const all = D.orders.map(o=>{
     const inc = !o.no30;
-    const planta = inc ? o.tot/1.30 : o.tot;
-    const transp = inc ? o.tot - planta : 0;
+    const planta = o.planta ?? (inc ? o.tot/1.30 : o.tot);
+    const transp = o.transp ?? (inc ? o.tot - planta : 0);
     const max = inc && o.pal>0 ? transp/o.pal : 0;
     return {...o, inc, planta, transp, max,
             seg: o.ref.includes('OTOÑO')?'oto':'d30'};
@@ -201,6 +253,7 @@ loadData().then(D=>{
   document.getElementById('kTot').textContent = eur(totalTot);
   document.getElementById('kPlanta').textContent = eur(totalPlanta);
   document.getElementById('k30').textContent = eur(totalTransp);
+  document.getElementById('k30').parentElement.querySelector('.s').textContent = (totalTot? (totalTransp/totalTot*100).toFixed(1) : '0') + '% del total facturado · máximo a ceder';
   document.getElementById('kAvg').textContent = avg.toFixed(0);
   document.getElementById('kRange').textContent = 'min ' + mn.toFixed(0) + ' · max ' + mx.toFixed(0) + ' (con 30%)';
 
@@ -247,7 +300,7 @@ loadData().then(D=>{
         +   '<div class="m"><div class="l">Carga</div><div class="v">'+(o.fc||'<span style="color:var(--warn)">sin fecha</span>')+'</div></div>'
         +   '<div class="m"><div class="l">Total facturado</div><div class="v">'+eur(o.tot)+'</div></div>'
         +   '<div class="m g"><div class="l">Planta</div><div class="v">'+eur(o.planta)+'</div></div>'
-        +   '<div class="m g"><div class="l">Transporte 30%</div><div class="v">'+eur(o.transp)+'</div></div>'
+          +   '<div class="m g"><div class="l">Transporte 30%</div><div class="v">'+eur(o.transp)+' <small style="color:var(--mut)">'+o.transp_pct+'%</small></div></div>'
         +   '<div class="m"><div class="l">Palets EUR</div><div class="v">'+o.pal+'</div></div>'
         + '</div>'
         + linBlock(o)
@@ -261,7 +314,143 @@ loadData().then(D=>{
   });
   document.getElementById('sort').addEventListener('change',e=>{sortk=e.target.value;render();});
   render();
+
+  window.switchView = function(v){
+    document.getElementById('viewOrders').style.display = v==='orders'?'block':'none';
+    document.getElementById('viewRoutes').style.display = v==='routes'?'block':'none';
+    document.getElementById('tabOrders').style.background = v==='orders'?'#0e656d':'var(--card)';
+    document.getElementById('tabOrders').style.color = v==='orders'?'#fff':'var(--mut)';
+    document.getElementById('tabOrders').style.borderColor = v==='orders'?'var(--lime)':'var(--line)';
+    document.getElementById('tabRoutes').style.background = v==='routes'?'#0e656d':'var(--card)';
+    document.getElementById('tabRoutes').style.color = v==='routes'?'#fff':'var(--mut)';
+    document.getElementById('tabRoutes').style.borderColor = v==='routes'?'var(--lime)':'var(--line)';
+    if(v==='routes') renderRoutes();
+  };
+
+  const mapReg = [];
+  function whenGmaps(){
+    return new Promise(res=>{
+      if(window.google && window.google.maps){ res(); return; }
+      const t0 = Date.now();
+      const iv = setInterval(()=>{
+        if((window.google && window.google.maps) || Date.now()-t0 > 10000){
+          clearInterval(iv); res();
+        }
+      }, 200);
+    });
+  }
+  function initLeafletMaps(routes, origin){
+    mapReg.forEach(m=>m.remove());
+    mapReg.length = 0;
+    if(!origin.lat) return;
+    routes.forEach(r=>{
+      const el = document.getElementById('rmap'+r.num);
+      if(!el) return;
+      const m = L.map(el, {scrollWheelZoom:false});
+      mapReg.push(m);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:18}).addTo(m);
+      const pts = (r.geo && r.geo.length >= 2) ? r.geo : [[origin.lat,origin.lng]].concat(r.stops.map(s=>[s.lat,s.lng]));
+      L.polyline(pts,{color:'#42c9bd',weight:4,opacity:.9}).addTo(m);
+      L.circleMarker([origin.lat,origin.lng],{radius:8,color:'#fff',weight:2,fillColor:'#b12b26',fillOpacity:1})
+        .bindTooltip('Origen: Viveros Elche - La Fábrica (Aspe)',{direction:'top'}).addTo(m);
+      r.stops.forEach((s,i)=>{
+        L.marker([s.lat,s.lng],{icon:L.divIcon({className:'',html:'<div style="width:22px;height:22px;border-radius:50%;background:#0e656d;border:2px solid #fff;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:800">'+(i+1)+'</div>',iconSize:[22,22],iconAnchor:[11,11]})})
+          .bindPopup('<b>Parada '+(i+1)+'</b><br><b>'+esc(s.store)+'</b><br>Ped '+s.pedido+' · '+s.pal+' palets<br>'+esc(s.addr)+'<br>'+s.cp+' '+esc(s.city))
+          .addTo(m);
+      });
+      m.fitBounds(L.latLngBounds(pts),{padding:[24,24]});
+      if(el.offsetWidth) m.invalidateSize();
+    });
+  }
+  function renderGoogle(routes, origin){
+    mapReg.forEach(m=>m.remove());
+    mapReg.length = 0;
+    if(!origin.lat) return;
+    routes.forEach(r=>{
+      const el = document.getElementById('rmap'+r.num);
+      if(!el) return;
+      const map = new google.maps.Map(el, {
+        zoom: 6, center: {lat: origin.lat, lng: origin.lng},
+        mapTypeId: 'roadmap',
+        disableDefaultUI: false,
+        fullscreenControl: false
+      });
+      const locs = r.stops.map(s=>({location:{lat:s.lat,lng:s.lng}, stopover:true}));
+      const svc = new google.maps.DirectionsService();
+      svc.route({
+        origin: {lat: origin.lat, lng: origin.lng},
+        destination: locs[locs.length-1].location,
+        waypoints: locs.slice(0,-1),
+        travelMode: 'DRIVING',
+        optimizeWaypoints: false
+      }, (res, status)=>{
+        if(status === 'OK'){
+          new google.maps.DirectionsRenderer({map: map, suppressMarkers: false, preserveViewport: false}).setDirections(res);
+          let cum = 0;
+          res.routes[0].legs.forEach((leg,i)=>{
+            cum += Math.round(leg.distance.value/1000);
+            const sp = document.getElementById('legkm'+r.num+'_'+i);
+            if(sp) sp.textContent = 'tramo '+Math.round(leg.distance.value/1000)+' km (cum '+cum+' km)';
+          });
+          const tk = document.getElementById('totkm'+r.num);
+          if(tk) tk.textContent = cum+' km totales';
+        } else if(r.geo && r.geo.length >= 2){
+          new google.maps.Polyline({path: r.geo.map(p=>({lat:p[0],lng:p[1]})), map: map, strokeColor:'#0e656d', strokeWeight:5});
+          const b = new google.maps.LatLngBounds();
+          r.geo.forEach(p=>b.extend(new google.maps.LatLng(p[0],p[1])));
+          map.fitBounds(b);
+        }
+      });
+    });
+  }
+
+  function renderRoutes(){
+    const routes = D.routes_a;
+    if(!routes) return;
+    const html = routes.map(r=>{
+      const pct = Math.min(100, Math.round(r.totalPal / 33 * 100));
+      const col = SOLO_RUTAS ? 'var(--text)' : (r.totalPal > 33 ? 'var(--bad)' : (r.totalPal >= 28 ? 'var(--lime)' : 'var(--warn)'));
+      const palDisplay = SOLO_RUTAS ? (r.totalPal + ' palets') : (r.totalPal + ' / 33 palets');
+      const barHtml = SOLO_RUTAS ? '' : ('<div style="background:var(--line);border-radius:4px;height:6px;margin:10px 0;overflow:hidden">'
+        + '<div style="background:'+col+';width:'+pct+'%;height:100%"></div>'
+        + '</div>');
+
+      const stopsHtml = r.stops.map((st,i)=>{
+        const pedInfo = SOLO_RUTAS ? '' : ('<span class="code">Ped '+st.pedido+'</span> · ');
+        return '<div style="background:var(--card2);border-radius:8px;padding:8px 10px;margin-top:6px;display:flex;justify-content:space-between;align-items:center;gap:10px">'
+        + '<div><div style="font-weight:700;font-size:.85rem">'+pedInfo+esc(st.store)+'</div>'
+        + '<div style="font-size:.72rem;color:var(--mut);margin-top:2px">'+esc(st.addr)+' ('+st.cp+' '+esc(st.city)+')</div></div>'
+        + '<div style="text-align:right;white-space:nowrap"><div style="font-weight:800;color:var(--lime);font-size:.9rem">'+st.pal+' palets</div>'
+        + '<div style="font-size:.65rem;color:var(--mut)" id="legkm'+r.num+'_'+i+'">tramo '+st.legKm+' km (cum '+st.cumKm+' km)</div></div>'
+        + '</div>';
+      }).join('');
+
+      return '<div class="card" style="cursor:default">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        + '<div><span class="badge" style="background:#0e656d;color:#fff">Camión '+r.num+'</span><b style="font-size:1.05rem;margin-left:8px">'+esc(r.title)+'</b>'
+        + '<div style="font-size:.78rem;color:var(--mut);margin-top:3px"><b>Corredor:</b> '+esc(r.corridor)+' | <b>Ejes:</b> '+esc(r.highway)+'</div>'
+        + (r.special?'<div style="font-size:.75rem;color:var(--warn);margin-top:3px">⚠️ <b>Especial:</b> '+esc(r.special)+'</div>':'')
+        + '</div>'
+        + '<div style="text-align:right">'
+        + '<div style="font-size:1.1rem;font-weight:800;color:'+col+'">'+palDisplay+'</div>'
+        + '<div style="font-size:.7rem;color:var(--mut)" id="totkm'+r.num+'">'+r.totalKm+' km totales</div>'
+        + '</div>'
+        + '</div>'
+        + barHtml
+        + '<div style="margin-top:8px"><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin-bottom:4px">Paradas de entrega (en orden de ruta):</div>'+stopsHtml+'</div>'
+        + '<div id="rmap'+r.num+'" style="height:280px;margin-top:12px;border-radius:10px;overflow:hidden;border:1px solid var(--line)"></div>'
+        + '</div>';
+    }).join('');
+    document.getElementById('routesList').innerHTML = html;
+    whenGmaps().then(()=>{
+      if(window.google && window.google.maps) renderGoogle(routes, D.origin);
+      else initLeafletMaps(routes, D.origin);
+    });
+  }
+
+  if(SOLO_RUTAS) renderRoutes();
 });
 </script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>

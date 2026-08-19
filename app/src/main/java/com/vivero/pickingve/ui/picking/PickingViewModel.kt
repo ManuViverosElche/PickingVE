@@ -44,6 +44,8 @@ data class PickingUiState(
     val sendingLabels: Boolean = false,
     val sobrante: Boolean = false,
     val unpickingMode: Boolean = false,
+    val pendingOcrMatch: PendingOcrMatch? = null,
+    val pendingUnpickScan: PendingUnpickScan? = null,
     val selectedRecordIds: Set<String> = emptySet()
 )
 
@@ -71,6 +73,18 @@ data class SectorWarning(
     val line: OrderLineEntity
 )
 
+data class PendingOcrMatch(
+    val referencia: String,
+    val litrajeDesc: String?,
+    val sectorDesc: String?,
+    val ocrText: String
+)
+
+data class PendingUnpickScan(
+    val product: ProductEntity,
+    val line: OrderLineEntity
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class PickingViewModel(
     private val repository: PickingRepository,
@@ -81,6 +95,8 @@ class PickingViewModel(
     private val pendingConfirm = MutableStateFlow<PendingConfirm?>(null)
     private val pendingLinePick = MutableStateFlow<PendingLinePick?>(null)
     private val pendingSectorWarning = MutableStateFlow<SectorWarning?>(null)
+    private val pendingOcrMatch = MutableStateFlow<PendingOcrMatch?>(null)
+    private val pendingUnpickScan = MutableStateFlow<PendingUnpickScan?>(null)
     private val lastMessage = MutableStateFlow<String?>(null)
     private val sendingReport = MutableStateFlow(false)
     private val sendingLabels = MutableStateFlow(false)
@@ -159,12 +175,15 @@ class PickingViewModel(
     ) { mode, selected -> mode to selected }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false to emptySet())
 
-    private val pendingFlags: StateFlow<Triple<PendingConfirm?, PendingLinePick?, SectorWarning?>> = combine(
+    private val pendingFlags: StateFlow<Quad<PendingConfirm?, PendingLinePick?, SectorWarning?, PendingUnpickScan?>> = combine(
         pendingConfirm,
         pendingLinePick,
-        pendingSectorWarning
-    ) { confirm, pick, sectorWarning -> Triple(confirm, pick, sectorWarning) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Triple(null, null, null))
+        pendingSectorWarning,
+        pendingUnpickScan
+    ) { confirm, pick, sectorWarning, unpickScan ->
+        Quad(confirm, pick, sectorWarning, unpickScan)
+    }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Quad(null, null, null, null))
 
     val uiState: StateFlow<PickingUiState> = combine(
         combine(
@@ -180,6 +199,7 @@ class PickingViewModel(
                 pendingConfirm = pending.first,
                 pendingLinePick = pending.second,
                 pendingSectorWarning = pending.third,
+                pendingUnpickScan = pending.fourth,
                 sobrante = order?.sobrante == true
             )
         },
@@ -219,7 +239,16 @@ class PickingViewModel(
         base.copy(sectores = sectores)
     }.combine(compensacionesPorLinea) { base, compensaciones ->
         base.copy(compensacionesPorLinea = compensaciones)
+    }.combine(pendingOcrMatch) { base, ocrMatch ->
+        base.copy(pendingOcrMatch = ocrMatch)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PickingUiState())
+
+    private data class Quad<A, B, C, D>(
+        val first: A,
+        val second: B,
+        val third: C,
+        val fourth: D
+    )
 
     private data class Quint(
         val labelCount: Int,
@@ -235,6 +264,8 @@ class PickingViewModel(
         pendingConfirm.value = null
         pendingLinePick.value = null
         pendingSectorWarning.value = null
+        pendingOcrMatch.value = null
+        pendingUnpickScan.value = null
         viewModelScope.launch { repository.clearOrderModificado(orderId) }
         actualizarChatEstados()
     }
@@ -288,7 +319,8 @@ class PickingViewModel(
     /** Raw text captured via OCR fallback (plant passport label without EAN). */
     fun onOcrText(text: String) {
         viewModelScope.launch {
-            val passport = ParsePlantPassportUseCase().parse(text)
+            val parser = ParsePlantPassportUseCase()
+            val passport = parser.parse(text)
             if (passport == null) {
                 val recorte = text.trim().replace('\n', ' ').take(140)
                 lastMessage.value = if (recorte.isBlank()) {
@@ -298,25 +330,96 @@ class PickingViewModel(
                 }
                 return@launch
             }
-            val producto = ParsePlantPassportUseCase().bestMatch(
-                passport,
-                repository.allProducts(),
-                repository.litrajesList(),
-                repository.sectoresList()
-            )
-            if (producto == null) {
+            val catalogo = repository.allProducts()
+            val candidatos = parser.buscarPorReferencia(passport.referencia, catalogo)
+            if (candidatos.isEmpty()) {
                 val leido = "C: ${passport.referencia}" +
                     (passport.litrajeDesc?.let { " · Litraje $it" } ?: "") +
                     (passport.sectorDesc?.let { " · Sector $it" } ?: "")
                 lastMessage.value = "No encontrado en el catálogo ($leido)"
-            } else {
-                val currentState = uiState.value
-                when {
-                    currentState.unpickingMode -> unpickByScanProduct(producto)
-                    currentState.sobrante -> unpickSobranteByScan(producto)
-                    else -> resolveProduct(producto)
-                }
+                return@launch
             }
+            if (candidatos.size > 1) {
+                val litraje = passport.litrajeDesc?.let {
+                    parser.resolveLitraje(it, repository.litrajesList())
+                }
+                val sector = passport.sectorDesc?.let {
+                    parser.resolveSector(it, repository.sectoresList())
+                }
+                val filtrados = candidatos.filter {
+                    (litraje == null || it.litraje.equals(litraje, ignoreCase = true)) &&
+                        (sector == null || it.sector.equals(sector, ignoreCase = true))
+                }
+                if (filtrados.size == 1) {
+                    lastOcrText = text
+                    rutaProducto(filtrados.first())
+                    return@launch
+                }
+                lastOcrText = text
+                pendingOcrMatch.value = PendingOcrMatch(
+                    referencia = passport.referencia,
+                    litrajeDesc = passport.litrajeDesc,
+                    sectorDesc = passport.sectorDesc,
+                    ocrText = text
+                )
+                return@launch
+            }
+        }
+    }
+
+    /** El encargado aceptó la referencia leída (posiblemente con litraje/sector corregidos). */
+    fun confirmOcrMatch(referencia: String, litrajeDesc: String?, sectorDesc: String?) {
+        val pending = pendingOcrMatch.value ?: return
+        val ref = referencia.trim().replaceFirst(Regex("^[cC]\\s*[:.]?\\s*"), "")
+        if (ref.length < 2) {
+            lastMessage.value = "Escribe la referencia C: de la etiqueta"
+            return
+        }
+        viewModelScope.launch {
+            val parser = ParsePlantPassportUseCase()
+            val catalogo = repository.allProducts()
+            val candidatos = parser.buscarPorReferencia(ref, catalogo)
+            val litraje = litrajeDesc?.takeIf { it.isNotBlank() }?.let {
+                parser.resolveLitraje(it, repository.litrajesList())
+            }
+            val sector = sectorDesc?.takeIf { it.isNotBlank() }?.let {
+                parser.resolveSector(it, repository.sectoresList())
+            }
+            val filtrados = if (candidatos.size == 1) candidatos
+            else candidatos.filter {
+                (litraje == null || it.litraje.equals(litraje, ignoreCase = true)) &&
+                    (sector == null || it.sector.equals(sector, ignoreCase = true))
+            }
+            if (filtrados.size != 1) {
+                pendingOcrMatch.value = pending.copy(
+                    referencia = ref,
+                    litrajeDesc = litrajeDesc?.takeIf { it.isNotBlank() },
+                    sectorDesc = sectorDesc?.takeIf { it.isNotBlank() }
+                )
+                lastMessage.value = if (candidatos.isEmpty()) {
+                    "Referencia C: $ref no encontrada en el catálogo"
+                } else {
+                    "Varios productos coinciden con C: $ref — elige litraje y sector"
+                }
+                return@launch
+            }
+            pendingOcrMatch.value = null
+            lastOcrText = pending.ocrText
+            rutaProducto(filtrados.first())
+        }
+    }
+
+    fun dismissOcrMatch() {
+        pendingOcrMatch.value = null
+    }
+
+    /** Ruta según el modo activo: desacopio, sobrante o acopio normal. */
+    private suspend fun rutaProducto(product: ProductEntity) {
+        val currentState = uiState.value
+        when {
+            currentState.unpickingMode -> unpickByScanProduct(product)
+            currentState.sobrante -> unpickSobranteByScan(product)
+            else -> resolveProduct(product)
         }
     }
 
@@ -334,15 +437,14 @@ class PickingViewModel(
         }
         viewModelScope.launch {
             val catalogo = repository.allProducts()
+            val parser = ParsePlantPassportUseCase()
             val passport = PassportData(ref, litrajeDesc = litrajeDesc, sectorDesc = sectorDesc)
-            val producto = ParsePlantPassportUseCase().bestMatch(
+            val producto = parser.bestMatch(
                 passport,
                 catalogo,
                 repository.litrajesList(),
                 repository.sectoresList()
-            ) ?: catalogo.firstOrNull {
-                it.reference.equals(ref, ignoreCase = true) || it.id.equals(ref, ignoreCase = true)
-            }
+            ) ?: parser.buscarPorReferencia(ref, catalogo).firstOrNull()
             if (producto == null) {
                 val leido = "C: $ref" +
                     (litrajeDesc?.let { " · Litraje $it" } ?: "") +
@@ -364,11 +466,11 @@ class PickingViewModel(
         lastOcrText = null
         viewModelScope.launch {
             val catalogo = repository.allProducts()
-            val producto = catalogo.firstOrNull {
-                (it.reference == line.productId || it.id == line.productId) &&
-                    (line.litraje.isBlank() || it.litraje.isBlank() || it.litraje == line.litraje) &&
+            val parser = ParsePlantPassportUseCase()
+            val producto = parser.buscarPorReferencia(line.productId, catalogo).firstOrNull {
+                (line.litraje.isBlank() || it.litraje.isBlank() || it.litraje == line.litraje) &&
                     (line.sector.isBlank() || it.sector.isBlank() || it.sector == line.sector)
-            } ?: catalogo.firstOrNull { it.reference == line.productId || it.id == line.productId }
+            } ?: parser.buscarPorReferencia(line.productId, catalogo).firstOrNull()
             if (producto == null) {
                 lastMessage.value = "No se encontró la referencia ${line.productId} en el catálogo"
                 return@launch
@@ -394,13 +496,14 @@ class PickingViewModel(
             (sectorDesc?.takeIf { it.isNotBlank() }?.let { " $it" } ?: "")
         viewModelScope.launch {
             val catalogo = repository.allProducts()
+            val parser = ParsePlantPassportUseCase()
             val passport = PassportData(line.productId, litrajeDesc = litrajeDesc, sectorDesc = sectorDesc)
-            val variante = ParsePlantPassportUseCase().bestMatch(
+            val variante = parser.bestMatch(
                 passport,
                 catalogo,
                 repository.litrajesList(),
                 repository.sectoresList()
-            ) ?: catalogo.firstOrNull { it.reference == line.productId || it.id == line.productId }
+            ) ?: parser.buscarPorReferencia(line.productId, catalogo).firstOrNull()
             if (variante == null) {
                 lastMessage.value = "No encontrado en el catálogo (C: ${line.productId})"
                 return@launch
@@ -423,13 +526,32 @@ class PickingViewModel(
             lastMessage.value = "No hay una línea de ${product.name} en el pedido"
             return
         }
-        val ok = repository.unpickLineByScan(orderId, target.orderLineId)
-        if (ok) subirPendientesBestEffort()
-        lastMessage.value = if (ok) {
-            "Desacopiado ${target.productId} x 1 (escaneo)"
-        } else {
-            "No hay unidades acopiadas de ${target.productId}"
+        pendingUnpickScan.value = PendingUnpickScan(product, target)
+    }
+
+    /** El encargado confirmó el desacopio por escaneo en el modal. */
+    fun confirmUnpickScan() {
+        val pending = pendingUnpickScan.value ?: return
+        viewModelScope.launch {
+            pendingUnpickScan.value = null
+            val orderId = selectedOrderId.value
+            val target = if (orderId == null) pending.line
+            else repository.orderLinesList(orderId)
+                .firstOrNull { it.orderLineId == pending.line.orderLineId }
+                ?.takeIf { it.vigente }
+                ?: pending.line
+            val ok = repository.unpickLineByScan(target.orderId, target.orderLineId)
+            if (ok) subirPendientesBestEffort()
+            lastMessage.value = if (ok) {
+                "Desacopiado ${target.productId} x 1 (escaneo)"
+            } else {
+                "No hay unidades acopiadas de ${target.productId}"
+            }
         }
+    }
+
+    fun cancelUnpickScan() {
+        pendingUnpickScan.value = null
     }
 
     private suspend fun unpickSobranteByScan(product: ProductEntity) {

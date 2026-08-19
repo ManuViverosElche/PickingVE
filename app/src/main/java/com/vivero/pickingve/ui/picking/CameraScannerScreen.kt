@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +68,11 @@ fun CameraScannerScreen(
     val lifecycleOwner = context as? LifecycleOwner
     val debouncer = remember { ScanDebouncer() }
     val executor = remember { Executors.newSingleThreadExecutor() }
+    DisposableEffect(executor) {
+        onDispose {
+            executor.shutdown()
+        }
+    }
 
     var modo by remember { mutableStateOf(modoInicial) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }

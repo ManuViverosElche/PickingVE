@@ -19,7 +19,7 @@ class XlsxReportGeneratorTest {
                 eanVariante = "8412345678901",
                 cantidad = 5,
                 timestamp = System.currentTimeMillis(),
-                lote = "C25",
+                medida = "C25",
                 variedad = "Maceta Olearia 25L",
                 refPedida = "MAC-25L-A"
             )
@@ -57,7 +57,6 @@ class XlsxReportGeneratorTest {
                 eanVariante = "8412345678901",
                 cantidad = 3,
                 timestamp = System.currentTimeMillis(),
-                lote = "",
                 variedad = "",
                 refPedida = "MAC-25L-A"
             )
@@ -78,7 +77,7 @@ class XlsxReportGeneratorTest {
             assertTrue(sheet.contains("Ref. pedida"))
             assertTrue(sheet.contains("H3"))
             assertTrue(sheet.contains("MAC-25L-A"))
-            assertTrue(sheet.contains("dimension ref=\"A1:H3\""))
+            assertTrue(sheet.contains("dimension ref=\"A1:J3\""))
         }
     }
 }

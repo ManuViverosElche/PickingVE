@@ -2,6 +2,8 @@ package com.vivero.pickingve.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.vivero.pickingve.util.Constants.DEFAULT_DEBOUNCE_MS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,8 +28,22 @@ data class SettingsStore(
 
 class SettingsRepository(private val context: Context) {
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("pickingve_settings", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences by lazy {
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                "pickingve_secure_settings",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            context.getSharedPreferences("pickingve_settings", Context.MODE_PRIVATE)
+        }
+    }
 
     private val _settings = MutableStateFlow(load())
     val settings = _settings.asStateFlow()

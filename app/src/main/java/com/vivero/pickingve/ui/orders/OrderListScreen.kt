@@ -16,7 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
@@ -120,7 +120,7 @@ fun OrderListScreen(
                         Icon(Icons.Filled.Settings, contentDescription = "Ajustes")
                     }
                     IconButton(onClick = onLogout) {
-                        Icon(Icons.Filled.Logout, contentDescription = "Salir")
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Salir")
                     }
                 }
             )

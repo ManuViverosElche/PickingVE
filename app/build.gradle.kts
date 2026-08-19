@@ -24,9 +24,9 @@ android {
         applicationId = "com.vivero.pickingve"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.7.5"
+versionCode = 21
 
+        versionName = "1.7.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -152,6 +152,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
     implementation(libs.coil.compose)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     debugImplementation(libs.androidx.ui.tooling)
 

@@ -42,14 +42,14 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Straighten
-import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -385,6 +385,26 @@ fun PickingScreen(
         )
     }
 
+    state.pendingOcrMatch?.let { pending ->
+        OcrMatchDialog(
+            pending = pending,
+            productos = state.availableProducts,
+            litrajes = state.litrajes,
+            sectores = state.sectores,
+            onConfirm = viewModel::confirmOcrMatch,
+            onDismiss = viewModel::dismissOcrMatch
+        )
+    }
+
+    state.pendingUnpickScan?.let { pending ->
+        UnpickScanConfirmDialog(
+            pending = pending,
+            compensaciones = state.compensacionesPorLinea,
+            onConfirm = viewModel::confirmUnpickScan,
+            onDismiss = viewModel::cancelUnpickScan
+        )
+    }
+
     if (showSendDialog) {
         SendPickingDialog(
             nextPickingNumber = nextPickingNumber,
@@ -571,29 +591,11 @@ fun PickingScreen(
     }
 
     manualMarkLine?.let { line ->
-        val productosRef = state.availableProducts.filter {
-            it.reference == line.productId || it.id == line.productId
-        }
-        val litrajesRef = state.litrajes.filter { litraje ->
-            productosRef.any { it.litraje == litraje.id }
-        }
-        val sectoresRef = state.sectores.filter { sector ->
-            productosRef.any { it.sector == sector.id }
-        }
-        val litrajesFinal = if (litrajesRef.isNotEmpty()) litrajesRef
-        else productosRef.mapNotNull { it.litraje.takeIf(String::isNotBlank) }
-            .distinct()
-            .map { LitrajeEntity(id = it, descripcion = it) }
-            .ifEmpty { if (line.litrajeDesc.isBlank()) emptyList() else listOf(LitrajeEntity(id = line.litraje, descripcion = line.litrajeDesc)) }
-        val sectoresFinal = if (sectoresRef.isNotEmpty()) sectoresRef
-        else productosRef.mapNotNull { it.sector.takeIf(String::isNotBlank) }
-            .distinct()
-            .map { SectorEntity(id = it, descripcion = it) }
-            .ifEmpty { if (line.sectorDesc.isBlank()) emptyList() else listOf(SectorEntity(id = line.sector, descripcion = line.sectorDesc)) }
         ManualMarkDialog(
             line = line,
-            litrajes = litrajesFinal,
-            sectores = sectoresFinal,
+            productos = state.availableProducts,
+            litrajesAll = state.litrajes,
+            sectoresAll = state.sectores,
             compensaciones = state.compensacionesPorLinea,
             onDirecto = {
                 viewModel.marcarDirecto(line)
@@ -1016,7 +1018,6 @@ private fun OrderLineCard(
     val marcaDistinta = order?.marcaPedido?.isNotBlank() == true &&
         line.marca.isNotBlank() && line.marca != order.marcaPedido
     val pickedContainer = if (isSystemInDarkTheme()) DarkPickedContainer else LightPickedContainer
-    val onPickedContainer = if (isSystemInDarkTheme()) DarkOnPickedContainer else LightOnPickedContainer
 
     Card(
         modifier = Modifier
@@ -1232,7 +1233,7 @@ private fun OrderLineCard(
                         container = MaterialTheme.colorScheme.surfaceVariant,
                         content = MaterialTheme.colorScheme.onSurfaceVariant,
                         border = if (marcaDistinta) BorderStroke(1.dp, MaterialTheme.colorScheme.error) else null,
-                        icon = { Icon(Icons.Filled.Label, null, Modifier.size(14.dp)) },
+                        icon = { Icon(Icons.AutoMirrored.Filled.Label, null, Modifier.size(14.dp)) },
                         text = "Marca: ${line.marca}"
                     )
                 }
@@ -1263,7 +1264,7 @@ private fun OrderLineCard(
                 if (line.pickedQty > 0 && line.vigente) {
                     IconButton(onClick = { onUnpick(line) }) {
                         Icon(
-                            Icons.Filled.Undo,
+                            Icons.AutoMirrored.Filled.Undo,
                             contentDescription = "Desacopiar",
                             tint = MaterialTheme.colorScheme.error
                         )
@@ -2049,12 +2050,13 @@ private fun TruckArrivalDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ManualMarkDialog(
     line: OrderLineEntity,
-    litrajes: List<LitrajeEntity>,
-    sectores: List<SectorEntity>,
+    productos: List<ProductEntity>,
+    litrajesAll: List<LitrajeEntity>,
+    sectoresAll: List<SectorEntity>,
     compensaciones: Map<String, Int>,
     onDirecto: () -> Unit,
     onVariant: (litrajeDesc: String?, sectorDesc: String?) -> Unit,
@@ -2062,25 +2064,28 @@ private fun ManualMarkDialog(
     onDismiss: () -> Unit
 ) {
     var paso by remember(line.orderLineId) { mutableStateOf(0) }
-    var etiqueta by remember(line.orderLineId) { mutableStateOf("") }
     var referencia by remember(line.orderLineId) { mutableStateOf("") }
-    var litrajeDesc by remember(line.orderLineId) { mutableStateOf("") }
-    var sectorDesc by remember(line.orderLineId) { mutableStateOf("") }
     var litrajeVariant by remember(line.orderLineId) { mutableStateOf(line.litrajeDesc) }
     var sectorVariant by remember(line.orderLineId) { mutableStateOf(line.sectorDesc) }
-    var errorAnalisis by remember(line.orderLineId) { mutableStateOf<String?>(null) }
+    var litrajeEtiqueta by remember(line.orderLineId) { mutableStateOf("") }
+    var sectorEtiqueta by remember(line.orderLineId) { mutableStateOf("") }
 
-    fun analizar(texto: String) {
-        val passport = ParsePlantPassportUseCase().parse(texto)
-        if (passport == null) {
-            errorAnalisis = "No he encontrado la referencia en el texto."
-            return
-        }
-        referencia = passport.referencia
-        litrajeDesc = passport.litrajeDesc.orEmpty()
-        sectorDesc = passport.sectorDesc.orEmpty()
-        errorAnalisis = null
-        paso = 3
+    val parser = remember { ParsePlantPassportUseCase() }
+    val productosRef = remember(line.productId, productos) {
+        parser.buscarPorReferencia(line.productId, productos)
+    }
+    val litrajes = remember(productosRef, litrajesAll) {
+        litrajeOptionsDe(productosRef, litrajesAll, line)
+    }
+    val sectores = remember(productosRef, sectoresAll) {
+        sectorOptionsDe(productosRef, sectoresAll, line)
+    }
+
+    LaunchedEffect(litrajes) {
+        if (litrajes.isNotEmpty() && litrajes.none { it.descripcion == litrajeVariant }) litrajeVariant = ""
+    }
+    LaunchedEffect(sectores) {
+        if (sectores.isNotEmpty() && sectores.none { it.descripcion == sectorVariant }) sectorVariant = ""
     }
 
     AlertDialog(
@@ -2090,8 +2095,7 @@ private fun ManualMarkDialog(
                 when (paso) {
                     0 -> "Acopio manual"
                     1 -> "Otro litraje/sector"
-                    2 -> "Acopio manual (etiqueta)"
-                    else -> "Verificar referencia"
+                    else -> "Otra referencia (C:)"
                 }
             )
         },
@@ -2124,7 +2128,7 @@ private fun ManualMarkDialog(
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Acopiar ${line.productId}") }
                         Text(
-                            "Acopia 1 planta de la línea. Si es venta directa (9...), te pedirá la cantidad.",
+                            "Se acopiará 1 planta de la línea.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2135,7 +2139,7 @@ private fun ManualMarkDialog(
                         OutlinedButton(
                             onClick = { paso = 2 },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("La etiqueta es otra referencia (C:)") }
+                        ) { Text("La planta tiene otra referencia") }
                     }
                     1 -> {
                         Text(
@@ -2144,96 +2148,53 @@ private fun ManualMarkDialog(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        DropdownSearchField(
-                            label = "Litraje",
-                            items = litrajes.map { it.id to it.descripcion },
-                            selected = litrajeVariant,
-                            onSelected = { litrajeVariant = it }
-                        )
-                        DropdownSearchField(
-                            label = "Sector",
-                            items = sectores.map { it.id to it.descripcion },
-                            selected = sectorVariant,
-                            onSelected = { sectorVariant = it }
-                        )
+                        if (litrajes.isEmpty() && sectores.isEmpty()) {
+                            Text(
+                                "Esta referencia no tiene otros litrajes ni sectores en el catálogo.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (litrajes.isNotEmpty()) {
+                            SimpleDropdown(
+                                label = "Litraje",
+                                items = litrajes.map { it.id to it.descripcion },
+                                selected = litrajeVariant,
+                                onSelected = { litrajeVariant = it }
+                            )
+                        }
+                        if (sectores.isNotEmpty()) {
+                            SimpleDropdown(
+                                label = "Sector",
+                                items = sectores.map { it.id to it.descripcion },
+                                selected = sectorVariant,
+                                onSelected = { sectorVariant = it }
+                            )
+                        }
                         Text(
                             "Se gestionará igual que un EAN que no está en el pedido: podrás acopiarlo en esta línea, elegir otra línea o añadirlo como referencia nueva.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    2 -> {
-                        Text(
-                            "2. Pega o escribe el texto de la etiqueta (recuadro negro C:)",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        OutlinedTextField(
-                            value = etiqueta,
-                            onValueChange = { etiqueta = it; errorAnalisis = null },
-                            label = { Text("Texto de la etiqueta") },
-                            minLines = 3,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            "Ej.: C: 100042 3 L BLOQUES. También vale sin el C: (por ejemplo la referencia de la línea).",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        errorAnalisis?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
                     else -> {
                         Text(
-                            "3. Verifica la referencia leída de la etiqueta",
+                            "2. Escribe la referencia de la etiqueta (C:)",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        OutlinedTextField(
-                            value = referencia,
-                            onValueChange = { referencia = it.uppercase() },
-                            label = { Text("Referencia (C:)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                        ReferenciaVariantePicker(
+                            referencia = referencia,
+                            onReferenciaChange = { referencia = it.uppercase() },
+                            litrajeDesc = litrajeEtiqueta,
+                            onLitrajeChange = { litrajeEtiqueta = it },
+                            sectorDesc = sectorEtiqueta,
+                            onSectorChange = { sectorEtiqueta = it },
+                            productos = productos,
+                            litrajesAll = litrajesAll,
+                            sectoresAll = sectoresAll
                         )
-                        OutlinedTextField(
-                            value = litrajeDesc,
-                            onValueChange = { litrajeDesc = it },
-                            label = { Text("Litraje (descripción)") },
-                            placeholder = { Text("Ej.: 3 L — vacío si no aparece") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = sectorDesc,
-                            onValueChange = { sectorDesc = it },
-                            label = { Text("Sector (descripción)") },
-                            placeholder = { Text("Ej.: BLOQUES — vacío si no aparece") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (referencia.isNotBlank() && referencia != line.productId) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    "La referencia no coincide con la de la línea (${line.productId}). Se tratará como sustitución o ampliación si no pertenece a otra línea del pedido.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -2242,17 +2203,15 @@ private fun ManualMarkDialog(
             when (paso) {
                 0 -> {}
                 1 -> Button(
+                    enabled = litrajeVariant.isNotBlank() || sectorVariant.isNotBlank(),
                     onClick = {
                         onVariant(litrajeVariant.ifBlank { null }, sectorVariant.ifBlank { null })
                     }
                 ) { Text("Marcar acopiada") }
-                2 -> Button(onClick = { analizar(etiqueta) }, enabled = etiqueta.isNotBlank()) {
-                    Text("Analizar etiqueta")
-                }
                 else -> Button(
-                    enabled = referencia.length >= 2,
+                    enabled = referencia.trim().length >= 2,
                     onClick = {
-                        onConfirm(referencia, litrajeDesc.ifBlank { null }, sectorDesc.ifBlank { null })
+                        onConfirm(referencia, litrajeEtiqueta.ifBlank { null }, sectorEtiqueta.ifBlank { null })
                     }
                 ) { Text("Marcar acopiada") }
             }
@@ -2267,30 +2226,27 @@ private fun ManualMarkDialog(
     )
 }
 
+/** Desplegable simple sin buscador: todos los valores ordenados, de menor a mayor. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DropdownSearchField(
+private fun SimpleDropdown(
     label: String,
     items: List<Pair<String, String>>,
     selected: String,
     onSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf(selected) }
-    val filtered = remember(query, items) {
-        if (query.isBlank()) items
-        else items.filter {
-            it.first.contains(query, ignoreCase = true) ||
-                it.second.contains(query, ignoreCase = true)
-        }
-    }
+    val mostrar = items.firstOrNull { it.second == selected }?.let { (id, desc) ->
+        if (desc.isBlank() || desc == id) id else "$id · $desc"
+    } ?: selected
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded }
     ) {
         OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
+            value = mostrar,
+            onValueChange = {},
+            readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             singleLine = true,
@@ -2302,23 +2258,262 @@ private fun DropdownSearchField(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            filtered.forEach { (codigo, descripcion) ->
+            items.forEach { (id, desc) ->
                 DropdownMenuItem(
-                    text = { Text(descripcion) },
+                    text = { Text(if (desc.isBlank() || desc == id) id else "$id · $desc") },
                     onClick = {
-                        onSelected(descripcion)
-                        query = descripcion
+                        onSelected(desc)
                         expanded = false
                     }
                 )
             }
-            if (filtered.isEmpty()) {
+            if (items.isEmpty()) {
                 Text(
-                    "Sin coincidencias",
+                    "Sin opciones",
                     modifier = Modifier.padding(12.dp),
                     style = MaterialTheme.typography.labelMedium
                 )
             }
         }
     }
+}
+
+/** Referencia (C:) con sugerencias del catálogo + litraje/sector de esa referencia. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ReferenciaVariantePicker(
+    referencia: String,
+    onReferenciaChange: (String) -> Unit,
+    litrajeDesc: String,
+    onLitrajeChange: (String) -> Unit,
+    sectorDesc: String,
+    onSectorChange: (String) -> Unit,
+    productos: List<ProductEntity>,
+    litrajesAll: List<LitrajeEntity>,
+    sectoresAll: List<SectorEntity>
+) {
+    val parser = remember { ParsePlantPassportUseCase() }
+    val productosRef = remember(referencia, productos) {
+        if (referencia.isBlank()) emptyList()
+        else parser.buscarPorReferencia(referencia, productos)
+    }
+    val litrajes = remember(productosRef, litrajesAll) { litrajeOptionsDe(productosRef, litrajesAll, null) }
+    val sectores = remember(productosRef, sectoresAll) { sectorOptionsDe(productosRef, sectoresAll, null) }
+    val sugerencias = remember(referencia, productos, productosRef) {
+        if (referencia.length < 3 || productosRef.isNotEmpty()) emptyList()
+        else {
+            val norm = parser.normalizarRef(referencia)
+            productos.map { it.reference }.distinct()
+                .filter { parser.normalizarRef(it).startsWith(norm) }
+                .sorted()
+                .take(15)
+        }
+    }
+
+    LaunchedEffect(productosRef, litrajes) {
+        if (litrajes.isNotEmpty() && litrajes.none { it.descripcion == litrajeDesc }) onLitrajeChange("")
+    }
+    LaunchedEffect(productosRef, sectores) {
+        if (sectores.isNotEmpty() && sectores.none { it.descripcion == sectorDesc }) onSectorChange("")
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(
+            value = referencia,
+            onValueChange = onReferenciaChange,
+            label = { Text("Referencia (C:)") },
+            placeholder = { Text("Ej.: 11125-SU-24") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (sugerencias.isNotEmpty()) {
+            Text(
+                "Sugerencias:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                sugerencias.forEach { sugerencia ->
+                    FilterChip(
+                        selected = false,
+                        onClick = { onReferenciaChange(sugerencia) },
+                        label = { Text(sugerencia) }
+                    )
+                }
+            }
+        }
+        if (referencia.trim().length >= 2 && productosRef.isEmpty()) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "La referencia no está en el catálogo: se tratará como sustitución o ampliación.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                )
+            }
+        }
+        if (litrajes.isNotEmpty()) {
+            SimpleDropdown(
+                label = "Litraje",
+                items = litrajes.map { it.id to it.descripcion },
+                selected = litrajeDesc,
+                onSelected = onLitrajeChange
+            )
+        }
+        if (sectores.isNotEmpty()) {
+            SimpleDropdown(
+                label = "Sector",
+                items = sectores.map { it.id to it.descripcion },
+                selected = sectorDesc,
+                onSelected = onSectorChange
+            )
+        }
+    }
+}
+
+/** Litrajes del catálogo para una referencia, ordenados de menor a mayor (T.. y sin número al final). */
+private fun litrajeOptionsDe(
+    productosRef: List<ProductEntity>,
+    litrajesAll: List<LitrajeEntity>,
+    line: OrderLineEntity?
+): List<LitrajeEntity> {
+    val ids = productosRef.mapNotNull { it.litraje.takeIf(String::isNotBlank) }.distinct()
+    var opciones = litrajesAll.filter { it.id in ids }
+    val faltantes = ids.filter { id -> opciones.none { it.id == id } }
+        .map { LitrajeEntity(id = it, descripcion = it) }
+    opciones = opciones + faltantes
+    if (opciones.isEmpty() && line != null && line.litrajeDesc.isNotBlank()) {
+        opciones = listOf(LitrajeEntity(id = line.litraje, descripcion = line.litrajeDesc))
+    }
+    return opciones.sortedWith(compareBy({ litrajeNumero(it.id) }, { it.id }))
+}
+
+private fun litrajeNumero(id: String): Double {
+    val norm = id.replace(" ", "").replace("L", "", ignoreCase = true)
+    Regex("""^(\d+(?:[.,]\d+)?)""").find(norm)?.let {
+        return it.groupValues[1].replace(",", ".").toDoubleOrNull() ?: 1_000_000.0
+    }
+    return if (norm.startsWith("T", ignoreCase = true)) 1_000_000.0 else 1_000_001.0
+}
+
+/** Sectores del catálogo para una referencia, ordenados por código. */
+private fun sectorOptionsDe(
+    productosRef: List<ProductEntity>,
+    sectoresAll: List<SectorEntity>,
+    line: OrderLineEntity?
+): List<SectorEntity> {
+    val ids = productosRef.mapNotNull { it.sector.takeIf(String::isNotBlank) }.distinct()
+    var opciones = sectoresAll.filter { it.id in ids }
+    val faltantes = ids.filter { id -> opciones.none { it.id == id } }
+        .map { SectorEntity(id = it, descripcion = it) }
+    opciones = opciones + faltantes
+    if (opciones.isEmpty() && line != null && line.sectorDesc.isNotBlank()) {
+        opciones = listOf(SectorEntity(id = line.sector, descripcion = line.sectorDesc))
+    }
+    return opciones.sortedBy { it.id }
+}
+
+/** El pasaporte sin EAN no se pudo desambiguar solo: el encargado confirma la referencia. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun OcrMatchDialog(
+    pending: PendingOcrMatch,
+    productos: List<ProductEntity>,
+    litrajes: List<LitrajeEntity>,
+    sectores: List<SectorEntity>,
+    onConfirm: (referencia: String, litrajeDesc: String?, sectorDesc: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var referencia by remember(pending.ocrText) { mutableStateOf(pending.referencia) }
+    var litrajeDesc by remember(pending.ocrText) { mutableStateOf(pending.litrajeDesc.orEmpty()) }
+    var sectorDesc by remember(pending.ocrText) { mutableStateOf(pending.sectorDesc.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Referencia de la etiqueta") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "El pasaporte no tiene EAN. Confirma la referencia leída y elige litraje/sector si aparecen:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                ReferenciaVariantePicker(
+                    referencia = referencia,
+                    onReferenciaChange = { referencia = it.uppercase() },
+                    litrajeDesc = litrajeDesc,
+                    onLitrajeChange = { litrajeDesc = it },
+                    sectorDesc = sectorDesc,
+                    onSectorChange = { sectorDesc = it },
+                    productos = productos,
+                    litrajesAll = litrajes,
+                    sectoresAll = sectores
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = referencia.trim().length >= 2,
+                onClick = { onConfirm(referencia, litrajeDesc.ifBlank { null }, sectorDesc.ifBlank { null }) }
+            ) { Text("Marcar acopiada") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+/** Confirmación de desacopio por escaneo: igual que al acopiar, se verifica antes. */
+@Composable
+private fun UnpickScanConfirmDialog(
+    pending: PendingUnpickScan,
+    compensaciones: Map<String, Int>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val product = pending.product
+    val line = pending.line
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Desacopiar por escaneo") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    product.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    product.reference +
+                        (product.litraje.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") +
+                        (product.sector.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalDivider()
+                Text(
+                    "Línea ${line.posicion} · ${line.productId}" +
+                        (if (line.litrajeDesc.isNotBlank()) " · ${line.litrajeDesc}" else "") +
+                        (if (line.sectorDesc.isNotBlank()) " · ${line.sectorDesc}" else "") +
+                        " · Pedido: ${line.requestedQty} · Acopiadas: ${maxOf(line.pickedQty, (line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0)).coerceAtLeast(0))}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Se desacopiará 1 unidad de la planta escaneada.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) { Text("Desacoplar 1") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
 }

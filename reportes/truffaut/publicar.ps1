@@ -6,4 +6,8 @@ Copy-Item reportes/truffaut/index.html backend/web/truffaut/index.html -Force
 Copy-Item reportes/truffaut/data.json backend/web/truffaut/data.json -Force
 python -m py_compile backend/main.py
 gcloud run deploy pickingve-api --source backend --region europe-west1 --project dashboard-439511 --quiet
+node reportes/truffaut/build.js
+Copy-Item reportes/truffaut/data.json backend/web/truffaut/data.json -Force
+Write-Host "data.json refrescado contra la revision publicada; redesplegando..."
+gcloud run deploy pickingve-api --source backend --region europe-west1 --project dashboard-439511 --quiet
 Write-Host "Informe publicado: https://pickingve-api-938422468946.europe-west1.run.app/truffaut?k=truffaut-otono-2026"

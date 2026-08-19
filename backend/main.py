@@ -358,6 +358,8 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
     if not chat_id:
         return {"ok": False}
 
+    _guardar_oficina_chat_id(bot_token, chat_id)
+
     if data.startswith("check_"):
         try:
             responder("✅ Marcado como comprobado")
@@ -378,6 +380,7 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
         return {"ok": True}
 
     if data == "sinop":
+        responder("")
         return {"ok": True}
 
     if data == "cancelar":
@@ -452,6 +455,7 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
         )
         return {"ok": True}
 
+    responder("")
     return {"ok": True}
 
 
@@ -498,7 +502,8 @@ def _pedidos_activos() -> list[dict[str, Any]]:
         SELECT p.NUMERO_PEDIDO, p.FINCA_CARGA, p.FECHA_CARGA, c.N_COMERCIAL
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
-        WHERE p.ESTADO_PEDIDO IN (2, 3)
+        WHERE p.ESTADO_PEDIDO IN (1, 3)
+          AND DATE(p.FECHA_CARGA) >= DATE(CURRENT_DATE())
         ORDER BY p.FECHA_CARGA DESC, p.NUMERO_PEDIDO DESC
         LIMIT 300
         """
@@ -511,7 +516,8 @@ def _lineas_pedido(pedido: str) -> list[dict[str, Any]]:
         SELECT HUELLA_DIGITAL, POSICION_PEDIDO, REFERENCIA_ARTICULO, DESCRIPCION_ARTICULO,
                DESCRIPCION_SISTEMA, CODIGO_LITRAJE, CODIGO_SECTOR
         FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO`
-        WHERE NUMERO_PEDIDO = {_esc(pedido)} AND LINEA_ACTIVA = 'true'
+        WHERE NUMERO_PEDIDO = {_esc(pedido)} AND LINEA_ACTIVA = TRUE
+          AND UNIDADES_PENDIENTES > 0
         ORDER BY CAST(POSICION_PEDIDO AS INT64)
         """
     )
@@ -637,7 +643,8 @@ def _esc(value: Any) -> str:
         return "TRUE" if value else "FALSE"
     if isinstance(value, (int, float)):
         return str(value)
-    return "'" + str(value).replace("'", "\\'").replace("\n", "\\n") + "'"
+    s = str(value).replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+    return "'" + s + "'"
 
 
 def _ensure_notificaciones_tables() -> None:
@@ -741,6 +748,14 @@ def _encargados_finca(finca: str) -> list[str]:
     ]
 
 
+def _es_superusuario(email: str) -> bool:
+    rows = _query(
+        f"SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}` "
+        f"WHERE email = {_esc(email)} AND rol = 'SUPERUSUARIO' LIMIT 1"
+    )
+    return bool(rows)
+
+
 def _finca_pedido(pedido: str) -> str:
     rows = _query(
         f"SELECT FINCA_CARGA FROM `{PROJECT}.{DATASET}.PEDIDOS` "
@@ -755,6 +770,38 @@ def _oficina_chat_id(bot_token: str) -> Optional[str]:
         f"WHERE clave = {_esc('oficina_chat_id:' + bot_token)}"
     )
     return rows[0]["valor_texto"] if rows else None
+
+
+def _guardar_oficina_chat_id(bot_token: str, chat_id: str) -> None:
+    if not bot_token or not chat_id:
+        return
+    try:
+        client.query(
+            f"""
+            MERGE INTO `{PROJECT}.{PICKING_DATASET}.{NOTIFICACIONES_META_TABLE}` AS t
+            USING (SELECT {_esc('oficina_chat_id:' + bot_token)} AS clave, {_esc(chat_id)} AS valor_texto) AS s
+            ON t.clave = s.clave
+            WHEN MATCHED THEN UPDATE SET valor_texto = s.valor_texto
+            WHEN NOT MATCHED THEN INSERT (clave, valor_texto) VALUES (s.clave, s.valor_texto)
+            """
+        ).result()
+    except Exception:
+        pass
+
+
+def _registrar_comandos_bot(bot_token: str) -> None:
+    if not bot_token:
+        return
+    try:
+        comandos = [
+            {"command": "start", "description": "Menú principal de pedidos"},
+            {"command": "pedido", "description": "Escribir a un pedido (/pedido 260766)"},
+            {"command": "linea", "description": "Escribir a una línea (/linea 260766 1)"},
+            {"command": "cancelar", "description": "Cancelar selección actual"},
+        ]
+        _telegram_request(bot_token, "setMyCommands", {"commands": comandos})
+    except Exception:
+        pass
 
 
 def _insertar_comentario(
@@ -898,7 +945,7 @@ def lista_comentarios(
 ) -> dict[str, Any]:
     _verify_key(x_api_key)
     where = [f"pedido_id = {_esc(pedido)}"]
-    if linea is not None:
+    if linea:
         where.append(f"linea_huella = {_esc(linea)}")
     if desde:
         where.append(f"creado_en > TIMESTAMP({_esc(desde)})")
@@ -957,7 +1004,7 @@ def crear_comentario_adjunto(
     )
     url = f"https://storage.googleapis.com/{CHAT_BUCKET}/{nombre_archivo}"
     _insertar_comentario(
-        pedido_id, linea_huella, autor_email,
+        pedido_id, linea_huella or None, autor_email,
         autor_nombre or autor_email, rol, "app", texto.strip(), url,
     )
     return {"ok": True, "adjunto_url": url}
@@ -1038,6 +1085,8 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
     if not chat_id:
         return {"ok": True}
 
+    _guardar_oficina_chat_id(bot_token, chat_id)
+
     def responder_chat(mensaje: str, teclado: Optional[list[list[dict[str, Any]]]] = None) -> None:
         payload: dict[str, Any] = {"chat_id": chat_id, "text": mensaje}
         if teclado:
@@ -1046,6 +1095,68 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
             _telegram_request(bot_token, "sendMessage", payload)
         except Exception:
             pass
+
+    # --- Comandos del menú ---
+    if text.startswith("/"):
+        cmd = text.split()[0].lower()
+        resto = text[len(cmd):].strip()
+        if cmd == "/start":
+            _registrar_comandos_bot(bot_token)
+            _enviar_lista_pedidos(bot_token, chat_id, "pedido", 0)
+            return {"ok": True}
+        if cmd == "/cancelar":
+            _flujo_clear(bot_token, chat_id)
+            responder_chat("✖️ Selección cancelada.")
+            return {"ok": True}
+        if cmd == "/pedido":
+            if resto:
+                pedido = resto.split()[0]
+                if not _pedido_existe(pedido):
+                    responder_chat(f"No existe el pedido {pedido}.")
+                    return {"ok": True}
+                _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido})
+                responder_chat(
+                    f"✍️ Escribe el mensaje para el pedido **{pedido}**:",
+                    _teclado_cancelar(),
+                )
+            else:
+                _enviar_lista_pedidos(bot_token, chat_id, "pedido", 0)
+            return {"ok": True}
+        if cmd == "/linea":
+            partes = resto.split()
+            if len(partes) >= 1 and partes[0]:
+                pedido = partes[0]
+                if not _pedido_existe(pedido):
+                    responder_chat(f"No existe el pedido {pedido}.")
+                    return {"ok": True}
+                if len(partes) >= 2 and partes[1]:
+                    rows = _query(
+                        f"SELECT HUELLA_DIGITAL FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` "
+                        f"WHERE NUMERO_PEDIDO = {_esc(pedido)} AND POSICION_PEDIDO = CAST({_esc(partes[1])} AS INT64) "
+                        f"AND LINEA_ACTIVA = TRUE LIMIT 1"
+                    )
+                    if not rows:
+                        responder_chat(f"No existe la línea {partes[1]} del pedido {pedido}.")
+                        return {"ok": True}
+                    _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido, "linea": rows[0]["HUELLA_DIGITAL"]})
+                    responder_chat(
+                        f"✍️ Escribe el mensaje para el pedido **{pedido}**, línea **{partes[1]}**:",
+                        _teclado_cancelar(),
+                    )
+                else:
+                    _flujo_set(bot_token, chat_id, {"paso": "linea", "pedido": pedido})
+                    _enviar_lista_lineas(bot_token, chat_id, pedido, 0)
+            else:
+                _enviar_lista_pedidos(bot_token, chat_id, "linea", 0)
+            return {"ok": True}
+        responder_chat(
+            "Comandos disponibles:\n"
+            "/start — menú de pedidos\n"
+            "/pedido 260766 — escribir al pedido\n"
+            "/linea 260766 1 — escribir a una línea\n"
+            "/cancelar — cancelar la selección"
+        )
+        return {"ok": True}
 
     def publicar(pedido: str, linea: Optional[str], cuerpo: str) -> None:
         _insertar_comentario(pedido, linea, "oficina@telegram", nombre, "SUPERUSUARIO", "telegram", cuerpo)
@@ -1081,8 +1192,8 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
             if lm:
                 rows = _query(
                     f"SELECT HUELLA_DIGITAL FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` "
-                    f"WHERE NUMERO_PEDIDO = {_esc(pedido_reply)} AND POSICION_PEDIDO = {_esc(lm.group(1))} "
-                    f"AND LINEA_ACTIVA = 'true' LIMIT 1"
+                    f"WHERE NUMERO_PEDIDO = {_esc(pedido_reply)} AND POSICION_PEDIDO = CAST({_esc(lm.group(1))} AS INT64) "
+                    f"AND LINEA_ACTIVA = TRUE LIMIT 1"
                 )
                 if rows:
                     huella = rows[0]["HUELLA_DIGITAL"]
@@ -1156,7 +1267,8 @@ def notificar_cambios(
 
     pedidos = _query(
         f"SELECT NUMERO_PEDIDO, FINCA_CARGA FROM `{PROJECT}.{DATASET}.PEDIDOS` "
-        f"WHERE FECHA_MODIFICACION > DATETIME({_esc(wm_str)}) AND ESTADO_PEDIDO IN (2, 3)"
+        f"WHERE FECHA_MODIFICACION > DATETIME({_esc(wm_str)}) AND ESTADO_PEDIDO IN (1, 3) "
+        f"AND DATE(FECHA_CARGA) >= DATE(CURRENT_DATE())"
     )
     for r in pedidos:
         pedido = str(r.get("NUMERO_PEDIDO") or "")
@@ -1171,9 +1283,10 @@ def notificar_cambios(
                 enviadas += 1
 
     comentarios = _query(
-        f"SELECT comentario_id, pedido_id, linea_huella, autor_nombre, rol, canal, texto, adjunto_url "
+        f"SELECT comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, adjunto_url, creado_en "
         f"FROM `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
-        f"WHERE creado_en > TIMESTAMP({_esc(wm_str)})"
+        f"WHERE creado_en > TIMESTAMP({_esc(wm_str)}) "
+        f"AND (canal <> 'telegram' OR creado_en < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 3 MINUTE))"
     )
     for c in comentarios:
         pedido = str(c.get("pedido_id") or "")
@@ -1193,11 +1306,14 @@ def notificar_cambios(
                     enviadas += 1
         else:
             nombre = str(c.get("autor_nombre") or "Encargado")
+            autor_email = str(c.get("autor_email") or "")
             ofis = _query(
                 f"SELECT email FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}` "
                 f"WHERE rol = 'SUPERUSUARIO'"
             )
             for ofi in ofis:
+                if ofi["email"] == autor_email:
+                    continue
                 if _enviar_fcm(
                     ofi["email"],
                     f"{nombre} · Pedido {pedido}" if pedido else f"{nombre}",
@@ -1666,10 +1782,11 @@ def pedidos(
                COALESCE(pn.ULTIMO_PARTE, 0) AS ULTIMO_PARTE
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
-        LEFT JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
+        INNER JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
             ON l.SERIE_PEDIDO = p.SERIE_PEDIDO AND l.NUMERO_PEDIDO = p.NUMERO_PEDIDO
             AND COALESCE(l.IMPRIMIR_LINEA, 0) = 0
             AND COALESCE(l.LINEA_ACTIVA, TRUE) = TRUE
+            AND COALESCE(l.UNIDADES_PENDIENTES, 0) > 0
         LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = l.CODIGO_LITRAJE
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN (
@@ -1710,7 +1827,14 @@ def pedidos(
         where.append("p.ESTADO_PEDIDO = @estado")
         params.append(bigquery.ScalarQueryParameter("estado", "INT64", estado))
     if modificadoDesde is not None:
-        where.append("p.FECHA_MODIFICACION >= @modificadoDesde")
+        if desde is not None:
+            where.append(
+                "(p.FECHA_MODIFICACION >= @modificadoDesde OR DATE(p.FECHA_CARGA) >= @desde)"
+            )
+        else:
+            where.append(
+                "(p.FECHA_MODIFICACION >= @modificadoDesde OR DATE(p.FECHA_CARGA) = @fecha)"
+            )
         params.append(
             bigquery.ScalarQueryParameter(
                 "modificadoDesde", "DATETIME", modificadoDesde.isoformat()
@@ -1773,47 +1897,214 @@ def pedidos(
     }
 
 
-TRUFFAUT_STORES = {
-    "001CHE": "Chennevières-sur-Marne",
-    "004NAN": "Nantes",
-    "008BAI": "Baillet-en-France",
-    "009VIL": "Villeparisis",
-    "1026NICE PETRUCCIOLI": "Nice",
-    "011PLA": "Plaisir",
-    "012HER": "Herblay",
-    "013SER": "Servon",
-    "014LVB": "La Ville du Bois",
-    "019AMI": "Amiens",
-    "020TOB": "Toulouse-Blagnac",
-    "024ORL": "Orléans",
-    "031PAU": "Pau",
-    "033CHM": "Chambourcy",
-    "035PGS": "La Queue-en-Brie",
-    "036NIM": "Nîmes",
-    "040IVR": "Ivry-sur-Seine",
-    "045CAB": "Cabriès",
-    "047MON": "Montpellier",
-    "050AUB": "Aubagne",
-    "051MER": "Mérignac",
-    "052ROS": "Rosny-Sous-Bois",
-    "053GRI": "Grisy-Suisnes",
-    "073FQX": "La Crau",
-    "075TPM": "Toulon",
-    "076BRS-BOULOGNE": "Boulogne-Billancourt",
-    "085MTL": "Montélimar",
-    "086ADP": "Saint-Ouen-L'Aumône",
-}
-TRUFFAUT_SIN_30 = {"260857"}
 TRUFFAUT_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "truffaut")
 TRUFFAUT_WEB_TOKEN = "truffaut-otono-2026"
+TRUFFAUT_STORES = {
+    "001CHE": "Chennevières-sur-Marne",
+    "004NAN": "Truffaut - Nantes",
+    "008BAI": "Truffaut - Baillet",
+    "009VIL": "Truffaut - Villeparisis",
+    "1026NICE PETRUCCIOLI": "Nicot Jardinage-Truffaut (Lorient)",
+    "011PLA": "Truffaut - Plaisir",
+    "012HER": "Truffaut - Herblay",
+    "013SER": "Truffaut - Servon",
+    "014LVB": "Truffaut - La Ville du Bois",
+    "019AMI": "Truffaut - Amiens",
+    "020TOB": "Truffaut - Balma (Toulouse)",
+    "024ORL": "Truffaut - Orléans",
+    "031PAU": "Truffaut - Pau-Lons",
+    "033CHM": "Truffaut - Châtenay-Malabry",
+    "035PGS": "Truffaut - Paris Grand Stade",
+    "036NIM": "Truffaut - Nîmes",
+    "040IVR": "Truffaut - Ivry",
+    "045CAB": "Truffaut - Cabriès",
+    "047MON": "Truffaut - Montpellier",
+    "050AUB": "Truffaut - Aubagne",
+    "051MER": "Truffaut - Mérignac",
+    "052ROS": "Truffaut - Rosny",
+    "053GRI": "Truffaut - Grigny",
+    "073FQX": "Truffaut - Fourqueux",
+    "075TPM": "Truffaut - Tours Madelaine",
+    "076BRS-BOULOGNE": "Truffaut - Boulogne (Mitry-Mory)",
+    "085MTL": "Truffaut - Montélimar",
+    "086ADP": "Truffaut - Althen-des-Paluds",
+    "1026NIC": "Nicot Jardinage-Truffaut (Lorient)",
+}
+TRUFFAUT_SIN_30 = {"260857"}
+TRUFFAUT_BASE = {
+    "11008-BO-25": 16.0,
+    "11008-BO-26": 16.0,
+    "90048": 16.0,
+    "11311-MA-26": 11.0,
+    "90017": 26.5,
+    "80040-24-25": 26.5,
+    "80043-24-26": 26.5,
+    "80044-24-27": 26.5,
+    "94713": 37.0,
+    "94772": 54.8,
+    "11192-BO-25": 42.0,
+}
+TRUFFAUT_ROUTES_A = [
+    {
+        "num": 1,
+        "title": "Camión 1 · Mediterráneo (Montpellier, Montélimar & Provenza)",
+        "corridor": "Hérault / Valle del Ródano / Provenza",
+        "highway": "AP-7 / A9 / A7 / A54 / A50",
+        "totalPal": 35,
+        "stops": [
+            {"pedido": "260857", "store": "Truffaut - Montpellier", "addr": "77 Rue Hélène Boucher - ZAC Fréjorgues Ouest", "cp": "34130", "city": "Mauguio (Montpellier)", "pal": 2, "legKm": 861, "cumKm": 861, "lat": 43.583, "lng": 4.003},
+            {"pedido": "260866", "store": "Truffaut - Montélimar", "addr": "Rue Louis Charpenne", "cp": "26200", "city": "Montélimar", "pal": 7, "legKm": 152, "cumKm": 1013, "lat": 44.5582, "lng": 4.7509},
+            {"pedido": "260867", "store": "Truffaut - Althen-des-Paluds", "addr": "Route de la Roque", "cp": "84210", "city": "Althen-des-Paluds (Avignon)", "pal": 8, "legKm": 83, "cumKm": 1096, "lat": 44.0049, "lng": 4.9585},
+            {"pedido": "260856", "store": "Truffaut - Cabriès", "addr": "ZAC Grande Campagne - Plan de Campagne", "cp": "13480", "city": "Cabriès (Marsella Norte)", "pal": 8, "legKm": 100, "cumKm": 1196, "lat": 43.4414, "lng": 5.3796},
+            {"pedido": "260859", "store": "Truffaut - Aubagne", "addr": "CD2 Route de Gémenos", "cp": "13400", "city": "Aubagne (Marsella Este)", "pal": 10, "legKm": 36, "cumKm": 1232, "lat": 43.2927, "lng": 5.5683}
+        ],
+        "totalKm": 1232,
+    },
+    {
+        "num": 2,
+        "title": "Camión 2 · Nîmes & Montpellier",
+        "corridor": "Languedoc",
+        "highway": "AP-7 / A9",
+        "totalPal": 34,
+        "stops": [
+            {"pedido": "260854", "store": "Truffaut - Nîmes", "addr": "ZAC Mas des Abeilles, Rue Michel Debré", "cp": "30000", "city": "Nîmes", "pal": 24, "legKm": 900, "cumKm": 900, "lat": 43.8374, "lng": 4.3601},
+            {"pedido": "260857", "store": "Truffaut - Montpellier", "addr": "77 Rue Hélène Boucher - ZAC Fréjorgues Ouest", "cp": "34130", "city": "Mauguio (Montpellier)", "pal": 10, "legKm": 50, "cumKm": 950, "lat": 43.583, "lng": 4.003}
+        ],
+        "totalKm": 950,
+    },
+    {
+        "num": 3,
+        "title": "Camión 3 · ESPECIAL URBANO París (Hayon / Plataforma)",
+        "corridor": "Île-de-France (tiendas urbanas sin muelle)",
+        "highway": "A10 / Périphérique / A86 / A3 / N3",
+        "totalPal": 33,
+        "special": "Camión imprescindible con plataforma elevadora (Hayon)",
+        "stops": [
+            {"pedido": "260845", "store": "Truffaut - Plaisir", "addr": "RN12 Z.A. Sainte-Apolline", "cp": "78380", "city": "Plaisir", "pal": 5, "legKm": 1528, "cumKm": 1528, "lat": 48.8114, "lng": 1.9465},
+            {"pedido": "260848", "store": "Truffaut - La Ville du Bois", "addr": "RN20", "cp": "91620", "city": "La Ville du Bois", "pal": 7, "legKm": 41, "cumKm": 1569, "lat": 48.6608, "lng": 2.2701},
+            {"pedido": "260855", "store": "Truffaut - Ivry", "addr": "5 Rue François Mitterrand", "cp": "94200", "city": "Ivry-sur-Seine", "pal": 4, "legKm": 23, "cumKm": 1592, "lat": 48.8137, "lng": 2.385},
+            {"pedido": "260861", "store": "Truffaut - Rosny", "addr": "CC Domus - 16, Rue de Lisbonne", "cp": "93110", "city": "Rosny-sous-Bois", "pal": 4, "legKm": 14, "cumKm": 1606, "lat": 48.8727, "lng": 2.485},
+            {"pedido": "260853", "store": "Truffaut - Paris Grand Stade", "addr": "2 Rue Jesse Owens", "cp": "93200", "city": "Saint-Denis (Paris)", "pal": 4, "legKm": 14, "cumKm": 1620, "lat": 48.9245, "lng": 2.3601},
+            {"pedido": "260843", "store": "Truffaut - Villeparisis", "addr": "RN 3 Route de Villevaude", "cp": "77270", "city": "Villeparisis", "pal": 5, "legKm": 23, "cumKm": 1643, "lat": 48.9428, "lng": 2.6133},
+            {"pedido": "260865", "store": "Truffaut - Boulogne (Mitry-Mory)", "addr": "Transit via Breewel 10 Rue Mercier", "cp": "77290", "city": "Mitry-Mory (Boulogne)", "pal": 4, "legKm": 6, "cumKm": 1649, "lat": 48.985, "lng": 2.6164}
+        ],
+        "totalKm": 1649,
+    },
+    {
+        "num": 4,
+        "title": "Camión 4 · Corona París & Picardía",
+        "corridor": "Loire / Île-de-France Oeste, Sur & Norte / Picardía",
+        "highway": "A10 / N104 / A13 / A115 / A16",
+        "totalPal": 33,
+        "stops": [
+            {"pedido": "260864", "store": "Truffaut - Tours Madelaine", "addr": "CC Ma Petite Madelaine - 213-215 Av du Grand Sud", "cp": "37170", "city": "Chambray-lès-Tours (Tours)", "pal": 4, "legKm": 1262, "cumKm": 1262, "lat": 47.3375, "lng": 0.7025},
+            {"pedido": "260882", "store": "Truffaut - Orléans", "addr": "Route de Saint Cyr en Val", "cp": "45650", "city": "Saint-Jean-le-Blanc (Orléans)", "pal": 4, "legKm": 122, "cumKm": 1384, "lat": 47.8923, "lng": 1.914},
+            {"pedido": "260863", "store": "Truffaut - Fourqueux", "addr": "ZA du Pince-Loup", "cp": "78112", "city": "Saint-Germain-en-Laye (Fourqueux)", "pal": 4, "legKm": 134, "cumKm": 1518, "lat": 48.8863, "lng": 2.0649},
+            {"pedido": "260852", "store": "Truffaut - Châtenay-Malabry", "addr": "72 Avenue Roger Salengro", "cp": "92290", "city": "Châtenay-Malabry", "pal": 4, "legKm": 34, "cumKm": 1552, "lat": 48.7651, "lng": 2.2783},
+            {"pedido": "260862", "store": "Truffaut - Grigny", "addr": "RN 7 ZI La Plaine Basse - Rue Ferdinand de Lesseps", "cp": "91350", "city": "Grigny", "pal": 3, "legKm": 20, "cumKm": 1572, "lat": 48.6539, "lng": 2.3852},
+            {"pedido": "260847", "store": "Truffaut - Servon", "addr": "3, Rue Georges - RN 19", "cp": "77170", "city": "Servon", "pal": 3, "legKm": 33, "cumKm": 1605, "lat": 48.7178, "lng": 2.5875},
+            {"pedido": "260846", "store": "Truffaut - Herblay", "addr": "La Patte d'Oie 270 Bd du Havre", "cp": "95220", "city": "Pierrelaye (Herblay)", "pal": 4, "legKm": 62, "cumKm": 1667, "lat": 49.012, "lng": 2.154},
+            {"pedido": "260842", "store": "Truffaut - Baillet", "addr": "Rue de Paris", "cp": "95560", "city": "Baillet-en-France", "pal": 4, "legKm": 23, "cumKm": 1690, "lat": 49.0723, "lng": 2.2996},
+            {"pedido": "260849", "store": "Truffaut - Amiens", "addr": "3, Passage du Rayon Vert", "cp": "80330", "city": "Longueau (Amiens)", "pal": 3, "legKm": 116, "cumKm": 1806, "lat": 49.8615, "lng": 2.4265}
+        ],
+        "totalKm": 1806,
+    },
+    {
+        "num": 5,
+        "title": "Camión 5 · Suroeste & Bretaña",
+        "corridor": "Aquitania / Pirineos / Atlántico / Bretaña",
+        "highway": "A-23 / AP-8 / A64 / A62 / A10 / N165",
+        "totalPal": 33,
+        "stops": [
+            {"pedido": "260851", "store": "Truffaut - Pau-Lons", "addr": "ZAC du Mail 1-7, Rue Robert Schuman", "cp": "64140", "city": "Lons (Pau)", "pal": 4, "legKm": 691, "cumKm": 691, "lat": 43.3206, "lng": -0.4109},
+            {"pedido": "260850", "store": "Truffaut - Balma (Toulouse)", "addr": "Route de Lavaur", "cp": "31130", "city": "Balma (Toulouse)", "pal": 9, "legKm": 207, "cumKm": 898, "lat": 43.6108, "lng": 1.4991},
+            {"pedido": "260860", "store": "Truffaut - Mérignac", "addr": "7, Rue Hipparque - Domaine de Pelus", "cp": "33700", "city": "Mérignac (Burdeos)", "pal": 7, "legKm": 252, "cumKm": 1150, "lat": 44.835, "lng": -0.6331},
+            {"pedido": "260841", "store": "Truffaut - Nantes", "addr": "258 Route de Vannes", "cp": "44700", "city": "Orvault (Nantes)", "pal": 7, "legKm": 365, "cumKm": 1515, "lat": 47.2709, "lng": -1.6239},
+            {"pedido": "260844", "store": "Nicot Jardinage-Truffaut (Lorient)", "addr": "ZAC Kerulve-Rue du Verger", "cp": "56100", "city": "Lorient", "pal": 6, "legKm": 162, "cumKm": 1677, "lat": 47.7483, "lng": -3.3701}
+        ],
+        "totalKm": 1677,
+    },
+]
+
+TRUFFAUT_ROUTES_B = TRUFFAUT_ROUTES_A
+
+_ROUTE_GEO_CACHE: dict[Any, dict[str, Any]] = {}
+_ROUTE_GEO_MIN_KM = 1.5
+
+
+def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    import math
+
+    lat1, lon1 = a
+    lat2, lon2 = b
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 6371.0 * 2 * math.asin(math.sqrt(h))
+
+
+def _road_route(origin: dict, stops: list[dict]) -> Optional[dict[str, Any]]:
+    key = (origin["lat"], origin["lng"], tuple((s["lat"], s["lng"]) for s in stops))
+    cached = _ROUTE_GEO_CACHE.get(key)
+    if cached:
+        return cached
+    waypoints = ";".join(
+        [f"{origin['lng']},{origin['lat']}"]
+        + [f"{s['lng']},{s['lat']}" for s in stops]
+    )
+    url = (
+        "https://router.project-osrm.org/route/v1/driving/"
+        + waypoints
+        + "?overview=full&geometries=geojson&steps=false&annotations=false"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "pickingve-route/1.0"})
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if data.get("code") != "Ok":
+            return None
+        route = data["routes"][0]
+        legs_km = [round(leg["distance"] / 1000) for leg in route["legs"]]
+        if not legs_km:
+            return None
+        geo: list[list[float]] = []
+        prev: Optional[tuple[float, float]] = None
+        for lon, lat in route["geometry"]["coordinates"]:
+            p = (float(lat), float(lon))
+            if prev is None or _haversine_km(prev, p) >= _ROUTE_GEO_MIN_KM:
+                geo.append([p[0], p[1]])
+                prev = p
+        last = route["geometry"]["coordinates"][-1]
+        geo[-1] = [float(last[1]), float(last[0])]
+        out = {"geo": geo, "legs_km": legs_km}
+        _ROUTE_GEO_CACHE[key] = out
+        return out
+    except Exception:
+        return None
+
+
+def _apply_road_route(route: dict, origin: dict) -> None:
+    road = _road_route(origin, route["stops"])
+    if road is None:
+        return
+    route["geo"] = road["geo"]
+    cum = 0
+    for i, stop in enumerate(route["stops"]):
+        cum += road["legs_km"][i]
+        stop["legKm"] = road["legs_km"][i]
+        stop["cumKm"] = cum
+    route["totalKm"] = cum
 
 
 @app.get("/api/truffaut/reporte")
 def get_truffaut_reporte(
     request: Request,
+    k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    _verify_key(x_api_key)
+    if not API_KEY or (x_api_key != API_KEY and k != TRUFFAUT_WEB_TOKEN):
+        raise HTTPException(status_code=401, detail="API key inválida o ausente")
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
     cached = _cache_get("truffaut_reporte")
     if cached is not None:
@@ -1827,7 +2118,7 @@ def get_truffaut_reporte(
         WHERE (p.REFERENCIA_PEDIDO LIKE 'TRUFFAUT OTOÑO' OR p.REFERENCIA_PEDIDO LIKE '%/D30')
           AND p.NUMERO_CLIENTE != '34999'
           AND CAST(p.TOTAL_PEDIDO AS FLOAT64) > 0
-          AND CAST(p.ESTADO_PEDIDO AS INT64) = 0
+          AND CAST(p.ESTADO_PEDIDO AS INT64) IN (0, 3)
         ORDER BY p.NUMERO_PEDIDO
     """)
     orders = []
@@ -1851,21 +2142,23 @@ def get_truffaut_reporte(
     if nums:
         inlist = ",".join("'" + n + "'" for n in nums)
         lines = _query(f"""
-            SELECT NUMERO_PEDIDO AS n, POSICION_PEDIDO AS p, REFERENCIA_ARTICULO AS r,
-                   DESCRIPCION_ARTICULO AS d, CAST(UNIDADES AS INT64) AS u,
-                   CODIGO_LITRAJE AS l, PRECIO AS pr, UBICACION_EXTRA AS ubi,
-                   FINCA_RELEVADA AS f, SECTOR_RELEVADO AS s, LINEA_ACTIVA AS act
-            FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO`
-            WHERE NUMERO_PEDIDO IN ({inlist})
-              AND LINEA_ACTIVA = TRUE
-            ORDER BY NUMERO_PEDIDO, POSICION_PEDIDO
+            SELECT lp.NUMERO_PEDIDO AS n, lp.POSICION_PEDIDO AS p, lp.REFERENCIA_ARTICULO AS r,
+                   lp.DESCRIPCION_ARTICULO AS d, CAST(lp.UNIDADES AS INT64) AS u,
+                   lp.CODIGO_LITRAJE AS lc, lt.DESCRIPCION_LITRAJE AS l, lp.PRECIO AS pr,
+                   lp.UBICACION_EXTRA AS ubi, lp.FINCA_RELEVADA AS f, lp.SECTOR_RELEVADO AS s,
+                   lp.LINEA_ACTIVA AS act
+            FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` lp
+            LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = lp.CODIGO_LITRAJE
+            WHERE lp.NUMERO_PEDIDO IN ({inlist})
+              AND lp.LINEA_ACTIVA = TRUE
+            ORDER BY lp.NUMERO_PEDIDO, lp.POSICION_PEDIDO
         """)
         by_n = {o["n"]: o for o in orders}
         for r in lines:
             o = by_n.get(r["n"])
             if not o:
                 continue
-            if r["r"] == "99998" and r["l"] == "EUR" and r["act"]:
+            if r["r"] == "99998" and r["lc"] == "EUR" and r["act"]:
                 o["pal"] += int(r["u"] or 0)
             o["lin"].append({
                 "p": int(r["p"] or 0),
@@ -1874,19 +2167,85 @@ def get_truffaut_reporte(
                 "u": int(r["u"] or 0),
                 "l": r["l"] or "",
                 "pr": float(r["pr"] or 0),
+                "b": TRUFFAUT_BASE.get(r["r"]),
                 "ubi": r["ubi"] or "",
                 "f": r["f"] or "",
                 "s": r["s"] or "",
             })
+            b = TRUFFAUT_BASE.get(r["r"])
+            o["lin"][-1]["sub"] = round((float(r["pr"] or 0) / b - 1) * 100, 1) if b else None
         for o in orders:
             o["lin"].sort(key=lambda x: x["p"])
-    payload = {"generated": date.today().isoformat(), "orders": orders}
+            if o["no30"]:
+                o["planta"] = o["tot"]
+                o["transp"] = 0.0
+            else:
+                planta = 0.0
+                for L in o["lin"]:
+                    if L["b"]:
+                        planta += L["u"] * L["b"]
+                    else:
+                        planta += L["u"] * L["pr"] / 1.30
+                o["planta"] = round(planta, 2)
+                o["transp"] = round(o["tot"] - planta, 2)
+            o["transp_pct"] = round(o["transp"] / o["tot"] * 100, 1) if o["tot"] else 0.0
+
+    order_pal_map = {o["n"]: o["pal"] for o in orders}
+    def dynamic_routes(routes_list):
+        import copy
+        res = copy.deepcopy(routes_list)
+        by_pedido = {}
+        for r in res:
+            for stop in r["stops"]:
+                by_pedido.setdefault(stop["pedido"], []).append(stop)
+        for pedido, stops in by_pedido.items():
+            live = order_pal_map.get(pedido)
+            if live is None:
+                continue
+            if len(stops) == 1:
+                stops[0]["pal"] = live
+            else:
+                static_sum = sum(s["pal"] for s in stops)
+                assigned = 0
+                for i, s in enumerate(stops):
+                    if i == len(stops) - 1:
+                        s["pal"] = live - assigned
+                    else:
+                        s["pal"] = round(live * s["pal"] / static_sum)
+                        assigned += s["pal"]
+        for r in res:
+            r["totalPal"] = sum(s["pal"] for s in r["stops"])
+        return res
+
+    payload = {
+        "generated": date.today().isoformat(),
+        "origin": {
+            "name": "Viveros Elche - La Fábrica",
+            "addr": "CV-845, km 3.5, 03680 Aspe, Alicante, España",
+            "lat": 38.3453,
+            "lng": -0.7681
+        },
+        "orders": orders,
+        "routes_a": dynamic_routes(TRUFFAUT_ROUTES_A),
+        "routes_b": dynamic_routes(TRUFFAUT_ROUTES_B)
+    }
+    for route in payload["routes_a"]:
+        _apply_road_route(route, payload["origin"])
+    for route in payload["routes_b"]:
+        _apply_road_route(route, payload["origin"])
     _cache_set("truffaut_reporte", payload)
     return payload
 
 
 @app.get("/truffaut")
 def truffaut_web(k: Optional[str] = Query(default=None)):
+    if k != TRUFFAUT_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(TRUFFAUT_WEB_DIR, "index.html"))
+
+
+@app.get("/truffaut/rutas")
+def truffaut_web_rutas(k: Optional[str] = Query(default=None)):
     if k != TRUFFAUT_WEB_TOKEN:
         raise HTTPException(404, "Not found")
     return FileResponse(os.path.join(TRUFFAUT_WEB_DIR, "index.html"))
@@ -1921,10 +2280,12 @@ def catalogo(
         """
     )
     litrajes = _query(f"SELECT ID_LITRAJE, DESCRIPCION_LITRAJE FROM `{PROJECT}.{DATASET}.LITRAJES`")
+    sectores = _query(f"SELECT ID_SECTOR, DESCRIPCION_SECTOR FROM `{PROJECT}.{DATASET}.SECTORES`")
     return {
         "articulos": articulos,
         "eans": eans,
         "litrajes": litrajes,
+        "sectores": sectores,
     }
 
 
