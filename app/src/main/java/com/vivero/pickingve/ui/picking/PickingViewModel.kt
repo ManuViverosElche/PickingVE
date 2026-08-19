@@ -421,16 +421,37 @@ class PickingViewModel(
                 (litraje == null || it.litraje.equals(litraje, ignoreCase = true)) &&
                     (sector == null || it.sector.equals(sector, ignoreCase = true))
             }
+            val eligioAmbos = litrajeDesc?.isNotBlank() == true && sectorDesc?.isNotBlank() == true
             if (filtrados.size != 1) {
+                if (eligioAmbos) {
+                    val descLitraje = litrajeDesc!!.trim()
+                    val descSector = sectorDesc!!.trim()
+                    val mejor = when {
+                        filtrados.isNotEmpty() -> filtrados.first()
+                        else -> candidatos.firstOrNull {
+                            (litraje != null && it.litraje.equals(litraje, ignoreCase = true)) ||
+                                it.litraje.equals(descLitraje, ignoreCase = true)
+                        } ?: candidatos.firstOrNull {
+                            (sector != null && it.sector.equals(sector, ignoreCase = true)) ||
+                                it.sector.equals(descSector, ignoreCase = true)
+                        }
+                    }
+                    if (mejor != null) {
+                        pendingOcrMatch.value = null
+                        lastOcrText = pending.ocrText
+                        rutaProducto(mejor)
+                        return@launch
+                    }
+                }
                 pendingOcrMatch.value = pending.copy(
                     referencia = ref,
                     litrajeDesc = litrajeDesc?.takeIf { it.isNotBlank() },
                     sectorDesc = sectorDesc?.takeIf { it.isNotBlank() }
                 )
-                lastMessage.value = if (candidatos.isEmpty()) {
-                    "Referencia C: $ref no encontrada en el catálogo"
-                } else {
-                    "Varios productos coinciden con C: $ref — elige litraje y sector"
+                lastMessage.value = when {
+                    candidatos.isEmpty() -> "Referencia C: $ref no encontrada en el catálogo"
+                    filtrados.isEmpty() -> "Ninguna variante de C: $ref coincide con el litraje y sector elegidos"
+                    else -> "Varios productos coinciden con C: $ref — elige litraje y sector"
                 }
                 return@launch
             }

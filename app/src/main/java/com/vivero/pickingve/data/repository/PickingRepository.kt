@@ -1,6 +1,7 @@
 package com.vivero.pickingve.data.repository
 
 import android.content.Context
+import com.vivero.pickingve.BuildConfig
 import com.vivero.pickingve.data.local.dao.ChatEstadoDao
 import com.vivero.pickingve.data.local.dao.EncargadoDao
 import com.vivero.pickingve.data.local.dao.LitrajeDao
@@ -59,6 +60,12 @@ class PickingRepository(
         get() = prefs.getString(KEY_CATALOG_VERSION, "") ?: ""
         set(value) {
             prefs.edit().putString(KEY_CATALOG_VERSION, value).apply()
+        }
+
+    private var catalogAppVersion: Int
+        get() = prefs.getInt(KEY_CATALOG_APP_VERSION, 0)
+        set(value) {
+            prefs.edit().putInt(KEY_CATALOG_APP_VERSION, value).apply()
         }
 
     private var lastPedidosSyncAt: Long
@@ -771,7 +778,9 @@ class PickingRepository(
         } catch (e: Exception) {
             ""
         }
-        val productos = if (hasProducts && serverVersion.isNotBlank() && serverVersion == catalogVersion) {
+        val productos = if (hasProducts && serverVersion.isNotBlank() &&
+            serverVersion == catalogVersion && BuildConfig.VERSION_CODE == catalogAppVersion
+        ) {
             0
         } else {
             downloadCatalog(api, serverVersion)
@@ -893,6 +902,10 @@ class PickingRepository(
             )
         }
         productDao.upsert(products)
+        val eanActuales = products.filter { it.id.startsWith("EAN-") }.map { it.id }.toSet()
+        val obsoletos = productDao.getAll().map { it.id }
+            .filter { it.startsWith("EAN-") && it !in eanActuales }
+        obsoletos.chunked(900).forEach { productDao.deleteByIds(it) }
         litrajeDao.upsertAll(
             catalogo.litrajes.map { LitrajeEntity(id = it.id, descripcion = it.descripcion) }
         )
@@ -900,6 +913,7 @@ class PickingRepository(
             catalogo.sectores.map { SectorEntity(id = it.id, descripcion = it.descripcion) }
         )
         if (serverVersion.isNotBlank()) catalogVersion = serverVersion
+        catalogAppVersion = BuildConfig.VERSION_CODE
         return products.size
     }
 
@@ -915,7 +929,9 @@ class PickingRepository(
             return false
         }
         if (version.isBlank()) return false
-        if (productDao.count() > 0 && version == catalogVersion) return false
+        if (productDao.count() > 0 && version == catalogVersion &&
+            BuildConfig.VERSION_CODE == catalogAppVersion
+        ) return false
         downloadCatalog(api, version)
         return true
     }
@@ -1179,6 +1195,7 @@ class PickingRepository(
     private companion object {
         const val KEY_FIRST_SYNC = "first_sync_done"
         const val KEY_CATALOG_VERSION = "catalog_version"
+        const val KEY_CATALOG_APP_VERSION = "catalog_app_version"
         const val KEY_LAST_PEDIDOS_SYNC = "last_pedidos_sync_at"
         const val KEY_LAST_FULL_SYNC = "last_full_sync_at"
         const val KEY_LAST_SYNC_ENCARGADO = "last_sync_encargado"
