@@ -22,7 +22,7 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE LOWER(name) LIKE '%' || LOWER(:query) || '%' OR LOWER(reference) LIKE '%' || LOWER(:query) || '%' ORDER BY name LIMIT 15")
     suspend fun search(query: String): List<ProductEntity>
 
-    @Query("SELECT * FROM products ORDER BY reference LIMIT 200")
+    @Query("SELECT * FROM products ORDER BY reference")
     fun observeAll(): Flow<List<ProductEntity>>
 
     @Query("SELECT * FROM products WHERE reference = :reference AND ean IS NOT NULL AND ean != ''")

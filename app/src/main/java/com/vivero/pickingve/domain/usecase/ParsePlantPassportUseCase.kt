@@ -160,7 +160,7 @@ class ParsePlantPassportUseCase {
         texto.lowercase().replace(" ", "")
 
     private val patronLitraje = Regex(
-        "^\\s*(\\d{1,4}(?:[.,]\\d+)?\\s*\\+?\\s*L?|T\\d+|\\d{1,4}/\\d{1,2})\\s*$",
+        "^\\s*(\\d{1,4}(?:[.,]\\d+)?\\s*[-–]\\s*\\d{1,4}(?:[.,]\\d+)?\\s*L?|\\d{1,4}(?:[.,]\\d+)?\\s*\\+?\\s*L?|T\\d+|\\d{1,4}/\\d{1,2})\\s*$",
         RegexOption.IGNORE_CASE
     )
 
@@ -210,11 +210,32 @@ class ParsePlantPassportUseCase {
     /** Convierte la descripción OCR del litraje en su código (ID_LITRAJE). */
     fun resolveLitraje(desc: String?, litrajes: List<LitrajeEntity>): String? {
         if (desc.isNullOrBlank() || litrajes.isEmpty()) return null
-        val norm = desc.lowercase().replace(" ", "")
-        return litrajes.firstOrNull {
-            it.id.lowercase().replace(" ", "") == norm ||
-                it.descripcion.lowercase().replace(" ", "") == norm
-        }?.id
+        val norm = normalizarLitraje(desc)
+        if (norm.isEmpty()) return null
+        // 1. Coincidencia exacta (id o descripción normalizados, sin espacios ni L).
+        litrajes.firstOrNull {
+            normalizarLitraje(it.id) == norm || normalizarLitraje(it.descripcion) == norm
+        }?.let { return it.id }
+        // 2. Rango: el texto es un extremo (o el rango completo) de una descripción con guion,
+        //    p. ej. OCR lee "170L" y la descripción es "160-170L" (id "16+").
+        litrajes.firstOrNull { l ->
+            val descNorm = normalizarLitraje(l.descripcion)
+            val extremos = descNorm.split('-')
+            extremos.size == 2 &&
+                (norm == descNorm || norm == extremos[0] || norm == extremos[1])
+        }?.let { return it.id }
+        // 3. Subcadena con longitud mínima (p. ej. "160-170" contiene "170", o la
+        //    descripción contiene el texto leído).
+        litrajes.firstOrNull { l ->
+            val descNorm = normalizarLitraje(l.descripcion)
+            norm.length >= 3 && (descNorm.contains(norm) || norm.contains(descNorm))
+        }?.let { return it.id }
+        return null
+    }
+
+    private fun normalizarLitraje(texto: String): String {
+        val t = texto.lowercase().replace(" ", "")
+        return if (t.endsWith("l")) t.dropLast(1) else t
     }
 
     /** Convierte la descripción OCR del sector en su código (ID_SECTOR). */
@@ -269,7 +290,7 @@ class ParsePlantPassportUseCase {
             }
         }
         // El OCR devolvió todo en una sola línea: buscar el patrón en todo el texto.
-        return Regex("\\b(\\d{1,4}(?:[.,]\\d+)?\\s*\\+?\\s*L)\\b", RegexOption.IGNORE_CASE)
+        return Regex("\\b(\\d{1,4}(?:[.,]\\d+)?\\s*[-–]\\s*\\d{1,4}(?:[.,]\\d+)?\\s*L|\\d{1,4}(?:[.,]\\d+)?\\s*\\+?\\s*L)\\b", RegexOption.IGNORE_CASE)
             .find(texto)?.groupValues?.get(1)?.trim()?.uppercase()
             ?.takeIf { !referencia.lowercase().contains(it.lowercase().replace(" ", "")) }
             ?: Regex("\\b(T\\d+|\\d{1,4}/\\d{1,2}|\\d{1,4}\\s*\\+)\\b", RegexOption.IGNORE_CASE)
