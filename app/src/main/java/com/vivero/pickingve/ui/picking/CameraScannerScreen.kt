@@ -302,23 +302,6 @@ fun CameraScannerScreen(
                         }
                     }
                 }
-                Button(
-                    onClick = { lanzarOcr() },
-                    enabled = !ocrLoading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp)
-                ) {
-                    if (ocrLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(end = 8.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(Icons.Filled.DocumentScanner, contentDescription = null)
-                    }
-                    Text(" Capturar etiqueta sin EAN")
-                }
             }
         }
     }

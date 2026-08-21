@@ -127,6 +127,8 @@ fun PickingScreen(
     viewModel: PickingViewModel,
     onBack: () -> Unit,
     deepLinkLinea: String? = null,
+    deepLinkTipo: String? = null,
+    deepLinkCambioTipo: String? = null,
     onDeepLinkConsumed: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -140,10 +142,21 @@ fun PickingScreen(
     var showOrderInfo by remember { mutableStateOf(false) }
     var chatLinea by remember { mutableStateOf<String?>(null) }
     var deepLinkConsumed by remember { mutableStateOf(false) }
+    var highlightedLineId by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(deepLinkLinea) {
-        if (deepLinkLinea != null && !deepLinkConsumed) {
-            chatLinea = deepLinkLinea
+    LaunchedEffect(deepLinkLinea, deepLinkTipo, deepLinkCambioTipo) {
+        if (!deepLinkConsumed && deepLinkLinea != null) {
+            when (deepLinkTipo) {
+                "comentario" -> {
+                    chatLinea = deepLinkLinea
+                }
+                "pedido_modificado" -> {
+                    highlightedLineId = deepLinkLinea
+                    // Auto-quitar el resaltado después de 8 segundos
+                    kotlinx.coroutines.delay(8000)
+                    highlightedLineId = null
+                }
+            }
             deepLinkConsumed = true
             onDeepLinkConsumed()
         }
@@ -337,7 +350,8 @@ fun PickingScreen(
                         compensaciones = state.compensacionesPorLinea,
                         onUnpick = { unpickLine = it },
                         onManualMark = { manualMarkLine = it },
-                        onOpenChat = { chatLinea = it.orderLineId }
+                        onOpenChat = { chatLinea = it.orderLineId },
+                        highlightedLineId = highlightedLineId
                     )
                 }
             }
@@ -941,7 +955,8 @@ private fun OrderLinesList(
     compensaciones: Map<String, Int>,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
-    onOpenChat: (OrderLineEntity) -> Unit
+    onOpenChat: (OrderLineEntity) -> Unit,
+    highlightedLineId: String? = null
 ) {
     var query by remember { mutableStateOf("") }
 
@@ -1000,7 +1015,8 @@ private fun OrderLinesList(
                     compensaciones = compensaciones,
                     onUnpick = onUnpick,
                     onManualMark = onManualMark,
-                    onOpenChat = onOpenChat
+                    onOpenChat = onOpenChat,
+                    isHighlighted = highlightedLineId == line.orderLineId
                 )
             }
             if (completed.isNotEmpty()) {
@@ -1023,7 +1039,8 @@ private fun OrderLinesList(
                         compensaciones = compensaciones,
                         onUnpick = onUnpick,
                         onManualMark = onManualMark,
-                        onOpenChat = onOpenChat
+                        onOpenChat = onOpenChat,
+                        isHighlighted = highlightedLineId == line.orderLineId
                     )
                 }
             }
@@ -1042,7 +1059,8 @@ private fun OrderLineCard(
     compensaciones: Map<String, Int>,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
-    onOpenChat: (OrderLineEntity) -> Unit
+    onOpenChat: (OrderLineEntity) -> Unit,
+    isHighlighted: Boolean = false
 ) {
     val compensado = compensaciones[line.orderLineId] ?: 0
     val shownPicked = maxOf(line.pickedQty, (line.acopiadoServidor - compensado).coerceAtLeast(0))
@@ -1052,6 +1070,7 @@ private fun OrderLineCard(
     val marcaDistinta = order?.marcaPedido?.isNotBlank() == true &&
         line.marca.isNotBlank() && line.marca != order.marcaPedido
     val pickedContainer = if (isSystemInDarkTheme()) DarkPickedContainer else LightPickedContainer
+    val highlightColor = if (isSystemInDarkTheme()) Color(0xFFFFD54F) else Color(0xFFF9A825) // Amber
 
     Card(
         modifier = Modifier
@@ -1059,12 +1078,17 @@ private fun OrderLineCard(
             .clickable { onManualMark(line) },
         colors = CardDefaults.cardColors(
             containerColor = when {
+                isHighlighted -> highlightColor.copy(alpha = 0.3f)
                 complete -> pickedContainer
                 shownPicked > 0 -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
                 else -> MaterialTheme.colorScheme.surface
             }
         ),
-        border = if (line.marcado) BorderStroke(2.dp, MarkedBorderColor) else null
+        border = when {
+            isHighlighted -> BorderStroke(3.dp, highlightColor)
+            line.marcado -> BorderStroke(2.dp, MarkedBorderColor)
+            else -> null
+        }
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1416,6 +1440,19 @@ private fun LinePickDialog(
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(line.productName, style = MaterialTheme.typography.titleSmall)
                                 Text(line.productId, style = MaterialTheme.typography.bodySmall)
+                                if (line.litrajeDesc.isNotBlank() || line.sectorDesc.isNotBlank()) {
+                                    Text(
+                                        text = buildString {
+                                            if (line.litrajeDesc.isNotBlank()) append("Litraje: ${line.litrajeDesc}")
+                                            if (line.sectorDesc.isNotBlank()) {
+                                                if (line.litrajeDesc.isNotBlank()) append(" · ")
+                                                append("Sector: ${line.sectorDesc}")
+                                            }
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 Text(
                                     "${maxOf(line.pickedQty, (line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0)).coerceAtLeast(0))} / ${line.requestedQty}",
                                     style = MaterialTheme.typography.labelSmall,

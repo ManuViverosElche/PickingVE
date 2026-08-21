@@ -1,6 +1,7 @@
 package com.vivero.pickingve.worker
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.vivero.pickingve.PickingApplication
@@ -23,6 +24,11 @@ class PickingSyncWorker(
             app.pickingRepository.uploadPendingRegistros(api)
             app.pickingRepository.syncCatalogIfChanged(api)
             app.pickingRepository.syncEncargados(api)
+            try {
+                api.notificarCambios()
+            } catch (e: Exception) {
+                Log.e("PickingVE", "notificar cambios fallo", e)
+            }
             Result.success()
         } catch (e: Exception) {
             Result.retry()

@@ -18,6 +18,8 @@ class MainActivity : ComponentActivity() {
 
     private var deepLinkPedido by mutableStateOf<String?>(null)
     private var deepLinkLinea by mutableStateOf<String?>(null)
+    private var deepLinkTipo by mutableStateOf<String?>(null)
+    private var deepLinkCambioTipo by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,9 +32,13 @@ class MainActivity : ComponentActivity() {
                     settingsRepository = app.settingsRepository,
                     deepLinkPedido = deepLinkPedido,
                     deepLinkLinea = deepLinkLinea,
+                    deepLinkTipo = deepLinkTipo,
+                    deepLinkCambioTipo = deepLinkCambioTipo,
                     onDeepLinkConsumed = {
                         deepLinkPedido = null
                         deepLinkLinea = null
+                        deepLinkTipo = null
+                        deepLinkCambioTipo = null
                     }
                 )
             }
@@ -47,5 +53,7 @@ class MainActivity : ComponentActivity() {
     private fun leerDeepLink(intent: Intent?) {
         deepLinkPedido = intent?.getStringExtra("pedido")?.takeIf { it.isNotBlank() }
         deepLinkLinea = intent?.getStringExtra("linea")?.takeIf { it.isNotBlank() }
+        deepLinkTipo = intent?.getStringExtra("tipo_notificacion")?.takeIf { it.isNotBlank() }
+        deepLinkCambioTipo = intent?.getStringExtra("cambio_tipo")?.takeIf { it.isNotBlank() }
     }
 }

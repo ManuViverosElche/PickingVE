@@ -10,6 +10,28 @@ data class ApiPedidosResponse(
 )
 
 @Serializable
+data class ApiNotificarResponse(
+    val ok: Boolean = false,
+    val pedidosModificados: Int = 0,
+    val comentariosNuevos: Int = 0,
+    val notificacionesEnviadas: Int = 0
+)
+
+@Serializable
+data class CambioLineaDetalle(
+    @SerialName("pedido") val pedido: String,
+    @SerialName("linea") val linea: String = "",
+    @SerialName("tipo") val tipo: String,
+    @SerialName("descripcion") val descripcion: String
+)
+
+@Serializable
+data class NotificarRequest(
+    @SerialName("pedidos_modificados") val pedidosModificados: List<String> = emptyList(),
+    @SerialName("cambios_detalle") val cambiosDetalle: List<CambioLineaDetalle> = emptyList()
+)
+
+@Serializable
 data class ApiPedido(
     val serie: String = "",
     val numero: String = "",

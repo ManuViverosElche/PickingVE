@@ -91,10 +91,10 @@ class OrderListViewModel(
             val daysToShow = if (effective.isNotEmpty()) {
                 effective
             } else {
-                val first = avail.firstOrNull()
-                if (first == null) emptySet() else setOf(first)
+                emptySet()
             }
-            val fincaFilterActive = fincas.isNotEmpty() && sel.isNotEmpty()
+            val fincaFilterActive = fincas.isNotEmpty()
+            val fincaSelected = sel.isNotEmpty()
             val q = query.trim()
             list.filter { o ->
                 val date = o.fechaCarga?.let {
@@ -107,7 +107,13 @@ class OrderListViewModel(
                 } else {
                     date != null && !date.isBefore(today) && date in daysToShow
                 }
-                val fincaOk = q.isNotEmpty() || !fincaFilterActive || sel.any { it.equals(o.fincaCarga, ignoreCase = true) }
+                val fincaOk = if (q.isNotEmpty()) {
+                    true
+                } else if (!fincaFilterActive) {
+                    true
+                } else {
+                    fincaSelected && sel.any { it.equals(o.fincaCarga, ignoreCase = true) }
+                }
                 val queryOk = q.isEmpty() || listOf(
                     o.orderId, o.customerName, o.customerFiscal, o.marcaPedido,
                     o.fincaCarga, o.sectorCarga, o.muelleCarga, o.observaciones
@@ -154,6 +160,19 @@ class OrderListViewModel(
                     finca = if (selected.size == 1) selected.first() else null,
                     fincas = if (selected.size > 1) selected.toList() else null
                 )
+                try {
+                    val cambiosApi = result.cambiosDetalle.map { c ->
+                        com.vivero.pickingve.data.remote.CambioLineaDetalle(
+                            pedido = c.pedido,
+                            linea = c.linea,
+                            tipo = c.tipo,
+                            descripcion = c.descripcion
+                        )
+                    }
+                    api.notificarCambios(result.pedidosModificados, cambiosApi)
+                } catch (e: Exception) {
+                    Log.e("PickingVE", "notificar cambios fallo", e)
+                }
                 _syncState.value = SyncUiState(
                     lastResult = "Sincronizado: ${result.pedidos} pedidos, " +
                         "${result.lineas} líneas, " +
@@ -173,7 +192,7 @@ class OrderListViewModel(
         val saved = repository.selectedFincas()
         val assigned = _assignedFincas.value
         val valid = saved.intersect(assigned.toSet())
-        return if (valid.isNotEmpty()) valid else assigned.toSet()
+        return if (valid.isNotEmpty()) valid else emptySet()
     }
 
     private fun initialSelectedDays(): Set<LocalDate> {
@@ -182,7 +201,7 @@ class OrderListViewModel(
             .mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }
             .filter { !it.isBefore(hoy) }
             .toSet()
-        return if (saved.isNotEmpty()) saved else setOf(hoy)
+        return if (saved.isNotEmpty()) saved else emptySet()
     }
 
     private fun reconcileSelection(assigned: List<String>) {

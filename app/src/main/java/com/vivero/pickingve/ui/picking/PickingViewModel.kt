@@ -59,7 +59,7 @@ data class PendingConfirm(
     val originalProductId: String,
     val isAmpliacion: Boolean = false,
     val ocrText: String? = null,
-    val qty: Int = 1
+    val isLabel: Boolean = false
 )
 
 data class PendingLinePick(
@@ -307,6 +307,10 @@ class PickingViewModel(
             if (product == null) {
                 lastMessage.value = "Referencia EAN no encontrada: $ean"
             } else {
+                // Para referencias "9" escaneadas por EAN, forzar cantidad 1
+                if (product.reference.startsWith("9")) {
+                    forceEanScanQtyOne = true
+                }
                 val currentState = uiState.value
                 when {
                     currentState.unpickingMode -> unpickByScanProduct(product)
@@ -316,6 +320,8 @@ class PickingViewModel(
             }
         }
     }
+
+    private var forceEanScanQtyOne = false
 
     /** Raw text captured via OCR fallback (plant passport label without EAN). */
     fun onOcrText(text: String, lines: List<OcrLine> = emptyList()) {
@@ -714,7 +720,8 @@ class PickingViewModel(
             orderProductName = pick.product.name,
             originalProductId = pick.product.reference,
             isAmpliacion = true,
-            ocrText = lastOcrText
+            ocrText = lastOcrText,
+            isLabel = false
         )
     }
 
@@ -766,6 +773,8 @@ class PickingViewModel(
     }
 
     private fun prepareConfirm(product: ProductEntity, line: OrderLineEntity) {
+        val isLabel = forceEanScanQtyOne
+        forceEanScanQtyOne = false
         pendingConfirm.value = PendingConfirm(
             orderId = line.orderId,
             product = product,
@@ -773,7 +782,8 @@ class PickingViewModel(
             posicion = line.posicion,
             orderProductName = line.productName,
             originalProductId = line.productId,
-            ocrText = lastOcrText
+            ocrText = lastOcrText,
+            isLabel = isLabel
         )
     }
 
@@ -788,6 +798,7 @@ class PickingViewModel(
         qty: Int = 1
     ) {
         val confirm = pendingConfirm.value ?: return
+        val batchQty = if (confirm.isLabel) 1 else qty
         pendingConfirm.value = null
         lastOcrText = null
         viewModelScope.launch {
@@ -805,7 +816,7 @@ class PickingViewModel(
                 liters = liters ?: confirm.product.defaultLiters,
                 measure = measure ?: confirm.product.defaultMeasure,
                 caliber = caliber ?: confirm.product.defaultCaliber,
-                batchQty = qty,
+                batchQty = batchQty,
                 needsLabel = needsLabel,
                 labelReason = labelReason,
                 labelFormat = labelFormat
@@ -814,7 +825,7 @@ class PickingViewModel(
             lastMessage.value = if (confirm.isAmpliacion) {
                 "Ampliación: ${confirm.product.name}"
             } else {
-                "Añadido: ${confirm.product.name}" + if (qty > 1) " x$qty" else ""
+                "Añadido: ${confirm.product.name}" + if (batchQty > 1) " x$batchQty" else ""
             }
         }
     }

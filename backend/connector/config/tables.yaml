@@ -97,6 +97,7 @@ tables:
           DSCART AS DESCATALOGADO,
           EANART AS CODIGO_EAN,
           CP4ART AS FINCA_ARTICULO,
+          CP5ART AS AUTORIZACION,
           DEWART AS DESCRIPCION_DETALLADA
       FROM F_ART
       ORDER BY CODART
@@ -112,6 +113,7 @@ tables:
       - {name: "DESCATALOGADO",         type: "INTEGER", mode: "NULLABLE", description: "Descatalogado (0 = NO, 1 = SI)"}
       - {name: "CODIGO_EAN",            type: "STRING", mode: "NULLABLE", description: "Código EAN del artículo"}
       - {name: "FINCA_ARTICULO",        type: "STRING", mode: "NULLABLE", description: "Finca del artículo"}
+      - {name: "AUTORIZACION",          type: "STRING", mode: "NULLABLE", description: "Campo de autorización / cítrico inmovilizado CP5ART"}
       - {name: "DESCRIPCION_DETALLADA", type: "STRING", mode: "NULLABLE", description: "Información adicional del artículo"}
 
   # ---------------------------------------------------------------------------

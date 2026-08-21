@@ -71,6 +71,8 @@ fun ConfirmPickingDialog(
     val defaultQty = if (ventaDirecta && line != null) {
         (line.requestedQty - shownPicked).coerceAtLeast(1)
     } else 1
+    // Para etiquetas siempre usamos cantidad 1 (se acumulan al volver a pedir)
+    val labelQty = 1
     var qtyText by remember(pending, line) { mutableStateOf(defaultQty.toString()) }
     val qty = if (ventaDirecta) (qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1) else 1
     val measureValid = !requiresMeasure || measure.isNotBlank()
@@ -274,11 +276,12 @@ fun ConfirmPickingDialog(
             Button(
                 enabled = measureValid && (labelOption != 3 || labelFormat.isNotBlank()),
                 onClick = {
+                    val isLabel = labelOption == 2 || labelOption == 3 || labelOption == 4
                     onConfirm(
                         liters,
                         measure.ifBlank { null },
                         caliber.ifBlank { null },
-                        labelOption == 2 || labelOption == 3 || labelOption == 4,
+                        isLabel,
                         when (labelOption) {
                             2 -> "MACETA_ROTA"
                             3 -> "CAMBIO_FORMATO"
@@ -286,7 +289,7 @@ fun ConfirmPickingDialog(
                             else -> ""
                         },
                         labelFormat,
-                        qty
+                        if (isLabel) labelQty else qty
                     )
                 }
             ) {

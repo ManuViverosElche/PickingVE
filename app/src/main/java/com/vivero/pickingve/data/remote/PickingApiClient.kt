@@ -73,6 +73,16 @@ class PickingApiClient(
             auth()
         }.body<ApiEncargadosResponse>().encargados
 
+    suspend fun notificarCambios(
+    pedidosModificados: List<String> = emptyList(),
+    cambiosDetalle: List<CambioLineaDetalle> = emptyList()
+): ApiNotificarResponse =
+        client.post("$baseUrl/notificar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(NotificarRequest(pedidosModificados, cambiosDetalle))
+        }.body()
+
     suspend fun fetchFincas(): List<String> =
         client.get("$baseUrl/fincas") {
             auth()

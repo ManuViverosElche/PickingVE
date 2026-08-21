@@ -31,10 +31,19 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 
+data class CambioLineaDetalle(
+    val pedido: String,
+    val linea: String,
+    val tipo: String, // "nueva", "borrada", "cantidad"
+    val descripcion: String
+)
+
 data class SyncResult(
     val productos: Int,
     val pedidos: Int,
-    val lineas: Int
+    val lineas: Int,
+    val pedidosModificados: List<String> = emptyList(),
+    val cambiosDetalle: List<CambioLineaDetalle> = emptyList()
 )
 
 class PickingRepository(
@@ -798,6 +807,7 @@ class PickingRepository(
             modificadoDesde = if (needFull) null else utcDateTime(lastPedidosSyncAt)
         )
         val modifiedOrderIds = mutableSetOf<String>()
+        val cambiosDetalle = mutableListOf<CambioLineaDetalle>()
         val orders = pedidos.map { p ->
             val prevOrder = orderDao.getOrder(p.numero)
             OrderEntity(
@@ -825,10 +835,26 @@ class PickingRepository(
                 serverLineIds += lineId
                 val prev = existing[lineId]
                 val requested = (l.pendientes ?: 0.0).toInt()
-                if (prev != null && (prev.requestedQty != requested ||
-                        prev.productId != l.referencia)
-                ) {
-                    modifiedOrderIds += p.numero
+                when {
+                    prev == null -> {
+                        // Línea nueva
+                        modifiedOrderIds += p.numero
+                        val desc = "Se ha añadido la línea ${l.posicion ?: 0}: ${l.referencia} - ${l.descripcion.ifBlank { l.referencia }}"
+                        cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = lineId, tipo = "nueva", descripcion = desc)
+                    }
+                    prev.requestedQty != requested -> {
+                        // Cambio de cantidad
+                        modifiedOrderIds += p.numero
+                        val signo = if (requested > prev.requestedQty) "+" else ""
+                        val desc = "Cantidad cambiada en línea ${l.posicion ?: 0} (${l.referencia}): ${prev.requestedQty} → $requested ($signo${requested - prev.requestedQty})"
+                        cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = lineId, tipo = "cantidad", descripcion = desc)
+                    }
+                    prev.productId != l.referencia -> {
+                        // Cambio de referencia
+                        modifiedOrderIds += p.numero
+                        val desc = "Referencia cambiada en línea ${l.posicion ?: 0}: ${prev.productId} → ${l.referencia}"
+                        cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = lineId, tipo = "cantidad", descripcion = desc)
+                    }
                 }
                 OrderLineEntity(
                     orderLineId = lineId,
@@ -859,6 +885,13 @@ class PickingRepository(
                 if (removedIds.isNotEmpty()) {
                     orderDao.markLinesNotVigente(removedIds.toList())
                     modifiedOrderIds += p.numero
+                    removedIds.forEach { removedId ->
+                        val removedLine = existing[removedId]
+                        if (removedLine != null) {
+                            val desc = "Se ha eliminado la línea ${removedLine.posicion}: ${removedLine.productId} - ${removedLine.productName}"
+                            cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = removedId, tipo = "borrada", descripcion = desc)
+                        }
+                    }
                 }
             }
         }
@@ -871,7 +904,13 @@ class PickingRepository(
         if (needFull) lastFullSyncAt = now
         lastSyncEncargadoId = currentEncargado()?.id
         firstSyncDone = true
-        return SyncResult(productos = productos, pedidos = orders.size, lineas = lines.size)
+        return SyncResult(
+            productos = productos,
+            pedidos = orders.size,
+            lineas = lines.size,
+            pedidosModificados = modifiedOrderIds.toList(),
+            cambiosDetalle = cambiosDetalle
+        )
     }
 
     /**
@@ -970,13 +1009,18 @@ class PickingRepository(
     suspend fun uploadPendingRegistros(api: PickingApiClient): Int {
         val pending = pickingDao.observePendingBigQuery().first()
         if (pending.isEmpty()) return 0
-        val registros = pending.mapNotNull { r ->
+
+        val toSend = mutableListOf<ApiRegistro>()
+        val toMarkSyncedLocally = mutableListOf<String>()
+
+        pending.forEach { r ->
             if (r.deleted && !r.wasUploaded) {
                 pickingDao.deleteRecordPhysical(r.recordId)
-                null
+            } else if (r.deleted && r.wasUploaded) {
+                toMarkSyncedLocally.add(r.recordId)
             } else {
-                val qty = if (r.deleted) -r.batchQty.toDouble() else r.batchQty.toDouble()
-                ApiRegistro(
+                val qty = r.batchQty.toDouble()
+                toSend.add(ApiRegistro(
                     recordId = r.recordId,
                     orderId = r.orderId,
                     pickingNumero = r.pickingNumber,
@@ -994,9 +1038,16 @@ class PickingRepository(
                     fechaHora = Instant.ofEpochMilli(r.timestamp).toString(),
                     empleadoEmail = r.empleadoEmail,
                     empleadoNombre = r.empleadoNombre
-                )
+                ))
             }
         }
+
+        if (toMarkSyncedLocally.isNotEmpty()) {
+            pickingDao.markSyncedBigQuery(toMarkSyncedLocally)
+            toMarkSyncedLocally.forEach { pickingDao.deleteRecordPhysical(it) }
+        }
+
+        if (toSend.isEmpty()) return 0
 
         var attempt = 0
         val maxAttempts = 3
@@ -1004,7 +1055,7 @@ class PickingRepository(
 
         while (attempt < maxAttempts) {
             try {
-                response = api.uploadRegistros(registros)
+                response = api.uploadRegistros(toSend)
                 break
             } catch (e: Exception) {
                 attempt++
@@ -1016,9 +1067,6 @@ class PickingRepository(
         val accepted = response?.acceptedIds.orEmpty()
         if (accepted.isNotEmpty()) {
             pickingDao.markSyncedBigQuery(accepted)
-            pending.filter { it.deleted && it.wasUploaded && it.recordId in accepted }.forEach {
-                pickingDao.deleteRecordPhysical(it.recordId) // physical cleanup after sync
-            }
         }
 
         return response?.ok ?: 0

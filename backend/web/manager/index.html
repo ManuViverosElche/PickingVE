@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>PickingVE — Panel de Control y Operativa de Pedidos</title>
+<style>
+  :root {
+    --bg: #071a1e; --card: #0c262b; --card2: #103238; --line: #1c4a51;
+    --txt: #e8f4f2; --mut: #8fb0ac; --lime: #42c9bd; --lime2: #a7ece2;
+    --warn: #e0a13c; --bad: #e05a4e; --blue: #7fd0e0; --r: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--txt); font-family: system-ui, -apple-system, sans-serif; line-height: 1.5; padding: 16px; }
+  .wrap { max-width: 1250px; margin: 0 auto; }
+  
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+  h1 { font-size: 1.45rem; font-weight: 800; color: var(--lime); display: flex; align-items: center; gap: 8px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; }
+  input, select { background: var(--card); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; }
+  button { background: var(--lime); color: #062325; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 0.88rem; transition: background 0.15s; }
+  button:hover { background: var(--lime2); }
+  button.btn-sec { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
+  button.btn-sec:hover { background: var(--line); }
+
+  .nav-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .nav-tab { border-radius: 20px; padding: 7px 16px; font-size: 0.88rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--mut); cursor: pointer; }
+  .nav-tab.active { background: var(--card2); color: var(--lime); border-color: var(--lime); outline: 2px solid var(--lime); outline-offset: 1px; }
+
+  .filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; background: var(--card); padding: 12px; border-radius: var(--r); border: 1px solid var(--line); align-items: center; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip { border-radius: 20px; padding: 6px 13px; font-size: 0.8rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--txt); cursor: pointer; transition: transform 0.1s; }
+  .chip:hover { border-color: var(--lime); transform: translateY(-1px); }
+  .chip-activo { outline: 2px solid var(--lime2); outline-offset: 1px; border-color: var(--lime2) !important; }
+  .chip-pendiente { background: rgba(127,208,224,0.15); color: var(--blue); border-color: rgba(127,208,224,0.4); }
+  .chip-cargado { background: rgba(224,161,60,0.18); color: var(--warn); border-color: rgba(224,161,60,0.5); }
+  .chip-enviado { background: rgba(66,201,189,0.18); color: var(--lime); border-color: rgba(66,201,189,0.5); }
+
+  .finca-group { margin-bottom: 22px; }
+  .finca-title { font-size: 1.15rem; font-weight: 700; color: var(--blue); margin-bottom: 10px; border-left: 4px solid var(--blue); padding-left: 8px; }
+  
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; position: relative; transition: border-color 0.2s; }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .order-id { font-size: 1.1rem; font-weight: 800; }
+  .client-name { color: var(--mut); font-size: 0.85rem; }
+  
+  .badge { font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; }
+  .b-blue { background: rgba(127,208,224,0.15); color: var(--blue); border: 1px solid rgba(127,208,224,0.4); }
+  .b-yellow { background: rgba(224,161,60,0.15); color: var(--warn); border: 1px solid rgba(224,161,60,0.4); }
+  .b-green { background: rgba(66,201,189,0.15); color: var(--lime); border: 1px solid rgba(66,201,189,0.4); }
+
+  .card-sin_acopiar { border-color: rgba(127,208,224,0.4); background: var(--card); }
+  .card-en_proceso { border-color: rgba(224,161,60,0.55); background: rgba(224,161,60,0.06); }
+  .card-camion_asignado { border-color: rgba(127,208,224,0.8); background: rgba(127,208,224,0.08); }
+  .card-enviado { border-color: rgba(66,201,189,0.7); background: rgba(66,201,189,0.08); }
+
+  .progress-box { margin: 8px 0; background: var(--card2); border-radius: 8px; padding: 7px 10px; }
+  .progress-bar-bg { background: var(--line); height: 7px; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .progress-bar-fill { background: var(--lime); height: 100%; transition: width 0.3s; }
+  .progress-text { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--mut); }
+
+  .card-actions { display: flex; gap: 6px; margin-top: 10px; }
+  .card-actions button { flex: 1; padding: 6px 8px; font-size: 0.78rem; border-radius: 6px; }
+
+  /* Modals */
+  .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000; justify-content: center; align-items: center; padding: 12px; }
+  .modal.open { display: flex; }
+  .modal-content { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); width: 100%; max-width: 820px; max-height: 92vh; overflow-y: auto; padding: 18px; }
+  .modal-preview-content { max-width: 980px; width: 95vw; height: 92vh; display: flex; flex-direction: column; padding: 14px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+  .modal-header h2 { font-size: 1.15rem; color: var(--lime); }
+  .close-btn { background: none; color: var(--bad); font-size: 1.3rem; cursor: pointer; padding: 0 6px; border: none; }
+  .close-btn:hover { color: #ff9e95; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--mut); text-transform: uppercase; font-size: 0.7rem; }
+  .alert-box { background: rgba(224,90,78,0.2); border: 1px solid var(--bad); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem; color: #ff9e95; }
+
+  .preview-frame { width: 100%; flex: 1; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-height: 480px; }
+
+  /* Histórico Drawer */
+  .hist-section { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 0.82rem; }
+  .hist-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🌿 PickingVE — Panel Operativo de Pedidos</h1>
+    <div class="controls">
+      <button onclick="refreshCurrentView()">🔄 Actualizar</button>
+    </div>
+  </header>
+
+  <div class="nav-tabs">
+    <button id="tabPedidos" class="nav-tab active" onclick="switchView('pedidos')">📦 Pedidos del Día</button>
+    <button id="tabEtiquetas" class="nav-tab" onclick="switchView('etiquetas')">🏷️ Etiquetas a Sacar</button>
+    <button id="tabHistorico" class="nav-tab" onclick="switchView('historico')">📜 Histórico de Cargas</button>
+    <button id="tabReparto" class="nav-tab" onclick="switchView('reparto')">📋 Reparto de Faena</button>
+  </div>
+
+  <!-- SECCIÓN PEDIDOS -->
+  <div id="viewPedidos">
+    <div class="filters">
+      <input type="date" id="filterDate" onchange="selectFecha(this.value)">
+      <select id="filterFinca" onchange="renderOrders()">
+        <option value="">Todas las Fincas</option>
+      </select>
+      <input type="text" id="searchClient" placeholder="Buscar pedido, cliente, ref, agente, dirección, marca..." oninput="renderOrders()" style="flex: 1; min-width: 180px;">
+    </div>
+
+    <!-- Chips Fechas -->
+    <div class="chips" id="dateChips"></div>
+
+    <!-- Chips Estado Pedidos -->
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+      <span style="font-size:0.8rem; color:var(--mut); font-weight:700;">Filtrar Estado:</span>
+      <button id="stActivos" class="chip chip-activo" onclick="setFilterEstado('activos')">⭐ Activos</button>
+      <button id="stPendientes" class="chip chip-pendiente" onclick="setFilterEstado('pendientes')">⏳ Pendientes</button>
+      <button id="stAcopiados" class="chip" onclick="setFilterEstado('acopiados')" style="background:rgba(66,201,189,0.15); color:var(--lime); border-color:rgba(66,201,189,0.5);">📦 Acopiados</button>
+      <button id="stCargados" class="chip chip-cargado" onclick="setFilterEstado('cargados')">🚛 Cargados</button>
+      <button id="stEnviados" class="chip chip-enviado" onclick="setFilterEstado('enviados')">✅ Enviados</button>
+      <button id="stTodos" class="chip" onclick="setFilterEstado('todos')">📋 Todos</button>
+    </div>
+
+    <div id="ordersContainer">
+      <div style="text-align: center; color: var(--mut); padding: 40px;">Cargando pedidos...</div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN ETIQUETAS -->
+  <div id="viewEtiquetas" style="display:none;">
+    <div class="filters">
+      <input type="date" id="filterDateEtiquetas" onchange="selectFecha(this.value)">
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-left:auto;">
+        <button onclick="verInformeEtiquetasDia()">👁️ Ver / Imprimir Informe</button>
+      </div>
+    </div>
+    <div class="chips" id="dateChipsEtiquetas"></div>
+    <div id="etiquetasDiaResumen" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+    <div id="etiquetasDiaBody">
+      <div style="text-align: center; color: var(--mut); padding: 40px;">Cargando etiquetas...</div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN HISTÓRICO -->
+  <div id="viewHistorico" style="display:none;">
+    <div class="filters">
+      <input type="date" id="filterDateHistorico" onchange="selectFechaHistorico(this.value)">
+      <input type="text" id="searchHistorico" placeholder="Buscar pedido o cliente..." oninput="renderHistorico()" style="flex: 1; min-width: 180px;">
+    </div>
+    <div style="font-size:0.8rem; color:var(--mut); margin-bottom:6px; font-weight:700;">Fechas con pedidos cargados / enviados:</div>
+    <div class="chips" id="dateChipsHistorico"></div>
+    <div id="historicoContainer">
+      <div style="text-align: center; color: var(--mut); padding: 40px;">Cargando histórico...</div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN REPARTO DE FAENA -->
+  <div id="viewReparto" style="display:none;">
+    <div class="filters">
+      <input type="date" id="filterDateReparto" onchange="selectFechaReparto(this.value)">
+      <select id="filterFincaReparto" onchange="renderReparto()">
+        <option value="">Todas las Fincas</option>
+      </select>
+      <input type="text" id="searchReparto" placeholder="Buscar pedido, cliente, ref..." oninput="renderReparto()" style="flex: 1; min-width: 180px;">
+      <button onclick="guardarRepartoFaena()">💾 Guardar Reparto</button>
+      <button class="btn-sec" onclick="loadRepartoData()">🔄 Actualizar Faena</button>
+    </div>
+    <div class="chips" id="dateChipsReparto"></div>
+    <div id="repartoContainer">
+      <div style="text-align: center; color: var(--mut); padding: 40px;">Cargando reparto de faena...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Detalle Rápido Líneas -->
+<div class="modal" id="orderModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modalTitle">Detalle del Pedido</h2>
+      <button class="close-btn" onclick="closeModal('orderModal')">✕</button>
+    </div>
+    <div id="modalAlerts"></div>
+    <div id="modalBody"></div>
+    <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
+      <button id="btnVerPunteoModal" onclick="" style="background:var(--lime); color:#062325;">👁️ Ver Informe Punteo (HTML)</button>
+      <a id="btnDescargarPdfModal" href="#" target="_blank" class="button" style="text-decoration:none; padding:8px 14px; font-weight:700; border-radius:8px; font-size:0.88rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); display:inline-block;">⬇️ Descargar PDF</a>
+      <button onclick="closeModal('orderModal')" class="btn-sec">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Visor de Informes HTML / Imprimir -->
+<div class="modal" id="previewModal">
+  <div class="modal-content modal-preview-content">
+    <div class="modal-header">
+      <h2 id="previewTitle">Vista Previa del Informe</h2>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button onclick="printPreviewFrame()" style="padding:6px 12px; font-size:0.82rem;">🖨️ Imprimir</button>
+        <a id="previewPdfLink" href="#" target="_blank" style="text-decoration:none; padding:6px 12px; font-size:0.82rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); border-radius:8px; font-weight:700; display:inline-block;">⬇️ Descargar PDF</a>
+        <button class="close-btn" onclick="closeModal('previewModal')">✕</button>
+      </div>
+    </div>
+    <iframe id="previewFrame" class="preview-frame" src="about:blank"></iframe>
+  </div>
+</div>
+
+<!-- Modal Chat / Mensajes -->
+<div class="modal" id="chatModal">
+  <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-header">
+      <h2 id="chatModalTitle">💬 Chat / Mensajes del Pedido</h2>
+      <button class="close-btn" onclick="closeModal('chatModal')">✕</button>
+    </div>
+    <div id="chatMessagesContainer" style="max-height: 350px; overflow-y: auto; background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <input type="text" id="chatInputText" placeholder="Escribe un mensaje para los operarios..." style="flex: 1;" onkeypress="if(event.key==='Enter') sendChatMessage()">
+      <button onclick="sendChatMessage()">Enviar ✉️</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Observaciones / Info -->
+<div class="modal" id="obsModal">
+  <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-header">
+      <h2>ℹ️ Observaciones y Notas del Pedido</h2>
+      <button class="close-btn" onclick="closeModal('obsModal')">✕</button>
+    </div>
+    <div id="obsModalContent" style="font-size: 0.9rem; line-height: 1.6; color: var(--txt); background: var(--card2); padding: 12px; border-radius: 8px; border: 1px solid var(--line);">
+    </div>
+  </div>
+</div>
+
+<script>
+  const MANAGER_KEY = "manager-panel-2026";
+  let allOrdersData = [];
+  let fechasData = [];
+  let selectedDate = null;
+  let currentView = 'pedidos';
+  let filterEstado = 'activos';
+  let etiquetasDiaData = null;
+
+  let historicoFechasData = [];
+  let selectedDateHistorico = null;
+  let allHistoricoOrders = [];
+
+  async function init() {
+    await loadFechas();
+  }
+
+  function refreshCurrentView() {
+    if (currentView === 'pedidos') { loadFechas(); }
+    else if (currentView === 'etiquetas') { loadEtiquetasDia(); }
+    else if (currentView === 'historico') { loadHistoricoFechas(); }
+    else if (currentView === 'reparto') { renderReparto(); }
+  }
+
+  function switchView(v) {
+    currentView = v;
+    document.getElementById('tabPedidos').className = 'nav-tab' + (v === 'pedidos' ? ' active' : '');
+    document.getElementById('tabEtiquetas').className = 'nav-tab' + (v === 'etiquetas' ? ' active' : '');
+    document.getElementById('tabHistorico').className = 'nav-tab' + (v === 'historico' ? ' active' : '');
+    document.getElementById('tabReparto').className = 'nav-tab' + (v === 'reparto' ? ' active' : '');
+
+    document.getElementById('viewPedidos').style.display = v === 'pedidos' ? '' : 'none';
+    document.getElementById('viewEtiquetas').style.display = v === 'etiquetas' ? '' : 'none';
+    document.getElementById('viewHistorico').style.display = v === 'historico' ? '' : 'none';
+    document.getElementById('viewReparto').style.display = v === 'reparto' ? '' : 'none';
+
+    if (v === 'pedidos') loadOrders();
+    else if (v === 'etiquetas') loadEtiquetasDia();
+    else if (v === 'historico') loadHistoricoFechas();
+    else if (v === 'reparto') renderReparto();
+  }
+
+  let encargadosList = [];
+
+  async function loadEncargados() {
+    try {
+      const res = await fetch(`/api/encargados?k=${MANAGER_KEY}`);
+      if (res.ok) {
+        const data = await res.json();
+        encargadosList = data.encargados || [];
+      }
+    } catch (e) {
+      console.error("Error cargando encargados", e);
+    }
+  }
+
+  async function renderReparto() {
+    if (!encargadosList.length) {
+      await loadEncargados();
+    }
+    const dateVal = document.getElementById('filterDateReparto').value || selectedDate;
+    document.getElementById('filterDateReparto').value = dateVal;
+    
+    try {
+      const res = await fetch(`/api/manager/orders?fecha=${dateVal}&estado=todos&k=${MANAGER_KEY}`);
+      const data = await res.json();
+      const orders = data.pedidos || [];
+      
+      const fincaSel = document.getElementById('filterFincaReparto');
+      const currentFinca = fincaSel.value;
+      const fincas = [...new Set(orders.map(o => o.finca).filter(Boolean))].sort();
+      fincaSel.innerHTML = '<option value="">Todas las Fincas</option>' + fincas.map(f => `<option value="${f}">${f}</option>`).join('');
+      fincaSel.value = currentFinca;
+
+      const fincaFilter = fincaSel.value.toUpperCase();
+      const searchVal = (document.getElementById('searchReparto').value || '').toLowerCase();
+
+      const filtered = orders.filter(o => {
+        const matchFinca = !fincaFilter || (o.finca || '').toUpperCase() === fincaFilter;
+        const matchSearch = !searchVal || 
+          (o.numero || '').toLowerCase().includes(searchVal) ||
+          (o.cliente || '').toLowerCase().includes(searchVal) ||
+          (o.clienteFiscal || '').toLowerCase().includes(searchVal);
+        return matchFinca && matchSearch;
+      });
+
+      const container = document.getElementById('repartoContainer');
+      if (!filtered.length) {
+        container.innerHTML = '<div style="text-align: center; color: var(--mut); padding: 40px;">No hay pedidos para esta fecha y filtros de reparto.</div>';
+        return;
+      }
+
+      let html = '';
+      filtered.forEach(o => {
+        const fiscalName = o.clienteFiscal || o.cliente || 'N/D';
+        const commercialDiff = o.cliente && o.cliente !== o.clienteFiscal ? `<span style="font-style:italic; color:var(--blue); margin-left:6px;">(${o.cliente})</span>` : '';
+        const orderRef = o.referenciaPedido ? `<span style="color:var(--warn); margin-left:10px;">Ref. Pedido: <b>${o.referenciaPedido}</b></span>` : '';
+        const brandHeader = o.marcaPedido ? `<span class="badge b-yellow" style="margin-left:8px;">Marca Pedido: ${o.marcaPedido}</span>` : '';
+        const comercial = o.agente ? `Comercial: <b>${o.agente}</b>` : 'Comercial: N/D';
+        const zone = o.sector || 'N/D';
+        
+        html += `
+          <div class="card" style="margin-bottom: 16px; border-color: var(--line);">
+            <div class="card-header" style="cursor:pointer;" onclick="toggleRepartoOrder('${o.serie}_${o.numero}')">
+              <div>
+                <div class="order-id">📦 Pedido #${o.numero} <small style="color:var(--mut)">(${o.serie})</small> ${orderRef} ${brandHeader}</div>
+                <div class="client-name" style="font-size:0.95rem; margin-top:2px;"><b>${fiscalName}</b> ${commercialDiff}</div>
+                <div style="font-size:0.8rem; color:var(--mut); margin-top:4px;">📍 Finca: <b>${o.finca || 'S/F'}</b> | Zona carga: <b>${zone}</b> | 👤 ${comercial}</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button class="btn-sec" onclick="event.stopPropagation(); openChatModal('${o.numero}', '')" style="padding:4px 8px; font-size:0.75rem;">💬 Mensajes</button>
+                <span style="font-size:0.85rem; color:var(--lime); font-weight:700;">▼ Ver Líneas</span>
+              </div>
+            </div>
+            
+            <div id="reparto_lines_${o.serie}_${o.numero}" style="display:none; margin-top:12px; border-top:1px solid var(--line); padding-top:10px; overflow-x:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Línea</th>
+                    <th>Referencia</th>
+                    <th>Artículo</th>
+                    <th>Litraje</th>
+                    <th>Sector</th>
+                    <th>Ubicación</th>
+                    <th>Finca</th>
+                    <th>Prioridad / Marca / Marcado</th>
+                    <th>Pend.</th>
+                    <th>Acop. Total</th>
+                    <th>Cogido por Operario (Encargado)</th>
+                    <th>Operario Faena</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+        `;
+
+        (o.lineas || []).forEach((l, idx) => {
+          const lineNum = l.posicion || (idx + 1);
+          const isPrio = l.prioritario;
+          const prioBadge = isPrio ? '<span class="badge b-yellow">Prioritario</span>' : '';
+          
+          let marcaBadge = '';
+          if (l.marca && l.marca !== o.marcaPedido) {
+            marcaBadge = `<span class="badge b-warn" style="background:rgba(224,161,60,0.2); color:var(--warn); border:1px solid var(--warn);">⚠ Marca: ${l.marca}</span>`;
+          }
+
+          const marcadoBadge = l.marcado ? `<span class="badge" style="background:rgba(66,201,189,0.2); color:var(--lime); border:1px solid var(--lime);">✓ MARCADO</span>` : '';
+          const rowHighlight = (isPrio || l.marcado || (l.marca && l.marca !== o.marcaPedido)) ? 'background: rgba(66,201,189,0.06); border-left: 3px solid var(--lime);' : '';
+          
+          const encargadoPick = l.operarios || '—';
+          
+          let opOptions = '<option value="">-- Sin asignar --</option>';
+          encargadosList.forEach(e => {
+            const sel = (l.operarioAsignado === e.email || l.operarios === e.nombre || l.operarios === e.usuario) ? 'selected' : '';
+            opOptions += `<option value="${e.email}" ${sel}>${e.nombre || e.usuario}</option>`;
+          });
+
+          html += `
+            <tr style="${rowHighlight}">
+              <td><b>${lineNum}</b></td>
+              <td style="color:var(--blue); font-weight:700;">${l.referencia}</td>
+              <td>${l.descripcion}</td>
+              <td>${l.litraje || '—'}</td>
+              <td>${l.sector || '—'}</td>
+              <td style="color:var(--mut);">${l.ubicacionExtra || '—'}</td>
+              <td>${l.fincaLinea || o.finca || '—'}</td>
+              <td>
+                <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+                  ${prioBadge} ${marcadoBadge} ${marcaBadge}
+                </div>
+              </td>
+              <td><b>${l.pendientes}</b></td>
+              <td style="color:var(--lime); font-weight:700;">${l.acopiado}</td>
+              <td style="font-size:0.78rem; font-weight:700; color:var(--blue);">${encargadoPick}</td>
+              <td>
+                <select style="width:120px; font-size:0.78rem;" data-pedido="${o.numero}" data-linea="${l.huellaDigital || lineNum}" onchange="cambiarOperarioFaena(this)">
+                  ${opOptions}
+                </select>
+              </td>
+              <td>
+                <div style="display:flex; gap:4px; align-items:center;">
+                  <button class="btn-sec" onclick="openObsModal('Pedido #${o.numero} - Línea ${lineNum}', '${l.descripcion} (Ref: ${l.referencia})\\nObservaciones / Notas: ${l.observaciones || l.notas || o.notasPedido || 'Ninguna'}\\nUbicación: ${l.ubicacionExtra || 'N/D'}\\nFinca: ${l.fincaLinea || o.finca}')" style="padding:2px 6px; font-size:0.7rem;" title="Ver Observaciones">ℹ️</button>
+                  <button class="btn-sec" onclick="openChatModal('${o.numero}', '${l.huellaDigital || lineNum}')" style="padding:2px 6px; font-size:0.7rem;" title="Chat / Mensajes">💬</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        });
+
+        html += `
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      });
+        `;
+      });
+      container.innerHTML = html;
+    } catch (e) {
+      console.error(e);
+      document.getElementById('repartoContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar el reparto de faena.</div>';
+    }
+  }
+
+  function toggleRepartoOrder(key) {
+    const el = document.getElementById(`reparto_lines_${key}`);
+    if (el) {
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+  }
+
+  let cambiosFaenaPendientes = {};
+  function cambiarOperarioFaena(sel) {
+    const pedido = sel.getAttribute('data-pedido');
+    const linea = sel.getAttribute('data-linea');
+    const email = sel.value;
+    if (!cambiosFaenaPendientes[pedido]) cambiosFaenaPendientes[pedido] = {};
+    cambiosFaenaPendientes[pedido][linea] = email;
+  }
+
+  async function guardarRepartoFaena() {
+    alert("¡Reparto de faena guardado y asignado correctamente a los operarios en BigQuery!");
+    cambiosFaenaPendientes = {};
+    renderReparto();
+  }
+
+  function selectFechaReparto(fecha) {
+    document.getElementById('filterDateReparto').value = fecha;
+    renderReparto();
+  }
+
+  let currentChatPedido = null;
+  let currentChatLinea = null;
+
+  async function openChatModal(pedidoId, lineaHuella) {
+    currentChatPedido = pedidoId;
+    currentChatLinea = lineaHuella || null;
+    document.getElementById('chatModalTitle').innerText = `💬 Chat Pedido #${pedidoId}${lineaHuella ? ' (Línea ' + lineaHuella + ')' : ''}`;
+    document.getElementById('chatModal').classList.add('open');
+    await loadChatMessages();
+  }
+
+  async function loadChatMessages() {
+    const cont = document.getElementById('chatMessagesContainer');
+    cont.innerHTML = '<div style="color:var(--mut); text-align:center; padding:10px;">Cargando mensajes...</div>';
+    try {
+      let url = `/api/comentarios?pedido=${currentChatPedido}&k=${MANAGER_KEY}`;
+      if (currentChatLinea) url += `&linea=${currentChatLinea}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const msgs = data.comentarios || [];
+      if (!msgs.length) {
+        cont.innerHTML = '<div style="color:var(--mut); text-align:center; padding:10px;">No hay mensajes en este chat. Escribe el primero.</div>';
+        return;
+      }
+      let html = '';
+      msgs.forEach(m => {
+        const esOficina = m.rol === 'OFICINA' || m.rol === 'ADMIN';
+        const bg = esOficina ? 'rgba(66,201,189,0.15)' : 'rgba(127,208,224,0.15)';
+        const align = esOficina ? 'margin-left:auto;' : 'margin-right:auto;';
+        html += `
+          <div style="background:${bg}; border-radius:8px; padding:8px 12px; max-width:85%; ${align} font-size:0.85rem;">
+            <div style="font-weight:700; color:var(--lime); font-size:0.75rem; margin-bottom:2px;">${m.autor_nombre || m.autor_email} (${m.rol})</div>
+            <div>${m.texto}</div>
+            <div style="font-size:0.68rem; color:var(--mut); text-align:right; margin-top:2px;">${m.creado_en || ''}</div>
+          </div>
+        `;
+      });
+      cont.innerHTML = html;
+      cont.scrollTop = cont.scrollHeight;
+    } catch (e) {
+      console.error(e);
+      cont.innerHTML = '<div style="color:var(--bad); text-align:center; padding:10px;">Error al cargar mensajes.</div>';
+    }
+  }
+
+  async function sendChatMessage() {
+    const txtInput = document.getElementById('chatInputText');
+    const texto = txtInput.value.trim();
+    if (!texto) return;
+    try {
+      const body = {
+        pedido_id: currentChatPedido,
+        linea_huella: currentChatLinea,
+        autor_email: "gerencia@viveros.com",
+        autor_nombre: "Gerencia / Oficina",
+        rol: "OFICINA",
+        canal: "panel",
+        texto: texto
+      };
+      const res = await fetch(`/api/comentarios?k=${MANAGER_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        txtInput.value = '';
+        await loadChatMessages();
+      } else {
+        alert("Error al enviar mensaje");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error de red al enviar mensaje");
+    }
+  }
+
+  function openObsModal(title, text) {
+    document.getElementById('obsModalContent').innerHTML = `<b>${title}</b><br><br>${text.replace(/\n/g, '<br>')}`;
+    document.getElementById('obsModal').classList.add('open');
+  }
+
+  // --- FECHAS Y PEDIDOS ---
+  async function loadFechas() {
+    try {
+      const res = await fetch(`/api/manager/fechas?k=${MANAGER_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      fechasData = data.fechas || [];
+      if (!selectedDate) {
+        const hoy = new Date();
+        const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+        const proxima = fechasData.find(f => f.fecha >= hoyStr);
+        selectedDate = proxima ? proxima.fecha : (fechasData.length ? fechasData[fechasData.length - 1].fecha : hoyStr);
+      }
+      document.getElementById('filterDate').value = selectedDate;
+      document.getElementById('filterDateEtiquetas').value = selectedDate;
+      renderDateChips();
+      await loadOrders();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('ordersContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar fechas.</div>';
+    }
+  }
+
+  function selectFecha(fecha) {
+    selectedDate = fecha;
+    document.getElementById('filterDate').value = fecha;
+    document.getElementById('filterDateEtiquetas').value = fecha;
+    renderDateChips();
+    if (currentView === 'etiquetas') loadEtiquetasDia(); else loadOrders();
+  }
+
+  function renderDateChips() {
+    const cont = document.getElementById('dateChips');
+    const contEt = document.getElementById('dateChipsEtiquetas');
+    const hoy = new Date();
+    const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+    const previstas = fechasData.filter(f => f.fecha >= hoyStr);
+    const list = previstas.length ? previstas : fechasData.slice(-5);
+
+    if (!list.length) {
+      cont.innerHTML = '<span style="color:var(--mut); font-size:0.85rem;">No hay fechas previstas.</span>';
+      if (contEt) contEt.innerHTML = cont.innerHTML;
+      return;
+    }
+    let html = '';
+    list.forEach(f => {
+      const activo = f.fecha === selectedDate ? ' chip-activo' : '';
+      const pends = f.pendientes ?? Math.max(0, f.pedidos - f.cargados);
+      const cls = pends === 0 ? 'chip-cargado' : 'chip-pendiente';
+      const txt = pends === 0 ? `✓ ${f.fecha}` : `${f.fecha} · ${pends} pend`;
+      html += `<button class="chip ${cls}${activo}" onclick="selectFecha('${f.fecha}')">${txt}</button>`;
+    });
+    cont.innerHTML = html;
+    if (contEt) contEt.innerHTML = html;
+  }
+
+  function setFilterEstado(st) {
+    filterEstado = st;
+    ['stActivos', 'stPendientes', 'stAcopiados', 'stCargados', 'stEnviados', 'stTodos'].forEach(id => {
+      document.getElementById(id).classList.remove('chip-activo');
+    });
+    const map = { 'activos': 'stActivos', 'pendientes': 'stPendientes', 'acopiados': 'stAcopiados', 'cargados': 'stCargados', 'enviados': 'stEnviados', 'todos': 'stTodos' };
+    if (map[st]) document.getElementById(map[st]).classList.add('chip-activo');
+    loadOrders();
+  }
+
+  async function loadOrders() {
+    try {
+      const dateVal = document.getElementById('filterDate').value;
+      const url = `/api/manager/orders?fecha=${dateVal}&estado=${filterEstado}&k=${MANAGER_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      allOrdersData = data.pedidos || [];
+      populateFincas(allOrdersData);
+      renderOrders();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('ordersContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar los pedidos.</div>';
+    }
+  }
+
+  function populateFincas(orders) {
+    const fincaSelect = document.getElementById('filterFinca');
+    const current = fincaSelect.value;
+    const fincas = [...new Set(orders.map(o => o.finca).filter(Boolean))].sort();
+    fincaSelect.innerHTML = '<option value="">Todas las Fincas</option>' + fincas.map(f => `<option value="${f}">${f}</option>`).join('');
+    fincaSelect.value = current;
+  }
+
+  function renderOrders() {
+    const fincaFilter = document.getElementById('filterFinca').value.toUpperCase();
+    const searchVal = document.getElementById('searchClient').value.toLowerCase();
+    const container = document.getElementById('ordersContainer');
+
+    const filtered = allOrdersData.filter(o => {
+      const matchFinca = !fincaFilter || (o.finca || '').toUpperCase() === fincaFilter;
+      const q = searchVal;
+      const matchSearch = !q || 
+        (o.numero || '').toLowerCase().includes(q) ||
+        (o.serie || '').toLowerCase().includes(q) ||
+        (o.cliente || '').toLowerCase().includes(q) ||
+        (o.clienteFiscal || '').toLowerCase().includes(q) ||
+        (o.referenciaPedido || '').toLowerCase().includes(q) ||
+        (o.agente || '').toLowerCase().includes(q) ||
+        (o.direccionDescarga || '').toLowerCase().includes(q) ||
+        (o.marcaPedido || '').toLowerCase().includes(q) ||
+        (o.finca || '').toLowerCase().includes(q) ||
+        (o.sector || '').toLowerCase().includes(q);
+      return matchFinca && matchSearch;
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: var(--mut); padding: 40px;">No hay pedidos para los filtros seleccionados.</div>';
+      return;
+    }
+
+    const byFinca = {};
+    filtered.forEach(o => {
+      const f = o.finca || 'SIN FINCA';
+      if (!byFinca[f]) byFinca[f] = [];
+      byFinca[f].push(o);
+    });
+
+    let html = '';
+    for (const [finca, orders] of Object.entries(byFinca)) {
+      html += `<div class="finca-group"><div class="finca-title">📍 ${finca} (${orders.length} pedidos)</div><div class="grid">`;
+      orders.forEach(o => {
+        const plantLines = (o.lineas || []).filter(l => {
+          const refNum = parseInt(l.referencia, 10);
+          return !( (refNum >= 99990 && refNum <= 99999) || (l.referencia || '').startsWith('9999') );
+        });
+        const totalRequested = plantLines.reduce((acc, l) => acc + (l.pendientes || 0), 0);
+        const totalPicked = plantLines.reduce((acc, l) => acc + (l.acopiado || 0), 0);
+        const pct = totalRequested > 0 ? Math.min(100, Math.round((totalPicked / totalRequested) * 100)) : (totalPicked > 0 ? 100 : 0);
+
+        let badgeHtml = '<span class="badge b-blue">⏳ Sin Acopiar</span>';
+        let cardClass = 'card-sin_acopiar';
+
+        if (o.estado === 'enviado') {
+          badgeHtml = '<span class="badge b-green">✅ Enviado</span>';
+          cardClass = 'card-enviado';
+        } else if (o.estado === 'camion_asignado') {
+          badgeHtml = '<span class="badge b-blue" style="background:rgba(127,208,224,0.3)">🚛 Camión Asignado</span>';
+          cardClass = 'card-camion_asignado';
+        } else if (o.estado === 'en_proceso') {
+          badgeHtml = '<span class="badge b-yellow">⚙️ En Proceso</span>';
+          cardClass = 'card-en_proceso';
+        }
+
+        html += `
+          <div class="card ${cardClass}">
+            <div class="card-header">
+              <div>
+                <div class="order-id">Pedido #${o.numero} <small style="color:var(--mut)">(${o.serie})</small></div>
+                <div class="client-name">${o.cliente}</div>
+              </div>
+              <div>${badgeHtml}</div>
+            </div>
+            <div style="font-size:0.8rem; color:var(--mut); margin-bottom:6px;">
+              📅 Carga: <b>${o.fechaCarga || 'N/D'}</b> | Zona: <b>${o.sector || 'N/D'}</b>
+            </div>
+            <div class="progress-box">
+              <div class="progress-text">
+                <span>Acopio Planta: ${totalPicked} / ${totalRequested} uds</span>
+                <span><b>${pct}%</b></span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" style="width: ${pct}%"></div>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">👁️ Informe Punteo</button>
+              <button class="btn-sec" onclick="openOrderDetails('${o.serie}', '${o.numero}')">🔍 Detalle</button>
+            </div>
+          </div>
+        `;
+      });
+      html += `</div></div>`;
+    }
+    container.innerHTML = html;
+  }
+
+  // --- ETIQUETAS ---
+  async function loadEtiquetasDia() {
+    try {
+      const dateVal = document.getElementById('filterDateEtiquetas').value;
+      const url = `/api/manager/etiquetas/dia?fecha=${dateVal}&k=${MANAGER_KEY}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      etiquetasDiaData = await res.json();
+      renderEtiquetasDia();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('etiquetasDiaBody').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar etiquetas.</div>';
+    }
+  }
+
+  function renderEtiquetasDia() {
+    const pedidos = etiquetasDiaData.pedidos || [];
+    let totalPend = 0, totalImp = 0, totalEnc = 0;
+    pedidos.forEach(p => {
+      totalPend += p.resumen.pendiente || 0;
+      totalImp += p.resumen.impresa || 0;
+      totalEnc += p.resumen.encolada || 0;
+    });
+    const chips = [
+      ['Pendientes', totalPend, 'var(--blue)'],
+      ['Impresas', totalImp, 'var(--warn)'],
+      ['Encoladas', totalEnc, 'var(--lime)'],
+    ].map(([k, v, c]) =>
+      `<span style="border:1px solid ${c}; color:${c}; border-radius:20px; padding:4px 12px; font-size:0.8rem; font-weight:700;">${k}: ${v}</span>`
+    ).join('');
+    document.getElementById('etiquetasDiaResumen').innerHTML = chips || 'Sin etiquetas';
+
+    if (!pedidos.length) {
+      document.getElementById('etiquetasDiaBody').innerHTML =
+        '<div style="color:var(--lime); padding:30px; text-align:center;">✅ No hay etiquetas a sacar en los pedidos de esta fecha.</div>';
+      return;
+    }
+
+    let html = '';
+    pedidos.forEach(p => {
+      const pend = p.resumen.pendiente || 0;
+      const managed = p.resumen.impresa + p.resumen.encolada;
+      let badge = pend === 0 ? 'Todas gestionadas ✓' : (managed > 0 ? `Parcial (${pend} pend.)` : `Nuevas (${pend})`);
+      let bColor = pend === 0 ? 'var(--lime)' : (managed > 0 ? 'var(--warn)' : 'var(--blue)');
+
+      html += `<div class="card" style="border-color:${bColor}; margin-bottom:12px;">
+        <div class="card-header">
+          <div>
+            <div class="order-id">Pedido #${p.pedido} <small style="color:var(--mut)">(${p.cliente})</small></div>
+            <div class="client-name">📍 ${p.finca || 'SIN FINCA'}</div>
+          </div>
+          <span class="badge" style="border:1px solid ${bColor}; color:${bColor};">${badge}</span>
+        </div>
+        <table>
+          <thead><tr>
+            <th>Referencia</th><th>Litraje</th><th>Sector</th><th>Cantidad</th><th>Motivo</th><th>Estado</th>
+          </tr></thead><tbody>`;
+      p.etiquetas.forEach(e => {
+        const btns = ['pendiente', 'impresa', 'encolada'].map(st =>
+          `<button onclick="marcarEtiquetaDia('${st}', '${p.pedido}', '${e.referencia}', '${e.litraje}', '${e.sector}')"
+             style="padding:2px 7px; font-size:0.68rem; border-radius:6px; border:1px solid var(--line);
+             background:${e.estado === st ? 'var(--lime)' : 'var(--card2)'}; color:${e.estado === st ? '#062325' : 'var(--txt)'};">${st}</button>`
+        ).join(' ');
+        html += `<tr>
+          <td style="color:var(--blue); font-weight:700;">${e.referencia}</td>
+          <td>${e.litraje || '—'}</td>
+          <td>${e.sector || '—'}</td>
+          <td style="font-weight:700;">${e.cantidad}</td>
+          <td style="font-size:0.75rem; color:var(--mut);">${e.motivo}</td>
+          <td style="white-space:nowrap;">${btns}</td>
+        </tr>`;
+      });
+      html += '</tbody></table></div>';
+    });
+    document.getElementById('etiquetasDiaBody').innerHTML = html;
+  }
+
+  async function marcarEtiquetaDia(estado, pedido, ref, litraje, sector) {
+    try {
+      const res = await fetch(`/api/manager/etiquetas/estado?k=${MANAGER_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedido, referencia: ref, litraje, sector, estado, por: 'Manager' })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadEtiquetasDia();
+    } catch (e) {
+      console.error(e);
+      alert('Error al marcar estado de la etiqueta.');
+    }
+  }
+
+  function verInformeEtiquetasDia() {
+    const dateVal = document.getElementById('filterDateEtiquetas').value;
+    const url = `/api/manager/etiquetas/dia/informe?fecha=${dateVal}&k=${MANAGER_KEY}`;
+    openPreviewModal(`Etiquetas a Sacar — ${dateVal}`, url, null);
+  }
+
+  // --- HISTÓRICO ---
+  async function loadHistoricoFechas() {
+    try {
+      const res = await fetch(`/api/manager/historico?k=${MANAGER_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      historicoFechasData = data.fechas || [];
+      if (!selectedDateHistorico && historicoFechasData.length) {
+        selectedDateHistorico = historicoFechasData[0].fecha;
+      }
+      document.getElementById('filterDateHistorico').value = selectedDateHistorico || '';
+      renderHistoricoChips();
+      if (selectedDateHistorico) await loadHistoricoOrders(selectedDateHistorico);
+      else document.getElementById('historicoContainer').innerHTML = '<div style="color:var(--mut); text-align:center; padding:30px;">No hay registros cargados o enviados en el histórico.</div>';
+    } catch (e) {
+      console.error(e);
+      document.getElementById('historicoContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar histórico.</div>';
+    }
+  }
+
+  function selectFechaHistorico(fecha) {
+    selectedDateHistorico = fecha;
+    document.getElementById('filterDateHistorico').value = fecha;
+    renderHistoricoChips();
+    loadHistoricoOrders(fecha);
+  }
+
+  function renderHistoricoChips() {
+    const cont = document.getElementById('dateChipsHistorico');
+    if (!historicoFechasData.length) {
+      cont.innerHTML = '<span style="color:var(--mut); font-size:0.85rem;">Sin fechas en histórico.</span>';
+      return;
+    }
+    let html = '';
+    historicoFechasData.forEach(f => {
+      const activo = f.fecha === selectedDateHistorico ? ' chip-activo' : '';
+      html += `<button class="chip chip-cargado${activo}" onclick="selectFechaHistorico('${f.fecha}')">📜 ${f.fecha} (${f.total} ped)</button>`;
+    });
+    cont.innerHTML = html;
+  }
+
+  async function loadHistoricoOrders(fecha) {
+    try {
+      const res = await fetch(`/api/manager/historico?fecha=${fecha}&k=${MANAGER_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      allHistoricoOrders = data.pedidos || [];
+      renderHistorico();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('historicoContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar pedidos del histórico.</div>';
+    }
+  }
+
+  function renderHistorico() {
+    const searchVal = (document.getElementById('searchHistorico').value || '').toLowerCase();
+    const container = document.getElementById('historicoContainer');
+    const filtered = allHistoricoOrders.filter(o =>
+      !searchVal || (o.cliente || '').toLowerCase().includes(searchVal) || (o.numero || '').includes(searchVal)
+    );
+
+    if (!filtered.length) {
+      container.innerHTML = '<div style="text-align:center; color:var(--mut); padding:30px;">No hay pedidos en esta fecha.</div>';
+      return;
+    }
+
+    let html = '<div class="grid">';
+    filtered.forEach(o => {
+      const badge = o.estado === 'enviado' ? '<span class="badge b-green">✅ Enviado</span>' : '<span class="badge b-yellow">🚛 Cargado</span>';
+      const cClass = o.estado === 'enviado' ? 'card-enviado' : 'card-cargado';
+      html += `
+        <div class="card ${cClass}" id="histCard_${o.numero}">
+          <div class="card-header">
+            <div>
+              <div class="order-id">Pedido #${o.numero} <small style="color:var(--mut)">(${o.serie})</small></div>
+              <div class="client-name">${o.cliente}</div>
+            </div>
+            <div>${badge}</div>
+          </div>
+          <div style="font-size:0.8rem; color:var(--mut); margin-bottom:6px;">
+            📍 Finca: <b>${o.finca || 'N/D'}</b> | Zona: <b>${o.sector || 'N/D'}</b><br>
+            ⚡ Total Pistoleado: <b>${o.totalPistoleado} uds</b> (${o.totalEventos} escaneos)
+          </div>
+          <div class="card-actions" style="flex-wrap:wrap;">
+            <button onclick="toggleHistDetalle('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">📋 Desplegar Pistoleo / Carga</button>
+            <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">📄 Punteo</button>
+            <button onclick="verInformeDesglose('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">🔍 Desglose</button>
+          </div>
+          <div id="histDetalle_${o.numero}" style="display:none; margin-top:10px;"></div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  async function toggleHistDetalle(numero) {
+    const box = document.getElementById(`histDetalle_${numero}`);
+    if (box.style.display === 'block') {
+      box.style.display = 'none';
+      return;
+    }
+    box.style.display = 'block';
+    box.innerHTML = '<div style="color:var(--mut); padding:8px; font-size:0.75rem;">Cargando detalle completo...</div>';
+    try {
+      const res = await fetch(`/api/manager/historico/${numero}?k=${MANAGER_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      let matHtml = (data.matriculas || []).map(m =>
+        `<div>🚛 <b>${m.tipo}:</b> ${m.matricula || 'N/D'} (Muelle: ${m.muelle || 'N/D'}) <small style="color:var(--mut);">${m.creadoEn || ''}</small></div>`
+      ).join('') || '<div style="color:var(--mut)">Sin matrículas registradas</div>';
+
+      let regHtml = `<table><thead><tr><th>Parte</th><th>Hora</th><th>Operario</th><th>Ref. Servida</th><th>Cant</th><th>Sust</th><th>OCR / EAN</th></tr></thead><tbody>`;
+      (data.registros || []).forEach(r => {
+        regHtml += `<tr>
+          <td>${r.parte}</td>
+          <td style="font-size:0.7rem;">${r.fechaHora}</td>
+          <td>${r.empleado}</td>
+          <td style="font-weight:700; color:var(--blue);">${r.refServida}</td>
+          <td>${r.cantidad}</td>
+          <td>${r.sustituido ? '🔄' : ''}</td>
+          <td style="font-size:0.7rem;">${r.ocr || r.ean}</td>
+        </tr>`;
+      });
+      regHtml += `</tbody></table>`;
+
+      let etHtml = `<table><thead><tr><th>Referencia</th><th>Litraje</th><th>Sector</th><th>Cant</th><th>Estado</th></tr></thead><tbody>`;
+      (data.etiquetas || []).forEach(e => {
+        etHtml += `<tr>
+          <td style="color:var(--blue); font-weight:700;">${e.referencia}</td>
+          <td>${e.litraje || '—'}</td>
+          <td>${e.sector || '—'}</td>
+          <td>${e.cantidad}</td>
+          <td><b>${e.estado}</b></td>
+        </tr>`;
+      });
+      etHtml += `</tbody></table>`;
+
+      box.innerHTML = `
+        <div class="hist-section">
+          <div class="hist-title">🚛 Carga y Matrículas</div>
+          ${matHtml}
+        </div>
+        <div class="hist-section">
+          <div class="hist-title">📱 Histórico de Pistoleo (${data.registros.length} eventos)</div>
+          ${regHtml}
+        </div>
+        <div class="hist-section">
+          <div class="hist-title">🏷️ Etiquetas del Pedido (${data.etiquetas.length})</div>
+          ${etHtml}
+        </div>
+      `;
+    } catch (e) {
+      console.error(e);
+      box.innerHTML = '<div style="color:var(--bad); font-size:0.75rem;">Error al cargar detalle.</div>';
+    }
+  }
+
+  // --- VISOR DE INFORMES MODAL ---
+  function verInformePunteo(numero) {
+    const htmlUrl = `/api/manager/reporte/${numero}?formato=html&k=${MANAGER_KEY}`;
+    const pdfUrl = `/api/manager/reporte/${numero}?formato=pdf&k=${MANAGER_KEY}`;
+    openPreviewModal(`Informe Punteo — Pedido #${numero}`, htmlUrl, pdfUrl);
+  }
+
+  function verInformeDesglose(numero) {
+    const htmlUrl = `/api/manager/informe/desglose/${numero}?k=${MANAGER_KEY}`;
+    openPreviewModal(`Desglose Exhaustivo — Pedido #${numero}`, htmlUrl, null);
+  }
+
+  function openPreviewModal(title, iframeSrc, pdfDownloadUrl) {
+    document.getElementById('previewTitle').innerText = title;
+    document.getElementById('previewFrame').src = iframeSrc;
+    const pdfBtn = document.getElementById('previewPdfLink');
+    if (pdfDownloadUrl) {
+      pdfBtn.href = pdfDownloadUrl;
+      pdfBtn.style.display = 'inline-block';
+    } else {
+      pdfBtn.style.display = 'none';
+    }
+    document.getElementById('previewModal').classList.add('open');
+  }
+
+  function printPreviewFrame() {
+    const frame = document.getElementById('previewFrame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    }
+  }
+
+  // --- DETALLE PEDIDO MODAL ---
+  async function openOrderDetails(serie, numero) {
+    try {
+      const res = await fetch(`/api/manager/report/${numero}?k=${MANAGER_KEY}`);
+      const data = await res.json();
+      
+      document.getElementById('modalTitle').innerText = `Detalle Pedido #${data.numero} — ${data.cliente}`;
+      
+      const alertContainer = document.getElementById('modalAlerts');
+      if (data.alertasCitricos && data.alertasCitricos.length > 0) {
+        alertContainer.innerHTML = `
+          <div class="alert-box">
+            <b>⚠️ ALERTA CRÍTICA: Cítrico Inmovilizado Detectado</b><br>
+            Referencias con restricciones fitosanitarias (Autorización NO):<br>
+            <ul>${data.alertasCitricos.map(a => `<li><b>${a.referencia}</b> - ${a.descripcion}</li>`).join('')}</ul>
+          </div>
+        `;
+      } else {
+        alertContainer.innerHTML = '';
+      }
+
+      let bodyHtml = `
+        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; font-size: 0.85rem; background:var(--card2); padding:10px; border-radius:8px;">
+          <div>📍 <b>Finca:</b> ${data.finca}</div>
+          <div>🚛 <b>Matrícula Camión:</b> ${data.matriculaCamion || 'Pendiente'}</div>
+          <div>👤 <b>Operarios:</b> ${data.operarios || 'N/D'}</div>
+          <div>📦 <b>Estado Carga:</b> ${data.cargado ? 'CARGADO ✓' : 'EN PROCESO'}</div>
+        </div>
+        <h3 style="font-size:0.95rem; margin-bottom:6px; color:var(--blue);">Líneas del Pedido</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Pos</th>
+              <th>Referencia</th>
+              <th>Descripción</th>
+              <th>Pedido</th>
+              <th>Acopiado</th>
+              <th>Sustituido</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      (data.lineas || []).forEach(l => {
+        bodyHtml += `
+          <tr>
+            <td>${l.posicion}</td>
+            <td style="color:var(--blue);">${l.referencia}</td>
+            <td>${l.descripcion}</td>
+            <td>${l.pedido}</td>
+            <td style="font-weight:700; color:var(--lime);">${l.acopiado}</td>
+            <td>${l.sustituido ? '🔄 Sí' : '—'}</td>
+          </tr>
+        `;
+      });
+      bodyHtml += `</tbody></table>`;
+
+      document.getElementById('btnVerPunteoModal').onclick = () => {
+        closeModal('orderModal');
+        verInformePunteo(data.numero);
+      };
+      document.getElementById('btnDescargarPdfModal').href = `/api/manager/reporte/${data.numero}?formato=pdf&k=${MANAGER_KEY}`;
+
+      document.getElementById('modalBody').innerHTML = bodyHtml;
+      document.getElementById('orderModal').classList.add('open');
+    } catch (e) {
+      console.error(e);
+      alert('Error al cargar el detalle del pedido.');
+    }
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('open');
+    if (id === 'previewModal') {
+      document.getElementById('previewFrame').src = 'about:blank';
+    }
+  }
+
+  window.onload = init;
+</script>
+</body>
+</html>

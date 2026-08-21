@@ -6,6 +6,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
+COPY punteo_report.py .
+COPY punteo_pdf.py .
+COPY punteo_html.py .
 COPY web/ web/
 
 ENV PORT=8080

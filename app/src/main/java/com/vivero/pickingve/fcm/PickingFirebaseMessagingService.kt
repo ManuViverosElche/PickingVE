@@ -43,19 +43,33 @@ class PickingFirebaseMessagingService : FirebaseMessagingService() {
         val body = remoteMessage.notification?.body
             ?: data["body"]
             ?: ""
+        val tipo = data["tipo"] ?: "pedido_modificado"
+        val linea = data["linea"]?.takeIf { it.isNotBlank() }
+        val cambioTipo = data["cambio_tipo"]?.takeIf { it.isNotBlank() }
         mostrarNotificacion(
             title,
             body,
             pedido = data["pedido"]?.takeIf { it.isNotBlank() },
-            linea = data["linea"]?.takeIf { it.isNotBlank() }
+            linea = linea,
+            tipo = tipo,
+            cambioTipo = cambioTipo
         )
     }
 
-    private fun mostrarNotificacion(title: String, body: String, pedido: String?, linea: String?) {
+    private fun mostrarNotificacion(
+        title: String,
+        body: String,
+        pedido: String?,
+        linea: String?,
+        tipo: String,
+        cambioTipo: String?
+    ) {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (!pedido.isNullOrBlank()) putExtra("pedido", pedido)
             if (!linea.isNullOrBlank()) putExtra("linea", linea)
+            putExtra("tipo_notificacion", tipo)
+            if (!cambioTipo.isNullOrBlank()) putExtra("cambio_tipo", cambioTipo)
         }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,

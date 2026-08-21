@@ -15,10 +15,14 @@ import google.auth
 import google.auth.transport.requests
 from fastapi import FastAPI, File, Form, HTTPException, Query, Header, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from google.cloud import bigquery, storage
 from google.cloud.exceptions import NotFound
 from pydantic import BaseModel, Field
+
+import punteo_report
+import punteo_pdf
+import punteo_html
 
 PROJECT = os.getenv("GCP_PROJECT", "dashboard-439511")
 DATASET = "GestionComercialVE"
@@ -39,7 +43,7 @@ app = FastAPI(title="PickingVE API", version="1.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["X-API-Key"],
 )
 
@@ -305,6 +309,7 @@ def _startup() -> None:
     _ensure_fincas_table()
     _ensure_notificaciones_tables()
     _ensure_matriculas_table()
+    _ensure_etiquetas_table()
 
 
 @app.get("/health")
@@ -632,6 +637,7 @@ FCM_TOKENS_TABLE = "fcm_tokens"
 COMENTARIOS_TABLE = "comentarios"
 NOTIFICACIONES_META_TABLE = "notificaciones_meta"
 MATRICULAS_TABLE = "matriculas_pedido"
+ETIQUETAS_TABLE = "etiquetas"
 
 _fcm_token_cache: dict[str, tuple[float, str]] = {}
 
@@ -689,6 +695,26 @@ def _ensure_matriculas_table() -> None:
             muelle STRING,
             foto_url STRING,
             creado_en TIMESTAMP
+        )
+        """
+    ).result()
+
+
+def _ensure_etiquetas_table() -> None:
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_TABLE}` (
+            pedido_id STRING NOT NULL,
+            order_line_id STRING,
+            referencia STRING NOT NULL,
+            litraje STRING,
+            sector STRING,
+            cantidad FLOAT64,
+            motivo STRING,
+            estado STRING NOT NULL,
+            creado_en TIMESTAMP,
+            actualizado_en TIMESTAMP,
+            actualizado_por STRING
         )
         """
     ).result()
@@ -1243,15 +1269,28 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
 
 def _teclado_principal() -> list[list[dict[str, Any]]]:
     return [
-        [{"text": "📦 Mensaje al pedido", "callback_data": "menu_pedido"}],
-        [{"text": "📋 Mensaje a línea de pedido", "callback_data": "menu_linea"}],
-        [{"text": "✖️ Cancelar", "callback_data": "cancelar"}],
+        [{"text": "?? Mensaje al pedido", "callback_data": "menu_pedido"}],
+        [{"text": "?? Mensaje a línea de pedido", "callback_data": "menu_linea"}],
+        [{"text": "?? Cancelar", "callback_data": "cancelar"}],
     ]
+
+
+class CambioLineaDetalle(BaseModel):
+    pedido: str
+    linea: str = ""
+    tipo: str  # "nueva", "borrada", "cantidad"
+    descripcion: str = ""
+
+
+class NotificarRequest(BaseModel):
+    pedidos_modificados: list[str] = Field(default_factory=list)
+    cambios_detalle: list[CambioLineaDetalle] = Field(default_factory=list)
 
 
 @app.post("/api/notificar")
 def notificar_cambios(
     request: Request,
+    body: NotificarRequest,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
     _verify_key(x_api_key)
@@ -1264,14 +1303,49 @@ def notificar_cambios(
     wm = filas[0]["valor"] if filas else ahora - timedelta(minutes=15)
     wm_str = wm.strftime("%Y-%m-%d %H:%M:%S")
     enviadas = 0
+    pedidos_notificados = set()
 
-    pedidos = _query(
+    # 1) Pedidos con detalle de cambios (nueva API)
+    for cambio in body.cambios_detalle:
+        pedido = cambio.pedido
+        if pedido in pedidos_notificados:
+            continue
+        finca = _finca_pedido(pedido)
+        for email in _encargados_finca(finca):
+            if _enviar_fcm(
+                email,
+                f"Pedido {pedido} modificado",
+                cambio.descripcion or "Revisa las líneas en la app",
+                {"tipo": "pedido_modificado", "pedido": pedido, "linea": cambio.linea, "cambio_tipo": cambio.tipo},
+            ):
+                enviadas += 1
+        pedidos_notificados.add(pedido)
+
+    # 2) Pedidos pasados sin detalle (compatibilidad: solo IDs)
+    for pedido in body.pedidos_modificados:
+        if pedido in pedidos_notificados:
+            continue
+        finca = _finca_pedido(pedido)
+        for email in _encargados_finca(finca):
+            if _enviar_fcm(
+                email,
+                f"Pedido {pedido} modificado",
+                "Revisa las líneas en la app",
+                {"tipo": "pedido_modificado", "pedido": pedido, "linea": ""},
+            ):
+                enviadas += 1
+        pedidos_notificados.add(pedido)
+
+    # 3) Pedidos modificados en BigQuery desde el último chequeo (compatibilidad)
+    pedidos_bq = _query(
         f"SELECT NUMERO_PEDIDO, FINCA_CARGA FROM `{PROJECT}.{DATASET}.PEDIDOS` "
         f"WHERE FECHA_MODIFICACION > DATETIME({_esc(wm_str)}) AND ESTADO_PEDIDO IN (1, 3) "
         f"AND DATE(FECHA_CARGA) >= DATE(CURRENT_DATE())"
     )
-    for r in pedidos:
+    for r in pedidos_bq:
         pedido = str(r.get("NUMERO_PEDIDO") or "")
+        if pedido in pedidos_notificados:
+            continue
         finca = r.get("FINCA_CARGA") or ""
         for email in _encargados_finca(finca):
             if _enviar_fcm(
@@ -1281,6 +1355,7 @@ def notificar_cambios(
                 {"tipo": "pedido_modificado", "pedido": pedido, "linea": ""},
             ):
                 enviadas += 1
+        pedidos_notificados.add(pedido)
 
     comentarios = _query(
         f"SELECT comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, adjunto_url, creado_en "
@@ -1848,12 +1923,14 @@ def pedidos(
 
     pedidos: dict[str, dict[str, Any]] = {}
     for r in rows:
-        key = (r.get("SERIE_PEDIDO") or "", r.get("NUMERO_PEDIDO") or "")
+        serie = r.get("SERIE_PEDIDO") or ""
+        numero = r.get("NUMERO_PEDIDO") or ""
+        key = f"{serie}_{numero}"
         p = pedidos.get(key)
         if p is None:
             p = pedidos[key] = {
-                "serie": key[0],
-                "numero": key[1],
+                "serie": serie,
+                "numero": numero,
                 "cliente": r.get("CLIENTE") or "",
                 "clienteFiscal": r.get("CLIENTE_FISCAL") or "",
                 "estado": r.get("ESTADO_PEDIDO"),
@@ -2372,7 +2449,753 @@ def upload(
     return {"ok": len(nuevos), "duplicados": len(pending_ids) - len(nuevos), "accepted_ids": [r.record_id for r in nuevos]}
 
 
+MANAGER_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "manager")
+MANAGER_WEB_TOKEN = "manager-panel-2026"
+
+
+@app.get("/manager")
+def manager_web(k: Optional[str] = Query(default=None)):
+    if k != MANAGER_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(MANAGER_WEB_DIR, "index.html"))
+
+
+def _verify_manager_key(
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> None:
+    if k != MANAGER_WEB_TOKEN and x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="API key inválida o ausente")
+
+
+@app.get("/api/manager/orders")
+def manager_orders(
+    fecha: Optional[date] = Query(None, description="Fecha de carga (YYYY-MM-DD)"),
+    estado: Optional[str] = Query(None, description="Filtro de estado: activos, pendientes, cargados, enviados, todos"),
+    incluirEnviados: bool = Query(False, description="Incluir pedidos ya enviados/cargados"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    _verify_manager_key(k, x_api_key)
+    target_date = fecha or date.today()
+    
+    st_filter = (estado or "").strip().lower()
+    if not st_filter:
+        st_filter = "todos" if incluirEnviados else "activos"
+
+    filtro_sql = ""
+    if st_filter in ("pendientes", "pendiente"):
+        filtro_sql = " AND pf.order_id IS NULL AND m.pedido_id IS NULL"
+    elif st_filter in ("cargados", "cargado"):
+        filtro_sql = " AND pf.order_id IS NULL AND m.pedido_id IS NOT NULL"
+    elif st_filter in ("enviados", "enviado"):
+        filtro_sql = " AND pf.order_id IS NOT NULL"
+    elif st_filter == "activos":
+        filtro_sql = " AND pf.order_id IS NULL"
+    elif st_filter == "acopiados":
+        filtro_sql = " AND tot.TOTAL_ACOPIADO > 0"
+
+    sql = f"""
+        SELECT p.SERIE_PEDIDO, p.NUMERO_PEDIDO, p.NUMERO_CLIENTE, p.ESTADO_PEDIDO,
+               p.FECHA_CARGA, p.SECTOR_CARGA, p.FINCA_CARGA, p.NOTAS_PEDIDO,
+               p.MARCA_PEDIDO, p.REFERENCIA_PEDIDO, p.CODIGO_AGENTE,
+               COALESCE(c.N_COMERCIAL, '') AS CLIENTE,
+               COALESCE(c.N_FISCAL, '') AS CLIENTE_FISCAL,
+               COALESCE(c.DIRECCION, '') AS DIRECCION_DESCARGA,
+               COALESCE(ag.NOMBRE_AGENTE, '') AS AGENTE,
+                l.HUELLA_DIGITAL, l.POSICION_PEDIDO, l.REFERENCIA_ARTICULO,
+                l.DESCRIPCION_ARTICULO, l.UNIDADES_PENDIENTES,
+                l.CODIGO_LITRAJE, l.CODIGO_SECTOR, l.UBICACION_EXTRA,
+                l.FINCA_RELEVADA, l.SECTOR_RELEVADO, l.MARCADO, l.MARCA,
+                l.PRIORIDAD, l.ACCION_LOGISTICA, l.NOTA_LINEA_PEDIDO,
+                COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
+                COALESCE(pr.OPERARIOS, '') AS OPERARIOS,
+               CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
+               CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
+               COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO
+        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+        LEFT JOIN `{PROJECT}.{DATASET}.AGENTE` ag ON ag.ID_AGENTE = p.CODIGO_AGENTE
+        INNER JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
+            ON l.SERIE_PEDIDO = p.SERIE_PEDIDO AND l.NUMERO_PEDIDO = p.NUMERO_PEDIDO
+            AND COALESCE(l.IMPRIMIR_LINEA, 0) = 0
+            AND COALESCE(l.LINEA_ACTIVA, TRUE) = TRUE
+        LEFT JOIN (
+            SELECT order_id, order_line_id, SUM(cantidad_partida) AS ACOPIADO,
+                   STRING_AGG(DISTINCT empleado_nombre, ', ') AS OPERARIOS
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            GROUP BY order_id, order_line_id
+        ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
+        LEFT JOIN (
+            SELECT order_id, SUM(cantidad_partida) AS TOTAL_ACOPIADO
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            GROUP BY order_id
+        ) tot ON tot.order_id = p.NUMERO_PEDIDO
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m
+            ON m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION'
+        LEFT JOIN (
+            SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
+        ) pf ON pf.order_id = p.NUMERO_PEDIDO
+        WHERE DATE(p.FECHA_CARGA) = @fecha{filtro_sql}
+        ORDER BY p.NUMERO_PEDIDO DESC, l.POSICION_PEDIDO
+    """
+    params = [bigquery.ScalarQueryParameter("fecha", "DATE", target_date.isoformat())]
+    rows = [dict(r) for r in client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
+
+    pedidos: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        key = f"{r.get('SERIE_PEDIDO') or ''}_{r.get('NUMERO_PEDIDO') or ''}"
+        p = pedidos.get(key)
+        if p is None:
+            cargado = bool(r.get("CARGADO"))
+            tiene_final = bool(r.get("TIENE_PARTE_FINAL"))
+            total_acopiado = int(r.get("TOTAL_ACOPIADO") or 0)
+            
+            # 4 Estados:
+            # 1. sin_acopiar: total_acopiado == 0 y not cargado y not tiene_final
+            # 2. en_proceso: total_acopiado > 0 y not cargado y not tiene_final
+            # 3. camion_asignado: cargado (camión registrado) y not tiene_final
+            # 4. enviado / cargado final: tiene_final
+            if tiene_final:
+                estado_calc = "enviado"
+            elif cargado:
+                estado_calc = "camion_asignado"
+            elif total_acopiado > 0:
+                estado_calc = "en_proceso"
+            else:
+                estado_calc = "sin_acopiar"
+
+            p = pedidos[key] = {
+                "serie": r.get('SERIE_PEDIDO') or '',
+                "numero": r.get('NUMERO_PEDIDO') or '',
+                "cliente": r.get("CLIENTE") or "",
+                "clienteFiscal": r.get("CLIENTE_FISCAL") or "",
+                "referenciaPedido": r.get("REFERENCIA_PEDIDO") or "",
+                "direccionDescarga": r.get("DIRECCION_DESCARGA") or "",
+                "agente": r.get("AGENTE") or "",
+                "marcaPedido": r.get("MARCA_PEDIDO") or "",
+                "fechaCarga": str(r.get("FECHA_CARGA")) if r.get("FECHA_CARGA") else None,
+                "sector": r.get("SECTOR_CARGA") or "",
+                "finca": r.get("FINCA_CARGA") or "",
+                "cargado": cargado,
+                "tieneParteFinal": tiene_final,
+                "estado": estado_calc,
+                "estadoFactusol": r.get("ESTADO_PEDIDO"),
+                "lineas": [],
+            }
+        if r.get("HUELLA_DIGITAL") is not None:
+            ref = str(r.get("REFERENCIA_ARTICULO") or "")
+            p["lineas"].append(
+                {
+                    "huellaDigital": r.get("HUELLA_DIGITAL"),
+                    "posicion": r.get("POSICION_PEDIDO"),
+                    "referencia": ref,
+                    "descripcion": r.get("DESCRIPCION_ARTICULO") or "",
+                    "litraje": r.get("CODIGO_LITRAJE") or "",
+                    "sector": r.get("CODIGO_SECTOR") or r.get("SECTOR_RELEVADO") or "",
+                    "ubicacionExtra": r.get("UBICACION_EXTRA") or "",
+                    "fincaLinea": r.get("FINCA_RELEVADA") or p["finca"],
+                    "prioritario": bool(r.get("PRIORIDAD")),
+                    "marcado": bool(r.get("MARCADO")),
+                    "marca": r.get("MARCA") or "",
+                    "observaciones": r.get("NOTA_LINEA_PEDIDO") or r.get("ACCION_LOGISTICA") or "",
+                    "pendientes": r.get("UNIDADES_PENDIENTES") or 0,
+                    "acopiado": int(r.get("ACOPIADO") or 0),
+                    "operarios": r.get("OPERARIOS") or "",
+                }
+            )
+    return {"fecha": target_date.isoformat(), "pedidos": list(pedidos.values())}
+
+
+@app.get("/api/manager/fechas")
+def manager_fechas(
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    rows = _query(f"""
+        SELECT DATE(p.FECHA_CARGA) AS FECHA,
+               COUNT(DISTINCT p.NUMERO_PEDIDO) AS TOTAL,
+               COUNT(DISTINCT IF(pf.order_id IS NULL AND m.pedido_id IS NULL, p.NUMERO_PEDIDO, NULL)) AS PENDIENTES,
+               COUNT(DISTINCT IF(pf.order_id IS NULL AND m.pedido_id IS NOT NULL, p.NUMERO_PEDIDO, NULL)) AS CARGADOS,
+               COUNT(DISTINCT IF(pf.order_id IS NOT NULL, p.NUMERO_PEDIDO, NULL)) AS ENVIADOS
+        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m
+            ON m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION'
+        LEFT JOIN (
+            SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
+        ) pf ON pf.order_id = p.NUMERO_PEDIDO
+        WHERE p.FECHA_CARGA IS NOT NULL
+        GROUP BY FECHA
+        ORDER BY FECHA
+    """)
+    return {
+        "fechas": [
+            {
+                "fecha": str(r["FECHA"]),
+                "pedidos": int(r["TOTAL"] or 0),
+                "pendientes": int(r["PENDIENTES"] or 0),
+                "cargados": int(r["CARGADOS"] or 0),
+                "enviados": int(r["ENVIADOS"] or 0),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/manager/report/{numero_pedido}")
+def manager_report(
+    numero_pedido: str,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    _verify_manager_key(k, x_api_key)
+    # Get order info, lines, picking records, and check citrus immobilization (AUTORIZACION / CP5ART)
+    order_sql = f"""
+        SELECT p.SERIE_PEDIDO, p.NUMERO_PEDIDO, p.FINCA_CARGA, p.SECTOR_CARGA, p.FECHA_CARGA,
+               COALESCE(c.N_COMERCIAL, '') AS CLIENTE,
+               m.matricula AS MATRICULA_CAMION,
+               CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO
+        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m ON m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION'
+        WHERE p.NUMERO_PEDIDO = @pedido
+        LIMIT 1
+    """
+    params = [bigquery.ScalarQueryParameter("pedido", "STRING", numero_pedido)]
+    order_res = list(client.query(order_sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result())
+    if not order_res:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    o = order_res[0]
+
+    autorizacion_col = ""
+    try:
+        col_rows = _query(
+            f"SELECT column_name FROM `{PROJECT}.{DATASET}.INFORMATION_SCHEMA.COLUMNS` "
+            f"WHERE table_name = 'ARTICULOS' AND column_name = 'AUTORIZACION'"
+        )
+        if col_rows:
+            autorizacion_col = ", a.AUTORIZACION"
+    except Exception:
+        autorizacion_col = ""
+
+    lines_sql = f"""
+        SELECT l.HUELLA_DIGITAL, l.POSICION_PEDIDO, l.REFERENCIA_ARTICULO, l.DESCRIPCION_ARTICULO,
+               l.UNIDADES AS PEDIDO,
+               l.UNIDADES_PENDIENTES{autorizacion_col},
+               COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
+               COALESCE(pr.SUSTITUIDO, FALSE) AS SUSTITUIDO
+        FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
+        LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = l.REFERENCIA_ARTICULO
+        LEFT JOIN (
+            SELECT order_id, order_line_id, SUM(cantidad_partida) AS ACOPIADO,
+                   MAX(CAST(sustituido AS INT64)) > 0 AS SUSTITUIDO
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            WHERE order_id = @pedido
+            GROUP BY order_id, order_line_id
+        ) pr ON pr.order_line_id = l.HUELLA_DIGITAL
+        WHERE l.NUMERO_PEDIDO = @pedido AND COALESCE(l.IMPRIMIR_LINEA, 0) = 0
+        ORDER BY l.POSICION_PEDIDO
+    """
+    line_rows = [dict(r) for r in client.query(lines_sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
+
+    alertas_citricos = []
+    lineas_res = []
+    for lr in line_rows:
+        ref = str(lr.get("REFERENCIA_ARTICULO") or "")
+        desc = str(lr.get("DESCRIPCION_ARTICULO") or "")
+        auth = str(lr.get("AUTORIZACION") or "")
+        
+        # Check if citrus and immobilized (CP5ART contains "NO")
+        is_citrus = "CITRIC" in desc.upper()
+        if "NO" in auth.upper() and is_citrus:
+            alertas_citricos.append({
+                "referencia": ref,
+                "descripcion": desc,
+                "autorizacion": auth
+            })
+
+        lineas_res.append({
+            "posicion": lr.get("POSICION_PEDIDO"),
+            "referencia": ref,
+            "descripcion": desc,
+            "pedido": lr.get("PEDIDO") or 0,
+            "pendientes": lr.get("UNIDADES_PENDIENTES") or 0,
+            "acopiado": int(lr.get("ACOPIADO") or 0),
+            "sustituido": bool(lr.get("SUSTITUIDO")),
+        })
+
+    return {
+        "numero": numero_pedido,
+        "cliente": o.get("CLIENTE"),
+        "finca": o.get("FINCA_CARGA"),
+        "sector": o.get("SECTOR_CARGA"),
+        "fechaCarga": str(o.get("FECHA_CARGA")) if o.get("FECHA_CARGA") else None,
+        "matriculaCamion": o.get("MATRICULA_CAMION"),
+        "cargado": bool(o.get("CARGADO")),
+        "alertasCitricos": alertas_citricos,
+        "lineas": lineas_res
+    }
+
+
+@app.get("/api/manager/reporte/{numero_pedido}")
+def manager_reporte(
+    numero_pedido: str,
+    formato: str = Query("html", description="Formato del informe: html (default) o pdf"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Informe Punteo del pedido en HTML o PDF replicando el layout de Punteo de prueba.pdf (D-152, D-158)."""
+    _verify_manager_key(k, x_api_key)
+    fmt = (formato or "html").lower()
+    if fmt == "pdf":
+        try:
+            data = punteo_pdf.build_punteo_pdf(
+                client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+                numero_pedido,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        filename = f"picking_{numero_pedido}_Punteo.pdf"
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    else:
+        try:
+            html = punteo_html.build_punteo_html(
+                client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+                numero_pedido,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        return HTMLResponse(content=html)
+
+
+@app.get("/api/manager/informe/desglose/{numero_pedido}")
+def manager_informe_desglose(
+    numero_pedido: str,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Informe HTML desglosado (detalle exhaustivo del pistoleo) del pedido (D-158, D-160)."""
+    _verify_manager_key(k, x_api_key)
+    try:
+        html = punteo_html.build_desglose_html(
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+            numero_pedido,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return HTMLResponse(content=html)
+
+
+@app.get("/api/manager/etiquetas/dia")
+def manager_etiquetas_dia(
+    fecha: Optional[date] = Query(None, description="Fecha de carga (YYYY-MM-DD)"),
+    estado: Optional[str] = Query(None, description="Filtro de estado"),
+    incluirEnviados: bool = Query(False, description="Incluir pedidos ya enviados/cargados"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Etiquetas a sacar de los pedidos de la fecha: triada referencia+litraje+sector."""
+    _verify_manager_key(k, x_api_key)
+    target_date = fecha or date.today()
+
+    st_filter = (estado or "").strip().lower()
+    if not st_filter:
+        st_filter = "todos" if incluirEnviados else "activos"
+
+    filtro_activos = ""
+    if st_filter in ("pendientes", "pendiente"):
+        filtro_activos = f" AND NOT EXISTS (SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` pf WHERE pf.order_id = p.NUMERO_PEDIDO AND pf.picking_tipo = 'F') AND NOT EXISTS (SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m WHERE m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION')"
+    elif st_filter in ("cargados", "cargado"):
+        filtro_activos = f" AND NOT EXISTS (SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` pf WHERE pf.order_id = p.NUMERO_PEDIDO AND pf.picking_tipo = 'F') AND EXISTS (SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m WHERE m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION')"
+    elif st_filter in ("enviados", "enviado"):
+        filtro_activos = f" AND EXISTS (SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` pf WHERE pf.order_id = p.NUMERO_PEDIDO AND pf.picking_tipo = 'F')"
+    elif st_filter == "activos":
+        filtro_activos = f" AND NOT EXISTS (SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` pf WHERE pf.order_id = p.NUMERO_PEDIDO AND pf.picking_tipo = 'F')"
+
+    params = [bigquery.ScalarQueryParameter("fecha", "DATE", target_date.isoformat())]
+
+    labels_sql = f"""
+        WITH lbl AS (
+            SELECT r.order_id,
+                   r.ref_servida AS referencia,
+                   COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '') AS litraje,
+                   COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '') AS sector,
+                   ANY_VALUE(a.DESCRIPCION_ARTICULO) AS descripcion,
+                   ANY_VALUE(r.order_line_id) AS order_line_id,
+                   SUM(r.cantidad_partida) AS cantidad,
+                   LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` r
+            LEFT JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l ON l.HUELLA_DIGITAL = r.order_line_id
+            LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
+            LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
+            LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = r.ref_servida
+            WHERE (r.ean_escaneado IS NULL OR r.ean_escaneado = '')
+            GROUP BY r.order_id, r.ref_servida,
+                     COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, ''),
+                     COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')
+            HAVING SUM(r.cantidad_partida) > 0
+        )
+        SELECT p.NUMERO_PEDIDO, COALESCE(c.N_COMERCIAL, '') AS CLIENTE, p.FINCA_CARGA, p.ESTADO_PEDIDO,
+               lbl.referencia, lbl.litraje, lbl.sector, lbl.descripcion, lbl.cantidad,
+               lbl.ocr_presente, lbl.order_line_id
+        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+        INNER JOIN lbl ON lbl.order_id = p.NUMERO_PEDIDO
+        WHERE DATE(p.FECHA_CARGA) = @fecha{filtro_activos}
+        ORDER BY p.NUMERO_PEDIDO DESC, lbl.referencia, lbl.litraje, lbl.sector
+    """
+    labels = [dict(r) for r in client.query(labels_sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
+
+    pedidos_map: dict[str, dict[str, Any]] = {}
+    for l in labels:
+        ped = str(l.get("NUMERO_PEDIDO") or "")
+        p = pedidos_map.get(ped)
+        if p is None:
+            p = pedidos_map[ped] = {
+                "pedido": ped,
+                "cliente": l.get("CLIENTE") or "",
+                "finca": l.get("FINCA_CARGA") or "",
+                "etiquetas": [],
+            }
+        ref = str(l.get("referencia") or "")
+        litraje = str(l.get("litraje") or "")
+        sector = str(l.get("sector") or "")
+        p["etiquetas"].append({
+            "referencia": ref,
+            "litraje": litraje,
+            "sector": sector,
+            "descripcion": l.get("descripcion") or "",
+            "cantidad": float(l.get("cantidad") or 0),
+            "motivo": "Venta directa - etiqueta del vendedor" if ref.startswith("9") else (
+                "Etiqueta ilegible (OCR)" if l.get("ocr_presente") else "Planta sin etiqueta"
+            ),
+            "order_line_id": l.get("order_line_id") or "",
+        })
+
+    if pedidos_map:
+        estados_sql = f"""
+            SELECT pedido_id, referencia, litraje, sector, estado, actualizado_por
+            FROM `{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_TABLE}`
+            WHERE pedido_id IN UNNEST(@pedidos)
+        """
+        estados_rows = [dict(r) for r in client.query(
+            estados_sql,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ArrayQueryParameter("pedidos", "STRING", list(pedidos_map.keys()))]
+            ),
+        ).result()]
+    else:
+        estados_rows = []
+    estados_map = {}
+    for e in estados_rows:
+        estados_map[(e["pedido_id"], e["referencia"], e["litraje"] or "", e["sector"] or "")] = e
+
+    result_pedidos = []
+    for ped, p in pedidos_map.items():
+        resumen = {"pendiente": 0, "impresa": 0, "encolada": 0}
+        for et in p["etiquetas"]:
+            key = (ped, et["referencia"], et["litraje"], et["sector"])
+            st = estados_map.get(key)
+            estado = st["estado"] if st else "pendiente"
+            et["estado"] = estado
+            et["actualizadoPor"] = st.get("actualizado_por") if st else None
+            resumen[estado] = resumen.get(estado, 0) + 1
+        p["resumen"] = resumen
+        result_pedidos.append(p)
+
+    return {"fecha": target_date.isoformat(), "pedidos": result_pedidos}
+
+
+@app.get("/api/manager/etiquetas/{numero_pedido}")
+def manager_etiquetas(
+    numero_pedido: str,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Etiquetas a sacar del pedido: registros acopiados sin EAN, con motivo y estado."""
+    _verify_manager_key(k, x_api_key)
+    params = [bigquery.ScalarQueryParameter("pedido", "STRING", numero_pedido)]
+
+    labels_sql = f"""
+        SELECT r.ref_servida AS referencia,
+               ANY_VALUE(a.DESCRIPCION_ARTICULO) AS descripcion,
+               ANY_VALUE(COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '')) AS litraje,
+               ANY_VALUE(COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')) AS sector,
+               ANY_VALUE(r.order_line_id) AS order_line_id,
+               SUM(r.cantidad_partida) AS cantidad,
+               LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente
+        FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` r
+        LEFT JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l ON l.HUELLA_DIGITAL = r.order_line_id
+        LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
+        LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
+        LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = r.ref_servida
+        WHERE r.order_id = @pedido
+          AND (r.ean_escaneado IS NULL OR r.ean_escaneado = '')
+        GROUP BY r.ref_servida,
+                 COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, ''),
+                 COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')
+        HAVING SUM(r.cantidad_partida) > 0
+        ORDER BY r.ref_servida
+    """
+    labels = [dict(r) for r in client.query(labels_sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
+
+    estados_sql = f"""
+        SELECT referencia, litraje, sector, estado, actualizado_por
+        FROM `{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_TABLE}`
+        WHERE pedido_id = @pedido
+    """
+    estados = [dict(r) for r in client.query(estados_sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
+    estados_map = {(e["referencia"], e["litraje"] or "", e["sector"] or ""): e for e in estados}
+
+    resumen = {"pendiente": 0, "impresa": 0, "encolada": 0}
+    etiquetas = []
+    for l in labels:
+        ref = str(l.get("referencia") or "")
+        litraje = str(l.get("litraje") or "")
+        sector = str(l.get("sector") or "")
+        key = (ref, litraje, sector)
+        st = estados_map.get(key)
+        estado = st["estado"] if st else "pendiente"
+        motivo = "Venta directa - etiqueta del vendedor" if ref.startswith("9") else (
+            "Etiqueta ilegible (OCR)" if l.get("ocr_presente") else "Planta sin etiqueta"
+        )
+        resumen[estado] = resumen.get(estado, 0) + 1
+        etiquetas.append({
+            "referencia": ref,
+            "descripcion": l.get("descripcion") or "",
+            "litraje": litraje,
+            "sector": sector,
+            "cantidad": float(l.get("cantidad") or 0),
+            "motivo": motivo,
+            "estado": estado,
+            "actualizadoPor": st.get("actualizado_por") if st else None,
+        })
+
+    return {"pedido": numero_pedido, "etiquetas": etiquetas, "resumen": resumen}
+
+
+@app.post("/api/manager/etiquetas/estado")
+async def manager_etiquetas_estado(
+    request: Request,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Marca el estado de una etiqueta: pendiente -> impresa -> encolada."""
+    _verify_manager_key(k, x_api_key)
+    body = await request.json()
+    pedido = str(body.get("pedido") or "")
+    ref = str(body.get("referencia") or "")
+    litraje = str(body.get("litraje") or "")
+    sector = str(body.get("sector") or "")
+    estado = str(body.get("estado") or "pendiente")
+    por = str(body.get("por") or "")
+    linea = str(body.get("order_line_id") or "")
+    if estado not in ("pendiente", "impresa", "encolada"):
+        raise HTTPException(status_code=400, detail="Estado inválido")
+
+    sql = f"""
+        MERGE `{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_TABLE}` T
+        USING (SELECT @pedido AS pedido_id, @linea AS order_line_id, @ref AS referencia,
+                      @litraje AS litraje, @sector AS sector) S
+        ON T.pedido_id = S.pedido_id AND T.referencia = S.referencia
+           AND T.litraje = S.litraje AND T.sector = S.sector
+        WHEN MATCHED THEN UPDATE SET
+            estado = @estado, actualizado_en = CURRENT_TIMESTAMP(), actualizado_por = @por
+        WHEN NOT MATCHED THEN INSERT
+            (pedido_id, order_line_id, referencia, litraje, sector, estado, creado_en, actualizado_en, actualizado_por)
+            VALUES (@pedido, @linea, @ref, @litraje, @sector, @estado, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), @por)
+    """
+    client.query(sql, job_config=bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("pedido", "STRING", pedido),
+            bigquery.ScalarQueryParameter("linea", "STRING", linea),
+            bigquery.ScalarQueryParameter("ref", "STRING", ref),
+            bigquery.ScalarQueryParameter("litraje", "STRING", litraje),
+            bigquery.ScalarQueryParameter("sector", "STRING", sector),
+            bigquery.ScalarQueryParameter("estado", "STRING", estado),
+            bigquery.ScalarQueryParameter("por", "STRING", por),
+        ]
+    )).result()
+    return {"ok": True, "pedido": pedido, "referencia": ref, "estado": estado}
+
+
+@app.get("/api/manager/etiquetas/dia/informe")
+def manager_etiquetas_dia_informe(
+    fecha: Optional[date] = Query(None, description="Fecha de carga (YYYY-MM-DD)"),
+    estado: Optional[str] = Query(None, description="Filtro de estado"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Informe HTML imprimible de etiquetas a sacar del día (D-158)."""
+    _verify_manager_key(k, x_api_key)
+    data = manager_etiquetas_dia(
+        fecha=fecha,
+        estado=estado,
+        incluirEnviados=True if (estado or "").lower() == "todos" else False,
+        k=k,
+        x_api_key=x_api_key,
+    )
+    html = punteo_html.build_etiquetas_html(data.get("pedidos", []), data.get("fecha", ""))
+    return HTMLResponse(content=html)
+
+
+@app.get("/api/manager/historico")
+def manager_historico(
+    fecha: Optional[date] = Query(None, description="Filtrar por fecha específica"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Pestaña Histórico: pedidos cargados y enviados de todas las fechas (D-160)."""
+    _verify_manager_key(k, x_api_key)
+    if fecha is None:
+        sql = f"""
+            SELECT DATE(p.FECHA_CARGA) AS FECHA,
+                   COUNT(DISTINCT p.NUMERO_PEDIDO) AS TOTAL,
+                   COUNT(DISTINCT IF(pf.order_id IS NOT NULL, p.NUMERO_PEDIDO, NULL)) AS ENVIADOS,
+                   COUNT(DISTINCT IF(m.pedido_id IS NOT NULL AND pf.order_id IS NULL, p.NUMERO_PEDIDO, NULL)) AS CARGADOS
+            FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+            LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m
+                ON m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION'
+            LEFT JOIN (
+                SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
+            ) pf ON pf.order_id = p.NUMERO_PEDIDO
+            WHERE m.pedido_id IS NOT NULL OR pf.order_id IS NOT NULL
+            GROUP BY FECHA
+            ORDER BY FECHA DESC
+        """
+        rows = [dict(r) for r in client.query(sql).result()]
+        return {
+            "fechas": [
+                {
+                    "fecha": str(r["FECHA"]),
+                    "total": int(r["TOTAL"] or 0),
+                    "cargados": int(r["CARGADOS"] or 0),
+                    "enviados": int(r["ENVIADOS"] or 0),
+                }
+                for r in rows
+            ]
+        }
+    else:
+        sql = f"""
+            SELECT p.SERIE_PEDIDO, p.NUMERO_PEDIDO, p.FECHA_CARGA, p.SECTOR_CARGA, p.FINCA_CARGA,
+                   COALESCE(c.N_COMERCIAL, '') AS CLIENTE,
+                   CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
+                   CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
+                   COALESCE(pr.TOTAL_PIS, 0) AS TOTAL_PISTOLEADO,
+                   COALESCE(pr.TOTAL_EVENTOS, 0) AS TOTAL_EVENTOS
+            FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+            LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+            LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m
+                ON m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION'
+            LEFT JOIN (
+                SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
+            ) pf ON pf.order_id = p.NUMERO_PEDIDO
+            LEFT JOIN (
+                SELECT order_id, SUM(cantidad_partida) AS TOTAL_PIS, COUNT(*) AS TOTAL_EVENTOS
+                FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+                GROUP BY order_id
+            ) pr ON pr.order_id = p.NUMERO_PEDIDO
+            WHERE DATE(p.FECHA_CARGA) = @fecha AND (m.pedido_id IS NOT NULL OR pf.order_id IS NOT NULL)
+            ORDER BY p.NUMERO_PEDIDO DESC
+        """
+        params = [bigquery.ScalarQueryParameter("fecha", "DATE", fecha.isoformat())]
+        rows = [dict(r) for r in client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
+        pedidos = []
+        for r in rows:
+            cargado = bool(r.get("CARGADO"))
+            tiene_final = bool(r.get("TIENE_PARTE_FINAL"))
+            st = "enviado" if tiene_final else ("cargado" if cargado else "pendiente")
+            pedidos.append({
+                "serie": r.get("SERIE_PEDIDO") or "",
+                "numero": r.get("NUMERO_PEDIDO") or "",
+                "cliente": r.get("CLIENTE") or "",
+                "fechaCarga": str(r.get("FECHA_CARGA")) if r.get("FECHA_CARGA") else None,
+                "sector": r.get("SECTOR_CARGA") or "",
+                "finca": r.get("FINCA_CARGA") or "",
+                "estado": st,
+                "cargado": cargado,
+                "tieneParteFinal": tiene_final,
+                "totalPistoleado": int(r.get("TOTAL_PISTOLEADO") or 0),
+                "totalEventos": int(r.get("TOTAL_EVENTOS") or 0),
+            })
+        return {"fecha": fecha.isoformat(), "pedidos": pedidos}
+
+
+@app.get("/api/manager/historico/{numero_pedido}")
+def manager_historico_detalle(
+    numero_pedido: str,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Detalle completo del pedido en histórico: matrículas, eventos de pistoleo y etiquetas (D-160)."""
+    _verify_manager_key(k, x_api_key)
+    params = [bigquery.ScalarQueryParameter("pedido", "STRING", numero_pedido)]
+    jc = bigquery.QueryJobConfig(query_parameters=params)
+
+    # 1. Matrículas
+    mat_sql = f"""
+        SELECT tipo, matricula, muelle, foto_url, creado_en
+        FROM `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}`
+        WHERE pedido_id = @pedido
+        ORDER BY creado_en DESC
+    """
+    matriculas = [
+        {
+            "tipo": r.get("tipo"),
+            "matricula": r.get("matricula"),
+            "muelle": r.get("muelle"),
+            "fotoUrl": r.get("foto_url"),
+            "creadoEn": str(r.get("creado_en")) if r.get("creado_en") else None,
+        }
+        for r in client.query(mat_sql, job_config=jc).result()
+    ]
+
+    # 2. Eventos de pistoleo
+    reg_sql = f"""
+        SELECT picking_numero, picking_tipo, fecha_hora, empleado_nombre,
+               ean_escaneado, ocr_texto, ref_original, ref_servida,
+               sustituido, cantidad_partida, litros, medida, calibre
+        FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+        WHERE order_id = @pedido
+        ORDER BY fecha_hora
+    """
+    registros = [
+        {
+            "parte": f"{r.get('picking_tipo')}{r.get('picking_numero')}",
+            "fechaHora": str(r.get("fecha_hora")).replace("T", " ")[:19] if r.get("fecha_hora") else "",
+            "empleado": r.get("empleado_nombre") or "",
+            "ean": r.get("ean_escaneado") or "",
+            "ocr": r.get("ocr_texto") or "",
+            "refOriginal": r.get("ref_original") or "",
+            "refServida": r.get("ref_servida") or "",
+            "sustituido": bool(r.get("sustituido")),
+            "cantidad": float(r.get("cantidad_partida") or 0),
+            "litros": float(r.get("litros") or 0),
+            "medida": r.get("medida") or "",
+            "calibre": r.get("calibre") or "",
+        }
+        for r in client.query(reg_sql, job_config=jc).result()
+    ]
+
+    # 3. Etiquetas
+    etiquetas_data = manager_etiquetas(numero_pedido=numero_pedido, k=k, x_api_key=x_api_key)
+
+    return {
+        "pedido": numero_pedido,
+        "matriculas": matriculas,
+        "registros": registros,
+        "etiquetas": etiquetas_data.get("etiquetas", []),
+        "resumenEtiquetas": etiquetas_data.get("resumen", {}),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
+

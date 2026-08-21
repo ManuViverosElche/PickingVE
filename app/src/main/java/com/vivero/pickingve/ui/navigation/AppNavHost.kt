@@ -30,6 +30,8 @@ fun AppNavHost(
     settingsRepository: SettingsRepository,
     deepLinkPedido: String? = null,
     deepLinkLinea: String? = null,
+    deepLinkTipo: String? = null,
+    deepLinkCambioTipo: String? = null,
     onDeepLinkConsumed: () -> Unit = {}
 ) {
 
@@ -51,8 +53,10 @@ fun AppNavHost(
     }
     val deepPedido = deepLinkPedido?.takeIf { it.isNotBlank() }
     val deepLinea = deepLinkLinea?.takeIf { it.isNotBlank() }
+    val deepTipo = deepLinkTipo?.takeIf { it.isNotBlank() }
+    val deepCambioTipo = deepLinkCambioTipo?.takeIf { it.isNotBlank() }
 
-    LaunchedEffect(loggedIn, deepPedido) {
+    LaunchedEffect(loggedIn, deepPedido, deepTipo, deepCambioTipo) {
         if (loggedIn && deepPedido != null) {
             pickingViewModel.selectOrder(deepPedido)
             screen = AppScreen.PICKING
@@ -88,6 +92,8 @@ fun AppNavHost(
             viewModel = pickingViewModel,
             onBack = { screen = AppScreen.ORDERS },
             deepLinkLinea = if (screen == AppScreen.PICKING && deepPedido != null) deepLinea else null,
+            deepLinkTipo = if (screen == AppScreen.PICKING && deepPedido != null) deepTipo else null,
+            deepLinkCambioTipo = if (screen == AppScreen.PICKING && deepPedido != null) deepCambioTipo else null,
             onDeepLinkConsumed = onDeepLinkConsumed
         )
 
