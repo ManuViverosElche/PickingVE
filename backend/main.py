@@ -2599,7 +2599,7 @@ def manager_orders(
                     "sector": r.get("SECTOR_DESC") or r.get("CODIGO_SECTOR") or r.get("SECTOR_RELEVADO") or "",
                     "ubicacionExtra": r.get("UBICACION_EXTRA") or "",
                     "fincaLinea": r.get("FINCA_RELEVADA") or p["finca"],
-                    "prioritario": bool(r.get("PRIORIDAD")),
+                    "prioritario": str(r.get("PRIORIDAD") or "").upper() == "PRIORITARIO",
                     "marcado": bool(r.get("MARCADO")),
                     "marca": r.get("MARCA") or "",
                     "observaciones": r.get("NOTA_LINEA_PEDIDO") or r.get("ACCION_LOGISTICA") or "",
@@ -2629,7 +2629,7 @@ def manager_fechas(
         LEFT JOIN (
             SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
         ) pf ON pf.order_id = p.NUMERO_PEDIDO
-        WHERE p.FECHA_CARGA IS NOT NULL
+        WHERE p.FECHA_CARGA IS NOT NULL AND p.FECHA_CARGA >= DATE_SUB(CURRENT_DATE(), INTERVAL 45 DAY)
         GROUP BY FECHA
         ORDER BY FECHA
     """)

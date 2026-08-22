@@ -383,15 +383,16 @@
             marcaInfo = `<br><small style="color:var(--warn);">⚠ Marca: ${l.marca}</small>`;
           }
 
-          // Si está marcado, resaltamos la fila visualmente SIN etiqueta
+          // Si está marcado, reborde amarillo (#e0a13c) como en la app de picking
           let rowStyle = '';
           if (l.marcado) {
-            rowStyle = 'background: rgba(66,201,189,0.08); border-left: 3px solid var(--lime);';
+            rowStyle = 'border: 2px solid #e0a13c !important; background: rgba(224,161,60,0.08);';
           } else if (isPrio) {
-            rowStyle = 'background: rgba(224,161,60,0.05);';
+            rowStyle = 'background: rgba(224,161,60,0.04);';
           }
           
-          const encargadoPick = l.operarios || '—';
+          const fullOp = l.operarios || '—';
+          const encargadoPick = fullOp !== '—' ? fullOp.split(',')[0].trim().split(' ')[0] : '—';
           
           let opOptions = '<option value="">-- Sin asignar --</option>';
           encargadosList.forEach(e => {
