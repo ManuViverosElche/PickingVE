@@ -565,12 +565,38 @@
       }
       document.getElementById('filterDate').value = selectedDate;
       document.getElementById('filterDateEtiquetas').value = selectedDate;
+      const elRep = document.getElementById('filterDateReparto');
+      if (elRep && !elRep.value) elRep.value = selectedDate;
       renderDateChips();
+      renderDateChipsReparto();
       await loadOrders();
+      if (currentView === 'reparto') renderReparto();
     } catch (e) {
       console.error(e);
       document.getElementById('ordersContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar fechas.</div>';
     }
+  }
+
+  function renderDateChipsReparto() {
+    const cont = document.getElementById('dateChipsReparto');
+    if (!cont) return;
+    const previstas = fechasData.slice(-10).reverse();
+    if (!previstas.length) {
+      cont.innerHTML = '<span style="color:var(--mut); font-size:0.85rem;">No hay fechas.</span>';
+      return;
+    }
+    let html = '';
+    previstas.forEach(f => {
+      const activo = f.fecha === document.getElementById('filterDateReparto').value ? ' chip-activo' : '';
+      html += `<button class="chip chip-cargado${activo}" onclick="selectFechaReparto('${f.fecha}')">📅 ${f.fecha} (${f.pedidos} ped)</button>`;
+    });
+    cont.innerHTML = html;
+  }
+
+  function selectFechaReparto(fecha) {
+    document.getElementById('filterDateReparto').value = fecha;
+    renderDateChipsReparto();
+    renderReparto();
   }
 
   function selectFecha(fecha) {

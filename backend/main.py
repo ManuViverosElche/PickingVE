@@ -1443,7 +1443,7 @@ def notificar_cambios(
         WHEN NOT MATCHED THEN INSERT (clave, valor) VALUES (s.clave, s.valor)
         """
     ).result()
-    return {"ok": True, "pedidos_modificados": len(pedidos), "comentarios_nuevos": len(comentarios), "notificaciones_enviadas": enviadas}
+    return {"ok": True, "pedidos_modificados": len(pedidos_notificados), "comentarios_nuevos": len(comentarios), "notificaciones_enviadas": enviadas}
 
 
 @app.get("/api/encargados")
