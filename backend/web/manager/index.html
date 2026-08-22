@@ -433,13 +433,15 @@
           </div>
         `;
       });
-        `;
-      });
       container.innerHTML = html;
     } catch (e) {
       console.error(e);
       document.getElementById('repartoContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar el reparto de faena.</div>';
     }
+  }
+
+  function loadRepartoData() {
+    renderReparto();
   }
 
   function toggleRepartoOrder(key) {
