@@ -1449,9 +1449,10 @@ def notificar_cambios(
 @app.get("/api/encargados")
 def lista_encargados(
     request: Request,
+    k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    _verify_key(x_api_key)
+    _verify_manager_key(k, x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
     rows = _query(
         f"""
@@ -2470,14 +2471,19 @@ def _verify_manager_key(
 
 @app.get("/api/manager/orders")
 def manager_orders(
-    fecha: Optional[date] = Query(None, description="Fecha de carga (YYYY-MM-DD)"),
+    fecha: Optional[str] = Query(None, description="Fecha de carga (YYYY-MM-DD)"),
     estado: Optional[str] = Query(None, description="Filtro de estado: activos, pendientes, cargados, enviados, todos"),
     incluirEnviados: bool = Query(False, description="Incluir pedidos ya enviados/cargados"),
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
     _verify_manager_key(k, x_api_key)
-    target_date = fecha or date.today()
+    target_date = date.today()
+    if fecha and fecha not in ("null", "undefined", ""):
+        try:
+            target_date = date.fromisoformat(fecha)
+        except ValueError:
+            pass
     
     st_filter = (estado or "").strip().lower()
     if not st_filter:
