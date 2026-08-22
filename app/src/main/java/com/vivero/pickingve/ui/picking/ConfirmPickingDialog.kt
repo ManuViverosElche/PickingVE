@@ -63,7 +63,7 @@ fun ConfirmPickingDialog(
     var caliber by remember { mutableStateOf(product.defaultCaliber.orEmpty()) }
     var labelOption by remember { mutableStateOf(0) }
     var labelFormat by remember { mutableStateOf("") }
-    val ventaDirecta = product.reference.startsWith("9")
+    val ventaDirecta = product.reference.startsWith("9") && !pending.isEanScan
     val shownPicked = remember(line, compensaciones) {
         if (line == null) 0
         else maxOf(line.pickedQty, line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0))

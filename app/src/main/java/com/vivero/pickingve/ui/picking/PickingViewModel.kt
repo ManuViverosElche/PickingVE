@@ -59,7 +59,8 @@ data class PendingConfirm(
     val originalProductId: String,
     val isAmpliacion: Boolean = false,
     val ocrText: String? = null,
-    val isLabel: Boolean = false
+    val isLabel: Boolean = false,
+    val isEanScan: Boolean = true
 )
 
 data class PendingLinePick(
@@ -721,7 +722,8 @@ class PickingViewModel(
             originalProductId = pick.product.reference,
             isAmpliacion = true,
             ocrText = lastOcrText,
-            isLabel = false
+            isLabel = false,
+            isEanScan = true
         )
     }
 
@@ -783,7 +785,8 @@ class PickingViewModel(
             orderProductName = line.productName,
             originalProductId = line.productId,
             ocrText = lastOcrText,
-            isLabel = isLabel
+            isLabel = isLabel,
+            isEanScan = true
         )
     }
 

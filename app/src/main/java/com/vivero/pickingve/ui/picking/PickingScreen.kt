@@ -1414,15 +1414,47 @@ private fun LinePickDialog(
     onDismiss: () -> Unit
 ) {
     val title = if (pick.isSubstitution) {
-        "Sustitución: ${pick.product.reference}"
+        "Sustitución"
     } else {
-        "¿A qué línea corresponde ${pick.product.reference}?"
+        "¿A qué línea corresponde?"
     }
+    val product = pick.product
+    val productAttrs = listOfNotNull(
+        product.litraje.takeIf { it.isNotBlank() }?.let { "Litraje: $it" },
+        product.sector.takeIf { it.isNotBlank() }?.let { "Sector: $it" }
+    ).joinToString(" · ")
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            "Leída: ${product.reference}",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            product.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        if (productAttrs.isNotBlank()) {
+                            Text(
+                                productAttrs,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
                 if (pick.isSubstitution) {
                     Text(
                         "Esta referencia NO está en el pedido. Elige la línea a la que sustituye " +

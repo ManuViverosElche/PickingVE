@@ -362,10 +362,10 @@
                     <th>Sector</th>
                     <th>Ubicación</th>
                     <th>Finca</th>
-                    <th>Prioridad / Marca / Marcado</th>
+                    <th>Prioridad</th>
                     <th>Pend.</th>
-                    <th>Acop. Total</th>
-                    <th>Cogido por Operario (Encargado)</th>
+                    <th>Acop.</th>
+                    <th>Encargado (Pistoleo)</th>
                     <th>Operario Faena</th>
                     <th>Acciones</th>
                   </tr>
@@ -378,13 +378,18 @@
           const isPrio = l.prioritario;
           const prioBadge = isPrio ? '<span class="badge b-yellow">Prioritario</span>' : '';
           
-          let marcaBadge = '';
+          let marcaInfo = '';
           if (l.marca && l.marca !== o.marcaPedido) {
-            marcaBadge = `<span class="badge b-warn" style="background:rgba(224,161,60,0.2); color:var(--warn); border:1px solid var(--warn);">⚠ Marca: ${l.marca}</span>`;
+            marcaInfo = `<br><small style="color:var(--warn);">⚠ Marca: ${l.marca}</small>`;
           }
 
-          const marcadoBadge = l.marcado ? `<span class="badge" style="background:rgba(66,201,189,0.2); color:var(--lime); border:1px solid var(--lime);">✓ MARCADO</span>` : '';
-          const rowHighlight = (isPrio || l.marcado || (l.marca && l.marca !== o.marcaPedido)) ? 'background: rgba(66,201,189,0.06); border-left: 3px solid var(--lime);' : '';
+          // Si está marcado, resaltamos la fila visualmente SIN etiqueta
+          let rowStyle = '';
+          if (l.marcado) {
+            rowStyle = 'background: rgba(66,201,189,0.08); border-left: 3px solid var(--lime);';
+          } else if (isPrio) {
+            rowStyle = 'background: rgba(224,161,60,0.05);';
+          }
           
           const encargadoPick = l.operarios || '—';
           
@@ -395,24 +400,20 @@
           });
 
           html += `
-            <tr style="${rowHighlight}">
+            <tr style="${rowStyle}">
               <td><b>${lineNum}</b></td>
-              <td style="color:var(--blue); font-weight:700;">${l.referencia}</td>
-              <td>${l.descripcion}</td>
-              <td>${l.litraje || '—'}</td>
-              <td>${l.sector || '—'}</td>
-              <td style="color:var(--mut);">${l.ubicacionExtra || '—'}</td>
-              <td>${l.fincaLinea || o.finca || '—'}</td>
-              <td>
-                <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
-                  ${prioBadge} ${marcadoBadge} ${marcaBadge}
-                </div>
-              </td>
+              <td style="color:var(--blue); font-weight:700; white-space:nowrap;">${l.referencia}</td>
+              <td>${l.descripcion} ${marcaInfo}</td>
+              <td style="white-space:nowrap;">${l.litraje || '—'}</td>
+              <td style="white-space:nowrap;">${l.sector || '—'}</td>
+              <td style="color:var(--mut); white-space:nowrap;">${l.ubicacionExtra || '—'}</td>
+              <td style="white-space:nowrap;">${l.fincaLinea || o.finca || '—'}</td>
+              <td style="white-space:nowrap;">${prioBadge}</td>
               <td><b>${l.pendientes}</b></td>
               <td style="color:var(--lime); font-weight:700;">${l.acopiado}</td>
               <td style="font-size:0.78rem; font-weight:700; color:var(--blue);">${encargadoPick}</td>
               <td>
-                <select style="width:120px; font-size:0.78rem;" data-pedido="${o.numero}" data-linea="${l.huellaDigital || lineNum}" onchange="cambiarOperarioFaena(this)">
+                <select style="width:110px; font-size:0.78rem;" data-pedido="${o.numero}" data-linea="${l.huellaDigital || lineNum}" onchange="cambiarOperarioFaena(this)">
                   ${opOptions}
                 </select>
               </td>

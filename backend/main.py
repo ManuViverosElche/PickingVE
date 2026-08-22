@@ -2502,24 +2502,28 @@ def manager_orders(
                COALESCE(c.N_COMERCIAL, '') AS CLIENTE,
                COALESCE(c.N_FISCAL, '') AS CLIENTE_FISCAL,
                COALESCE(c.DIRECCION, '') AS DIRECCION_DESCARGA,
-               COALESCE(ag.NOMBRE_AGENTE, '') AS AGENTE,
+                COALESCE(ag.NOMBRE_AGENTE, '') AS AGENTE,
                 l.HUELLA_DIGITAL, l.POSICION_PEDIDO, l.REFERENCIA_ARTICULO,
                 l.DESCRIPCION_ARTICULO, l.UNIDADES_PENDIENTES,
                 l.CODIGO_LITRAJE, l.CODIGO_SECTOR, l.UBICACION_EXTRA,
                 l.FINCA_RELEVADA, l.SECTOR_RELEVADO, l.MARCADO, l.MARCA,
                 l.PRIORIDAD, l.ACCION_LOGISTICA, l.NOTA_LINEA_PEDIDO,
+                COALESCE(lt.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '') AS LITRAJE_DESC,
+                COALESCE(st.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '') AS SECTOR_DESC,
                 COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
                 COALESCE(pr.OPERARIOS, '') AS OPERARIOS,
-               CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
-               CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
-               COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO
-        FROM `{PROJECT}.{DATASET}.PEDIDOS` p
-        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
-        LEFT JOIN `{PROJECT}.{DATASET}.AGENTE` ag ON ag.ID_AGENTE = p.CODIGO_AGENTE
-        INNER JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
-            ON l.SERIE_PEDIDO = p.SERIE_PEDIDO AND l.NUMERO_PEDIDO = p.NUMERO_PEDIDO
-            AND COALESCE(l.IMPRIMIR_LINEA, 0) = 0
-            AND COALESCE(l.LINEA_ACTIVA, TRUE) = TRUE
+                CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
+                CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
+                COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO
+         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
+         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+         LEFT JOIN `{PROJECT}.{DATASET}.AGENTE` ag ON ag.ID_AGENTE = p.CODIGO_AGENTE
+         INNER JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
+             ON l.SERIE_PEDIDO = p.SERIE_PEDIDO AND l.NUMERO_PEDIDO = p.NUMERO_PEDIDO
+             AND COALESCE(l.IMPRIMIR_LINEA, 0) = 0
+             AND COALESCE(l.LINEA_ACTIVA, TRUE) = TRUE
+         LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = l.CODIGO_LITRAJE
+         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN (
             SELECT order_id, order_line_id, SUM(cantidad_partida) AS ACOPIADO,
                    STRING_AGG(DISTINCT empleado_nombre, ', ') AS OPERARIOS
@@ -2591,8 +2595,8 @@ def manager_orders(
                     "posicion": r.get("POSICION_PEDIDO"),
                     "referencia": ref,
                     "descripcion": r.get("DESCRIPCION_ARTICULO") or "",
-                    "litraje": r.get("CODIGO_LITRAJE") or "",
-                    "sector": r.get("CODIGO_SECTOR") or r.get("SECTOR_RELEVADO") or "",
+                    "litraje": r.get("LITRAJE_DESC") or r.get("CODIGO_LITRAJE") or "",
+                    "sector": r.get("SECTOR_DESC") or r.get("CODIGO_SECTOR") or r.get("SECTOR_RELEVADO") or "",
                     "ubicacionExtra": r.get("UBICACION_EXTRA") or "",
                     "fincaLinea": r.get("FINCA_RELEVADA") or p["finca"],
                     "prioritario": bool(r.get("PRIORIDAD")),
