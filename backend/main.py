@@ -2629,8 +2629,9 @@ def manager_fechas(
         LEFT JOIN (
             SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
         ) pf ON pf.order_id = p.NUMERO_PEDIDO
-        WHERE p.FECHA_CARGA IS NOT NULL AND p.FECHA_CARGA >= DATE_SUB(CURRENT_DATE(), INTERVAL 45 DAY)
+        WHERE p.FECHA_CARGA IS NOT NULL
         GROUP BY FECHA
+        HAVING PENDIENTES > 0 OR DATE(FECHA) >= CURRENT_DATE()
         ORDER BY FECHA
     """)
     return {
