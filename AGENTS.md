@@ -3,7 +3,7 @@
 ## Proyecto
 App Android (Kotlin, Jetpack Compose) de picking offline-first para viveros/campo.
 - Compila con: `gradlew.bat assembleDebug` (Gradle 8.7, JDK del Android Studio en `C:\Program Files\Android\Android Studio\jbr`).
-- APK: `apks/PickingVE-debug-1.7.6.apk` (carpeta fija `apks/` en la raíz; el build la copia automáticamente cada vez).
+- APK: `apks/PickingVE-debug-<versionName>.apk` (carpeta fija `apks/` en la raíz; el build la copia automáticamente cada vez). Usar SIEMPRE el más reciente de la carpeta, no fijar versión en la documentación (evita referencias obsoletas).
 - Documentación: `docs/` (SPECS, ARCHITECTURE, DATA_MODEL, BIGQUERY_STEPS, GOVERNANCE).
 
 ## Reglas
@@ -22,4 +22,4 @@ App Android (Kotlin, Jetpack Compose) de picking offline-first para viveros/camp
 
 ## Comandos útiles
 - Build: `gradlew.bat assembleDebug` con JAVA_HOME del JBR de Android Studio.
-- Instalar en dispositivo/emulador: `adb install -r apks\PickingVE-debug-1.7.5.apk`
+- Instalar en dispositivo/emulador: `adb install -r apks\PickingVE-debug-<versionName>.apk` (usar el APK más reciente de `apks/`).

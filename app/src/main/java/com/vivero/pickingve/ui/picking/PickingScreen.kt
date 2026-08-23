@@ -166,6 +166,7 @@ fun PickingScreen(
     var showReopenConfirm by remember { mutableStateOf(false) }
     var manualMarkLine by remember { mutableStateOf<OrderLineEntity?>(null) }
     var unpickLine by remember { mutableStateOf<OrderLineEntity?>(null) }
+    var cerrarLineaDialog by remember { mutableStateOf<OrderLineEntity?>(null) }
     var nextPickingNumber by remember { mutableStateOf(1) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -351,6 +352,7 @@ fun PickingScreen(
                         onUnpick = { unpickLine = it },
                         onManualMark = { manualMarkLine = it },
                         onOpenChat = { chatLinea = it.orderLineId },
+                        onCerrarLinea = { cerrarLineaDialog = it },
                         highlightedLineId = highlightedLineId
                     )
                 }
@@ -626,6 +628,22 @@ fun PickingScreen(
             onDismiss = { manualMarkLine = null }
         )
     }
+
+    cerrarLineaDialog?.let { line ->
+        val pendienteCierre = (line.requestedQty - maxOf(
+            line.pickedQty,
+            line.acopiadoServidor
+        )).coerceAtLeast(0)
+        CierreLineaDialog(
+            line = line,
+            pendiente = pendienteCierre,
+            onConfirmar = { motivo, texto ->
+                viewModel.cerrarLinea(line, motivo, texto)
+                cerrarLineaDialog = null
+            },
+            onDismiss = { cerrarLineaDialog = null }
+        )
+    }
 }
 
 @Composable
@@ -708,16 +726,45 @@ private fun PickingBottomBar(
     }
 }
 
+/**
+ * Nombre de cliente normalizado (D-15X): fiscal - comercial, con el comercial
+ * en cursiva. Si solo hay uno, se muestra ese sin duplicar.
+ */
+@Composable
+private fun ClienteNombreTexto(
+    fiscal: String,
+    comercial: String,
+    style: androidx.compose.ui.text.TextStyle,
+    fontWeight: FontWeight? = null,
+    maxLines: Int = 2,
+    modifier: Modifier = Modifier
+) {
+    val distintos = fiscal.isNotBlank() && comercial.isNotBlank() &&
+        !fiscal.equals(comercial, ignoreCase = true)
+    val texto = when {
+        distintos -> "$fiscal - $comercial"
+        comercial.isNotBlank() -> comercial
+        else -> fiscal
+    }
+    Text(
+        text = texto,
+        style = style,
+        fontWeight = fontWeight,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+    )
+}
+
+private fun motivoCierreEtiqueta(codigo: String): String =
+    com.vivero.pickingve.ui.picking.MOTIVOS_CIERRE
+        .firstOrNull { it.codigo == codigo }?.etiqueta ?: codigo.replace('_', ' ')
+
 @Composable
 private fun OrderHeader(
     order: com.vivero.pickingve.data.local.entities.OrderEntity?
 ) {
     if (order == null) return
-    val customer = if (order.customerFiscal.isNotBlank() && order.customerFiscal != order.customerName) {
-        "${order.customerName} · ${order.customerFiscal}"
-    } else {
-        order.customerName
-    }
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(12.dp),
@@ -727,12 +774,12 @@ private fun OrderHeader(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = customer,
+                ClienteNombreTexto(
+                    fiscal = order.customerFiscal,
+                    comercial = order.customerName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 if (order.cargado) {
@@ -801,11 +848,6 @@ private fun CargadoSummary(
         maxOf(it.pickedQty, (it.acopiadoServidor - (compensaciones[it.orderLineId] ?: 0)).coerceAtLeast(0))
     }
     val totalRequested = vigentes.sumOf { it.requestedQty }
-    val customer = if (order.customerFiscal.isNotBlank() && order.customerFiscal != order.customerName) {
-        "${order.customerName} · ${order.customerFiscal}"
-    } else {
-        order.customerName
-    }
     val fechaCargado = order.fechaCarga?.let {
         java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(it))
     }
@@ -838,7 +880,11 @@ private fun CargadoSummary(
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
-                Text(customer, style = MaterialTheme.typography.bodyMedium)
+                ClienteNombreTexto(
+                    fiscal = order.customerFiscal,
+                    comercial = order.customerName,
+                    style = MaterialTheme.typography.bodyMedium
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (order.fincaCarga.isNotBlank()) {
                         Text(
@@ -956,6 +1002,7 @@ private fun OrderLinesList(
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
     onOpenChat: (OrderLineEntity) -> Unit,
+    onCerrarLinea: (OrderLineEntity) -> Unit,
     highlightedLineId: String? = null
 ) {
     var query by remember { mutableStateOf("") }
@@ -977,8 +1024,9 @@ private fun OrderLinesList(
     val isComplete: (OrderLineEntity) -> Boolean = { line ->
         line.vigente && line.requestedQty > 0 && shownPicked(line) >= line.requestedQty
     }
-    val pending = filtered.filter { !isComplete(it) }.sortedBy { it.posicion }
-    val completed = filtered.filter { isComplete(it) }.sortedBy { it.posicion }
+    val pending = filtered.filter { !isComplete(it) && it.motivoCierre.isBlank() }.sortedBy { it.posicion }
+    val completed = filtered.filter { isComplete(it) && it.motivoCierre.isBlank() }.sortedBy { it.posicion }
+    val cerradas = filtered.filter { it.motivoCierre.isNotBlank() }.sortedBy { it.posicion }
 
     Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -1013,9 +1061,11 @@ private fun OrderLinesList(
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                     chatEstados = chatEstados,
                     compensaciones = compensaciones,
+                    shownPickedOverride = null,
                     onUnpick = onUnpick,
                     onManualMark = onManualMark,
                     onOpenChat = onOpenChat,
+                    onCerrarLinea = onCerrarLinea,
                     isHighlighted = highlightedLineId == line.orderLineId
                 )
             }
@@ -1037,9 +1087,38 @@ private fun OrderLinesList(
                         labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                         chatEstados = chatEstados,
                         compensaciones = compensaciones,
+                        shownPickedOverride = null,
                         onUnpick = onUnpick,
                         onManualMark = onManualMark,
                         onOpenChat = onOpenChat,
+                        onCerrarLinea = onCerrarLinea,
+                        isHighlighted = highlightedLineId == line.orderLineId
+                    )
+                }
+            }
+            if (cerradas.isNotEmpty()) {
+                item(key = "lineas-cerradas") {
+                    Text(
+                        "Líneas cerradas",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+                items(cerradas, key = { it.orderLineId }) { line ->
+                    OrderLineCard(
+                        order = order,
+                        line = line,
+                        substitutedCount = substitutedByLine[line.orderLineId] ?: 0,
+                        labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
+                        chatEstados = chatEstados,
+                        compensaciones = compensaciones,
+                        shownPickedOverride = null,
+                        onUnpick = onUnpick,
+                        onManualMark = onManualMark,
+                        onOpenChat = onOpenChat,
+                        onCerrarLinea = onCerrarLinea,
                         isHighlighted = highlightedLineId == line.orderLineId
                     )
                 }
@@ -1057,16 +1136,24 @@ private fun OrderLineCard(
     labelsRequested: Int,
     chatEstados: List<ChatEstadoEntity>,
     compensaciones: Map<String, Int>,
+    shownPickedOverride: Int?,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
     onOpenChat: (OrderLineEntity) -> Unit,
+    onCerrarLinea: (OrderLineEntity) -> Unit,
     isHighlighted: Boolean = false
 ) {
     val compensado = compensaciones[line.orderLineId] ?: 0
-    val shownPicked = maxOf(line.pickedQty, (line.acopiadoServidor - compensado).coerceAtLeast(0))
+    val shownPicked = shownPickedOverride ?: maxOf(
+        line.pickedQty,
+        (line.acopiadoServidor - compensado).coerceAtLeast(0)
+    )
     val remotePicked = (line.acopiadoServidor - compensado - line.pickedQty).coerceAtLeast(0)
     val complete = line.vigente && line.requestedQty > 0 && shownPicked >= line.requestedQty
     val overPicked = line.vigente && shownPicked > line.requestedQty
+    val cerrada = line.motivoCierre.isNotBlank()
+    // D-15X: la marca de la línea manda; si está vacía, hereda la del pedido.
+    val marcaEfectiva = line.marca.ifBlank { order?.marcaPedido.orEmpty() }
     val marcaDistinta = order?.marcaPedido?.isNotBlank() == true &&
         line.marca.isNotBlank() && line.marca != order.marcaPedido
     val pickedContainer = if (isSystemInDarkTheme()) DarkPickedContainer else LightPickedContainer
@@ -1294,6 +1381,27 @@ private fun OrderLineCard(
                         icon = { Icon(Icons.AutoMirrored.Filled.Label, null, Modifier.size(14.dp)) },
                         text = "Marca: ${line.marca}"
                     )
+                } else if (marcaEfectiva.isNotBlank()) {
+                    // D-15X: sin marca de línea se hereda la del pedido (se indica en el badge)
+                    LineBadge(
+                        container = MaterialTheme.colorScheme.surfaceVariant,
+                        content = MaterialTheme.colorScheme.onSurfaceVariant,
+                        border = null,
+                        icon = { Icon(Icons.AutoMirrored.Filled.Label, null, Modifier.size(14.dp)) },
+                        text = "Marca: $marcaEfectiva (pedido)"
+                    )
+                }
+                if (line.fincaAcopio.isNotBlank() &&
+                    !line.fincaAcopio.equals(order?.fincaCarga.orEmpty(), ignoreCase = true)
+                ) {
+                    LineBadge(
+                        container = MaterialTheme.colorScheme.tertiaryContainer,
+                        content = MaterialTheme.colorScheme.onTertiaryContainer,
+                        border = null,
+                        icon = { Icon(Icons.Filled.LocalShipping, null, Modifier.size(14.dp)) },
+                        text = "Recogida: ${line.fincaAcopio}" +
+                            if (line.sectorAcopio.isNotBlank()) " · ${line.sectorAcopio}" else ""
+                    )
                 }
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -1310,6 +1418,15 @@ private fun OrderLineCard(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
+                    if (cerrada) {
+                        Text(
+                            text = "CERRADA · " + motivoCierreEtiqueta(line.motivoCierre) +
+                                if (line.motivoCierreTexto.isNotBlank()) ": ${line.motivoCierreTexto}" else "",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
                 if (line.requiresMeasure) {
                     Icon(
@@ -1318,6 +1435,11 @@ private fun OrderLineCard(
                         tint = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.padding(end = 4.dp)
                     )
+                }
+                if (!cerrada && line.vigente && !complete && line.requestedQty > shownPicked) {
+                    TextButton(onClick = { onCerrarLinea(line) }) {
+                        Text("Cerrar línea")
+                    }
                 }
                 if (line.pickedQty > 0 && line.vigente) {
                     IconButton(onClick = { onUnpick(line) }) {

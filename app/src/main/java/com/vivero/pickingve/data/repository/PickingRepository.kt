@@ -878,6 +878,13 @@ class PickingRepository(
                     observaciones = l.observaciones,
                     marcado = l.marcado,
                     acopiadoServidor = l.acopiado,
+                    fincaAcopio = l.fincaRelevada,
+                    sectorAcopio = l.sectorRelevado,
+                    operarioEmail = l.operarioEmail,
+                    operarioNombre = l.operarioNombre,
+                    motivoCierre = prev?.motivoCierre ?: "",
+                    motivoCierreTexto = prev?.motivoCierreTexto ?: "",
+                    cierrePendiente = prev?.cierrePendiente ?: false,
                     vigente = true
                 )
             }.also { _ ->
@@ -1117,6 +1124,115 @@ class PickingRepository(
 
     suspend fun markOrderNotCargado(orderId: String) = orderDao.setOrderNotCargado(orderId)
 
+    // ---- Logística (acopio manual) ----
+
+    fun observeOrdersConLineas(): Flow<List<com.vivero.pickingve.data.local.dao.OrderConLineas>> =
+        orderDao.observeOrdersConLineas()
+
+    /**
+     * Cierra una línea sin completarla, registrando el motivo prediseñado
+     * (o libre). Persiste en Room primero (offline-first) y avisa a la oficina
+     * por el backend de forma best-effort; si falla queda marcada para
+     * reenvío automático por el worker.
+     */
+    suspend fun cerrarLinea(
+        line: OrderLineEntity,
+        motivo: String,
+        motivoTexto: String,
+        cantidadFaltante: Int
+    ) {
+        val enc = currentEncargado()
+        orderDao.setLineCierre(
+            lineId = line.orderLineId,
+            motivo = motivo,
+            texto = motivoTexto,
+            pendiente = true
+        )
+        try {
+            PickingApiClient().cerrarLinea(
+                com.vivero.pickingve.data.remote.CierreLineaRequest(
+                    pedidoId = line.orderId,
+                    lineaHuella = line.orderLineId,
+                    cantidadFaltante = cantidadFaltante,
+                    motivo = motivo,
+                    motivoTexto = motivoTexto,
+                    operarioEmail = enc?.email.orEmpty(),
+                    operarioNombre = enc?.nombre.orEmpty()
+                )
+            )
+            orderDao.markCierresSincronizados(listOf(line.orderLineId))
+        } catch (e: Exception) {
+            // Sin red: el worker lo reintenta con cierrePendiente=1
+        }
+    }
+
+    /** Reintenta subir los cierres de línea que no pudieron notificarse. */
+    suspend fun reintentarCierresPendientes(api: PickingApiClient): Int {
+        val pendientes = orderDao.getCierresPendientes()
+        if (pendientes.isEmpty()) return 0
+        val ok = mutableListOf<String>()
+        val enc = currentEncargado()
+        for (line in pendientes) {
+            try {
+                api.cerrarLinea(
+                    com.vivero.pickingve.data.remote.CierreLineaRequest(
+                        pedidoId = line.orderId,
+                        lineaHuella = line.orderLineId,
+                        cantidadFaltante = (line.requestedQty - line.pickedQty).coerceAtLeast(0),
+                        motivo = line.motivoCierre,
+                        motivoTexto = line.motivoCierreTexto,
+                        operarioEmail = enc?.email.orEmpty(),
+                        operarioNombre = enc?.nombre.orEmpty()
+                    )
+                )
+                ok += line.orderLineId
+            } catch (e: Exception) {
+                break
+            }
+        }
+        if (ok.isNotEmpty()) orderDao.markCierresSincronizados(ok)
+        return ok.size
+    }
+
+    /** Notifica a la oficina un desfase entre lo declarado y lo puntuado. */
+    suspend fun notificarDiscrepancia(
+        pedidoId: String,
+        lineaHuella: String,
+        declarado: Int,
+        puntado: Int,
+        mensaje: String
+    ) {
+        val email = currentEncargado()?.email.orEmpty()
+        if (email.isBlank()) return
+        try {
+            PickingApiClient().notificarDiscrepancia(
+                pedidoId = pedidoId,
+                lineaHuella = lineaHuella,
+                declarado = declarado,
+                puntado = puntado,
+                mensaje = mensaje,
+                operarioEmail = email
+            )
+        } catch (e: Exception) {
+            // Best-effort: la oficina también ve el parte con las diferencias
+        }
+    }
+
+    /** Maquinaria del usuario actual (cacheada; se refresca al sincronizar). */
+    fun maquinariaActual(): String =
+        prefs.getString(KEY_MAQUINARIA, "") ?: ""
+
+    suspend fun refrescarPerfilOperario(api: PickingApiClient) {
+        val email = currentEncargado()?.email.orEmpty()
+        if (email.isBlank()) return
+        try {
+            val perfil = api.fetchPerfilOperario(email)
+            prefs.edit().putString(KEY_MAQUINARIA, perfil.maquinaria).apply()
+        } catch (e: Exception) {
+            // Se mantiene la maquinaria cacheada sin red
+        }
+    }
+
     /**
      * Desacopio por selección: borra los registros elegidos y descuenta su
      * cantidad de la línea asociada.
@@ -1259,5 +1375,6 @@ class PickingRepository(
         const val KEY_ENCARGADO_ACTIVO = "encargado_activo"
         const val KEY_SELECTED_FINCAS = "selected_fincas"
         const val KEY_SELECTED_DAYS = "selected_days"
+        const val KEY_MAQUINARIA = "maquinaria_operario"
     }
 }

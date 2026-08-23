@@ -75,25 +75,48 @@ class PickingFirebaseMessagingService : FirebaseMessagingService() {
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val channelId = "pickingve_notificaciones"
+        // D-15X: camión en muelle y discrepancias usan un canal de urgencia
+        // (vibración larga, prioridad máxima) para que el operario lo vea al instante.
+        val urgente = tipo == "camion_llegado" || tipo == "discrepancia"
+        val channelId = if (urgente) "pickingve_urgente" else "pickingve_notificaciones"
+        val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Notificaciones PickingVE",
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            if (urgente) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        channelId,
+                        "Avisos urgentes (camión en muelle)",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        enableVibration(true)
+                        vibrationPattern = longArrayOf(0, 400, 250, 400, 250, 400)
+                    }
+                )
+            } else {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        channelId,
+                        "Notificaciones PickingVE",
+                        NotificationManager.IMPORTANCE_HIGH
+                    )
+                )
+            }
         }
         val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_notificacion)
             .setContentTitle(title)
             .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()
         try {
-            NotificationManagerCompat.from(this).notify(1, notification)
+            NotificationManagerCompat.from(this).notify(
+                if (urgente) 2 else 1,
+                notification
+            )
         } catch (e: SecurityException) {
             Log.e("PickingVE", "Permiso de notificaciones denegado", e)
         }

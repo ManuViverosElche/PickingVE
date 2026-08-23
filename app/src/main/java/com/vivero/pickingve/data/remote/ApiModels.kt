@@ -66,6 +66,8 @@ data class ApiLinea(
     val marca: String = "",
     val fincaRelevada: String = "",
     val sectorRelevado: String = "",
+    val operarioEmail: String = "",
+    val operarioNombre: String = "",
     val ubicacion: String = "",
     val prioridad: String = "",
     val accion: String = "",
@@ -264,4 +266,33 @@ data class ComentarioRequest(
 data class ApiAdjuntoResponse(
     val ok: Boolean = true,
     @SerialName("adjunto_url") val adjuntoUrl: String? = null
+)
+
+@Serializable
+data class CierreLineaRequest(
+    @SerialName("pedido_id") val pedidoId: String,
+    @SerialName("linea_huella") val lineaHuella: String,
+    @SerialName("cantidad_faltante") val cantidadFaltante: Int,
+    val motivo: String,
+    @SerialName("motivo_texto") val motivoTexto: String = "",
+    @SerialName("operario_email") val operarioEmail: String = "",
+    @SerialName("operario_nombre") val operarioNombre: String = ""
+)
+
+@Serializable
+data class PerfilOperarioResponse(
+    val email: String = "",
+    val nombre: String = "",
+    val maquinaria: String = "",
+    @SerialName("fincas_carga") val fincasCarga: String = ""
+)
+
+@Serializable
+data class DiscrepanciaRequest(
+    @SerialName("pedido_id") val pedidoId: String,
+    @SerialName("linea_huella") val lineaHuella: String,
+    val declarado: Int,
+    val puntado: Int,
+    val mensaje: String = "",
+    @SerialName("operario_email") val operarioEmail: String
 )

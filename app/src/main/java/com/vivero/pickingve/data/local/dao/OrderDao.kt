@@ -1,9 +1,11 @@
 package com.vivero.pickingve.data.local.dao
 
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Relation
 import androidx.room.Transaction
 import com.vivero.pickingve.data.local.entities.OrderEntity
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
@@ -29,6 +31,12 @@ data class OrderWithTotals(
     val sobrante: Boolean,
     val totalRequested: Int,
     val totalPicked: Int
+)
+
+data class OrderConLineas(
+    @Embedded val order: OrderEntity,
+    @Relation(parentColumn = "orderId", entityColumn = "orderId")
+    val lineas: List<OrderLineEntity>
 )
 
 @Dao
@@ -136,6 +144,27 @@ interface OrderDao {
 
     @Query("SELECT * FROM orders WHERE orderId = :orderId LIMIT 1")
     suspend fun getOrder(orderId: String): OrderEntity?
+
+    @Transaction
+    @Query("SELECT * FROM orders ORDER BY COALESCE(fechaCarga, createdAt) ASC")
+    fun observeOrdersConLineas(): Flow<List<OrderConLineas>>
+
+    @Query(
+        "UPDATE order_lines SET motivoCierre = :motivo, motivoCierreTexto = :texto, " +
+            "cierrePendiente = :pendiente WHERE orderLineId = :lineId"
+    )
+    suspend fun setLineCierre(lineId: String, motivo: String, texto: String, pendiente: Boolean)
+
+    @Query("UPDATE order_lines SET cierrePendiente = 0 WHERE orderLineId IN (:lineIds)")
+    suspend fun markCierresSincronizados(lineIds: List<String>)
+
+    @Query(
+        "SELECT * FROM order_lines WHERE cierrePendiente = 1 AND motivoCierre != ''"
+    )
+    suspend fun getCierresPendientes(): List<OrderLineEntity>
+
+    @Query("SELECT * FROM order_lines WHERE orderLineId = :lineId LIMIT 1")
+    suspend fun getLine(lineId: String): OrderLineEntity?
 
     @Query(
         "UPDATE orders SET matriculaCamion = :matriculaCamion, matriculaRemolque = :matriculaRemolque, " +

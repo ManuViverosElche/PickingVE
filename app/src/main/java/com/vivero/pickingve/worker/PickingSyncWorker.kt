@@ -22,6 +22,7 @@ class PickingSyncWorker(
             val app = applicationContext as PickingApplication
             val api = PickingApiClient()
             app.pickingRepository.uploadPendingRegistros(api)
+            app.pickingRepository.reintentarCierresPendientes(api)
             app.pickingRepository.syncCatalogIfChanged(api)
             app.pickingRepository.syncEncargados(api)
             try {

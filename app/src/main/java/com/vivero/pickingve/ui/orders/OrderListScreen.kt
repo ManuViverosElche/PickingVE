@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
@@ -46,6 +47,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,6 +70,7 @@ fun OrderListScreen(
     viewModel: OrderListViewModel,
     onOrderSelected: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenFaena: () -> Unit,
     onLogout: () -> Unit
 ) {
     val orders by viewModel.orders.collectAsState()
@@ -110,6 +115,9 @@ fun OrderListScreen(
             TopAppBar(
                 title = { Text("Pedidos") },
                 actions = {
+                    IconButton(onClick = onOpenFaena) {
+                        Icon(Icons.Filled.Checklist, contentDescription = "Mi faena")
+                    }
                     if (syncState.syncing) {
                         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp))
@@ -280,10 +288,14 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
     else order.totalPicked.toFloat() / order.totalRequested
     val pct = (progress * 100).toInt()
 
-    val displayCustomer = if (order.customerFiscal.isNotBlank() && order.customerFiscal != order.customerName) {
-        "${order.customerName} · ${order.customerFiscal}"
-    } else {
-        order.customerName
+    // D-15X: fiscal - comercial, el comercial en cursiva
+    val distintos = order.customerFiscal.isNotBlank() &&
+        order.customerName.isNotBlank() &&
+        !order.customerFiscal.equals(order.customerName, ignoreCase = true)
+    val displayCustomer = when {
+        distintos -> "${order.customerFiscal} - ${order.customerName}"
+        order.customerName.isNotBlank() -> order.customerName
+        else -> order.customerFiscal
     }
 
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
@@ -306,8 +318,18 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                             color = MaterialTheme.colorScheme.error
                         )
                     }
+                    val annotated = if (distintos) {
+                        buildAnnotatedString {
+                            append("${order.customerFiscal} - ")
+                            pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                            append(order.customerName)
+                            pop()
+                        }
+                    } else {
+                        AnnotatedString(displayCustomer)
+                    }
                     Text(
-                        text = displayCustomer,
+                        text = annotated,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

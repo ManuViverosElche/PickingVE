@@ -42,11 +42,13 @@
   
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 14px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; position: relative; transition: border-color 0.2s; }
-  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-  .order-id { font-size: 1.1rem; font-weight: 800; }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 10px; }
+  .card-header > div:first-child { min-width: 0; }
+  .card-header > div:last-child { flex-shrink: 0; }
+  .order-id { font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
   .client-name { color: var(--mut); font-size: 0.85rem; }
-  
-  .badge { font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; }
+
+  .badge { font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; white-space: nowrap; }
   .b-blue { background: rgba(127,208,224,0.15); color: var(--blue); border: 1px solid rgba(127,208,224,0.4); }
   .b-yellow { background: rgba(224,161,60,0.15); color: var(--warn); border: 1px solid rgba(224,161,60,0.4); }
   .b-green { background: rgba(66,201,189,0.15); color: var(--lime); border: 1px solid rgba(66,201,189,0.4); }
@@ -83,28 +85,106 @@
   /* Histórico Drawer */
   .hist-section { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 0.82rem; }
   .hist-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; display: flex; justify-content: space-between; }
+
+  /* ===== D-71: Cabecera fija (no scrollea) en TODAS las pestañas ===== */
+  .app-header { position: sticky; top: 0; z-index: 950; background: var(--bg); padding-top: 4px; }
+  .app-header .nav-tabs-wrap { position: sticky; top: 64px; z-index: 940; background: var(--bg); padding: 10px 0; }
+  .filters-sticky { position: sticky; top: 118px; z-index: 930; box-shadow: 0 6px 14px rgba(0,0,0,0.35); }
+  body { padding-top: 8px; }
+
+  /* ===== Animaciones de aviso (parpadeo) ===== */
+  @keyframes blinkSoft { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+  @keyframes blinkRedCorp { 0%,100% { background: rgba(150,38,34,0.35); color: #ff9e95; border-color: #c03a30; box-shadow: 0 0 8px rgba(224,90,78,0.5); } 50% { background: rgba(150,38,34,0.08); color: #e05a4e; border-color: rgba(224,90,78,0.35); box-shadow: none; } }
+  .blink-prio { animation: blinkSoft 1s ease-in-out infinite; }
+  .badge-noprio { background: transparent; border: 1px solid rgba(224,90,78,0.45); color: #ff9e95; animation: blinkSoft 1s ease-in-out infinite; }
+  .marca-linea-aviso { color: var(--warn); font-weight: 700; animation: blinkSoft 1s ease-in-out infinite; }
+  .btn-msg-unread { animation: blinkRedCorp 1s ease-in-out infinite !important; }
+
+  /* ===== Contraseña con botón del ojo ===== */
+  .pwd-wrap { position: relative; display: flex; align-items: center; width: 100%; }
+  .pwd-wrap input { width: 100%; padding-right: 40px !important; }
+  .eye-btn { position: absolute; right: 4px; background: none; border: none; cursor: pointer; font-size: 1.05rem; padding: 3px 7px; color: var(--mut); z-index: 5; }
+  .eye-btn:hover { color: var(--lime); background: rgba(66,201,189,0.1); }
+
+  /* ===== Configuración: secciones a ancho completo, desplegables ===== */
+  .cfg-section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,0.2); }
+  .cfg-section-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; cursor: pointer; user-select: none; background: rgba(16,50,56,0.5); transition: background 0.15s; }
+  .cfg-section-head:hover { background: rgba(28,74,81,0.55); }
+  .cfg-section-head h3 { font-size: 1.02rem; color: var(--lime); display: flex; gap: 9px; align-items: center; }
+  .cfg-section-head .cfg-count { font-size: 0.72rem; color: var(--mut); font-weight: 700; }
+  .cfg-chevron { transition: transform 0.2s; color: var(--mut); font-size: 0.95rem; }
+  .cfg-section.open .cfg-chevron { transform: rotate(90deg); color: var(--lime); }
+  .cfg-section-body { display: none; padding: 14px 18px 18px; border-top: 1px solid var(--line); }
+  .cfg-section.open .cfg-section-body { display: block; }
+  .cfg-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .cfg-search { flex: 1; min-width: 220px; background: var(--card2) !important; }
+  /* Tablas sin scroll horizontal: celdas que envuelven */
+  .cfg-table-wrap { overflow-x: hidden; }
+  .cfg-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; }
+  .cfg-table th { text-align: left; text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.06em; color: var(--mut); padding: 8px 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); overflow: hidden; text-overflow: ellipsis; }
+  .cfg-table td { padding: 9px 8px; border-bottom: 1px solid rgba(28,74,81,0.45); vertical-align: middle; word-wrap: break-word; overflow-wrap: anywhere; }
+  .cfg-table tr:hover td { background: rgba(66,201,189,0.05); }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.78rem; color: #062325; background: linear-gradient(135deg, var(--lime), var(--blue)); margin-right: 8px; flex-shrink: 0; }
+  .person-cell { display: flex; align-items: center; }
+  .pill { display: inline-block; font-size: 0.68rem; font-weight: 700; border-radius: 20px; padding: 2px 9px; border: 1px solid var(--line); color: var(--mut); white-space: nowrap; }
+  .pill-ok { color: var(--lime); border-color: rgba(66,201,189,0.5); background: rgba(66,201,189,0.12); }
+  .pill-off { color: #ff9e95; border-color: rgba(224,90,78,0.5); background: rgba(224,90,78,0.12); }
+  .icon-btn { background: var(--card2); border: 1px solid var(--line); color: var(--txt); cursor: pointer; border-radius: 8px; padding: 5px 9px; font-size: 0.82rem; transition: all 0.15s; }
+  .icon-btn:hover { border-color: var(--lime); color: var(--lime); transform: translateY(-1px); }
+  .icon-btn.danger:hover { border-color: var(--bad); color: #ff9e95; }
+  .btn-primary-modern { background: linear-gradient(135deg, var(--lime), #2ea99e); color: #062325; border: none; border-radius: 10px; padding: 8px 16px; font-weight: 800; cursor: pointer; font-size: 0.85rem; box-shadow: 0 2px 8px rgba(66,201,189,0.25); }
+  .btn-primary-modern:hover { filter: brightness(1.1); }
+
+  /* ===== Modales de formulario profesionales ===== */
+  .modal-content.modern { max-width: 560px; padding: 0; overflow: hidden; }
+  .mform-head { padding: 16px 22px; border-bottom: 1px solid var(--line); background: rgba(16,50,56,0.5); display: flex; justify-content: space-between; align-items: center; }
+  .mform-head h2 { font-size: 1.1rem; color: var(--lime); }
+  .mform-head p { font-size: 0.78rem; color: var(--mut); margin-top: 2px; }
+  .mform-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; max-height: 62vh; overflow-y: auto; }
+  .field label { display: block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mut); margin-bottom: 5px; }
+  .field input, .field select { width: 100%; padding: 10px 12px; border-radius: 10px; background: var(--card2); border: 1px solid var(--line); color: var(--txt); font-size: 0.9rem; transition: border-color 0.15s, box-shadow 0.15s; }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--lime); box-shadow: 0 0 0 3px rgba(66,201,189,0.15); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .chips-select { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip-sel { cursor: pointer; user-select: none; border-radius: 18px; padding: 5px 13px; font-size: 0.78rem; font-weight: 700; border: 1px solid var(--line); background: var(--card2); color: var(--mut); transition: all 0.12s; }
+  .chip-sel.on { background: rgba(66,201,189,0.18); border-color: var(--lime); color: var(--lime2); }
+  .mform-foot { padding: 14px 22px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; background: rgba(7,26,30,0.6); }
+
+  /* ===== Tabla comparativa de carga por operario (D-74) ===== */
+  .carga-box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; }
+  .carga-box h3 { color: var(--blue); font-size: 1rem; margin-bottom: 10px; }
+  .carga-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.84rem; }
+  .carga-table th { text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.05em; color: var(--mut); padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
+  .carga-table td { padding: 8px 8px; border-bottom: 1px solid rgba(28,74,81,0.4); word-wrap: break-word; overflow-wrap: anywhere; }
+  .carga-num { font-weight: 800; font-variant-numeric: tabular-nums; }
+  .sobrecarga { color: #ff9e95 !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>🌿 PickingVE — Panel Operativo de Pedidos</h1>
-    <div class="controls">
-      <button onclick="refreshCurrentView()">🔄 Actualizar</button>
-    </div>
-  </header>
+  <div class="app-header">
+    <header>
+      <h1>🌿 PickingVE — Panel Operativo de Pedidos</h1>
+      <div class="controls">
+        <button onclick="refreshCurrentView()">🔄 Actualizar</button>
+      </div>
+    </header>
 
-  <div class="nav-tabs">
-    <button id="tabPedidos" class="nav-tab active" onclick="switchView('pedidos')">📦 Pedidos del Día</button>
-    <button id="tabEtiquetas" class="nav-tab" onclick="switchView('etiquetas')">🏷️ Etiquetas a Sacar</button>
-    <button id="tabHistorico" class="nav-tab" onclick="switchView('historico')">📜 Histórico de Cargas</button>
-    <button id="tabReparto" class="nav-tab" onclick="switchView('reparto')">📋 Reparto de Faena</button>
-    <button id="tabConfig" class="nav-tab" onclick="switchView('config')">⚙️ Configuración</button>
+    <div class="nav-tabs-wrap">
+      <div class="nav-tabs" style="margin-bottom:0;">
+        <button id="tabPedidos" class="nav-tab active" onclick="switchView('pedidos')">📦 Pedidos del Día</button>
+        <button id="tabEtiquetas" class="nav-tab" onclick="switchView('etiquetas')">🏷️ Etiquetas a Sacar</button>
+        <button id="tabHistorico" class="nav-tab" onclick="switchView('historico')">📜 Histórico de Cargas</button>
+        <button id="tabReparto" class="nav-tab" onclick="switchView('reparto')">📋 Reparto de Faena</button>
+        <button id="tabCarga" class="nav-tab" onclick="switchView('carga')">⚖️ Carga por Operario</button>
+        <button id="tabConfig" class="nav-tab" onclick="switchView('config')">⚙️ Configuración</button>
+      </div>
+    </div>
   </div>
 
   <!-- SECCIÓN PEDIDOS -->
   <div id="viewPedidos">
-    <div class="filters">
+    <div class="filters filters-sticky">
       <input type="date" id="filterDate" onchange="selectFecha(this.value)">
       <select id="filterFinca" onchange="renderOrders()">
         <option value="">Todas las Fincas</option>
@@ -118,12 +198,12 @@
     <!-- Chips Estado Pedidos -->
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
       <span style="font-size:0.8rem; color:var(--mut); font-weight:700;">Filtrar Estado:</span>
-      <button id="stActivos" class="chip chip-activo" onclick="setFilterEstado('activos')">⭐ Activos</button>
+      <button id="stActivos" class="chip" onclick="setFilterEstado('activos')">⭐ Activos</button>
       <button id="stPendientes" class="chip chip-pendiente" onclick="setFilterEstado('pendientes')">⏳ Pendientes</button>
       <button id="stAcopiados" class="chip" onclick="setFilterEstado('acopiados')" style="background:rgba(66,201,189,0.15); color:var(--lime); border-color:rgba(66,201,189,0.5);">📦 Acopiados</button>
       <button id="stCargados" class="chip chip-cargado" onclick="setFilterEstado('cargados')">🚛 Cargados</button>
       <button id="stEnviados" class="chip chip-enviado" onclick="setFilterEstado('enviados')">✅ Enviados</button>
-      <button id="stTodos" class="chip" onclick="setFilterEstado('todos')">📋 Todos</button>
+      <button id="stTodos" class="chip chip-activo" onclick="setFilterEstado('todos')">📋 Todos</button>
     </div>
 
     <div id="ordersContainer">
@@ -133,7 +213,7 @@
 
   <!-- SECCIÓN ETIQUETAS -->
   <div id="viewEtiquetas" style="display:none;">
-    <div class="filters">
+    <div class="filters filters-sticky">
       <input type="date" id="filterDateEtiquetas" onchange="selectFecha(this.value)">
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-left:auto;">
         <button onclick="verInformeEtiquetasDia()">👁️ Ver / Imprimir Informe</button>
@@ -148,7 +228,7 @@
 
   <!-- SECCIÓN HISTÓRICO -->
   <div id="viewHistorico" style="display:none;">
-    <div class="filters">
+    <div class="filters filters-sticky">
       <input type="date" id="filterDateHistorico" onchange="selectFechaHistorico(this.value)">
       <input type="text" id="searchHistorico" placeholder="Buscar pedido o cliente..." oninput="renderHistorico()" style="flex: 1; min-width: 180px;">
     </div>
@@ -161,7 +241,7 @@
 
   <!-- SECCIÓN REPARTO DE FAENA -->
   <div id="viewReparto" style="display:none;">
-    <div class="filters">
+    <div class="filters filters-sticky">
       <input type="date" id="filterDateReparto" onchange="selectFechaReparto(this.value)">
       <select id="filterFincaReparto" onchange="renderReparto()">
         <option value="">Todas las Fincas</option>
@@ -176,34 +256,207 @@
     </div>
   </div>
 
+  <!-- SECCIÓN CARGA POR OPERARIO -->
+  <div id="viewCarga" style="display:none;">
+    <div class="filters filters-sticky">
+      <input type="date" id="filterDateCarga" onchange="selectFechaCarga(this.value)">
+      <button class="btn-sec" onclick="loadCarga()">🔄 Actualizar</button>
+    </div>
+    <div id="cargaContainer">
+      <div style="text-align: center; color: var(--mut); padding: 40px;">Cargando carga de operarios...</div>
+    </div>
+  </div>
+
   <!-- SECCIÓN CONFIGURACIÓN -->
   <div id="viewConfig" style="display:none;">
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-      <!-- Gestión Encargados -->
-      <div class="card" style="background:var(--card);">
-        <div class="card-header"><div class="order-id">👥 Gestión de Encargados (Pistoleo)</div></div>
-        <div style="margin-bottom: 10px;">
-          <input type="text" id="encNombre" placeholder="Nombre" style="width:48%; margin-right:2%;">
-          <input type="text" id="encEmail" placeholder="Email (login)" style="width:48%;">
-          <input type="password" id="encPass" placeholder="Contraseña" style="width:48%; margin-top:8px; margin-right:2%;">
-          <input type="text" id="encFincas" placeholder="Fincas (sep. por coma)" style="width:48%; margin-top:8px;">
-          <button onclick="guardarEncargadoConfig()" style="margin-top:10px; width:100%;">💾 Guardar Encargado</button>
+    <!-- Encargados -->
+    <div class="cfg-section" id="cfgSecEncargados">
+      <div class="cfg-section-head" onclick="cfgToggle('cfgSecEncargados')">
+        <h3>👥 Encargados (Pistoleo) <span class="cfg-count" id="cfgCountEncargados"></span></h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('encargado')">＋ Nuevo encargado</button>
+          <span class="cfg-chevron">▶</span>
         </div>
-        <div id="encargadosListConfig" style="max-height: 250px; overflow-y: auto;"></div>
       </div>
+      <div class="cfg-section-body">
+        <div class="cfg-toolbar">
+          <input type="text" id="searchEncargados" class="cfg-search" placeholder="🔍 Buscar por nombre o email..." oninput="renderEncargadosConfigTable()">
+        </div>
+        <div id="encargadosListConfig" class="cfg-table-wrap"></div>
+      </div>
+    </div>
 
-      <!-- Gestión Operarios -->
-      <div class="card" style="background:var(--card);">
-        <div class="card-header"><div class="order-id">👷 Gestión de Operarios (Faena)</div></div>
-        <div style="margin-bottom: 10px;">
-          <input type="text" id="opNombre" placeholder="Nombre" style="width:48%; margin-right:2%;">
-          <input type="text" id="opApellidos" placeholder="Apellidos" style="width:48%;">
-          <input type="text" id="opEmail" placeholder="Email / Usuario" style="width:48%; margin-top:8px; margin-right:2%;">
-          <input type="password" id="opPass" placeholder="Contraseña" style="width:48%; margin-top:8px;">
-          <button onclick="guardarOperarioConfig()" style="margin-top:10px; width:100%;">💾 Guardar Operario</button>
+    <!-- Operarios -->
+    <div class="cfg-section" id="cfgSecOperarios">
+      <div class="cfg-section-head" onclick="cfgToggle('cfgSecOperarios')">
+        <h3>👷 Operarios (Faena) <span class="cfg-count" id="cfgCountOperarios"></span></h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('operario')">＋ Nuevo operario</button>
+          <span class="cfg-chevron">▶</span>
         </div>
-        <div id="operariosListConfig" style="max-height: 250px; overflow-y: auto;"></div>
       </div>
+      <div class="cfg-section-body">
+        <div class="cfg-toolbar">
+          <input type="text" id="searchOperarios" class="cfg-search" placeholder="🔍 Buscar por nombre, email o maquinaria..." oninput="renderOperariosConfigTable()">
+        </div>
+        <div id="operariosListConfig" class="cfg-table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- Fincas -->
+    <div class="cfg-section" id="cfgSecFincas">
+      <div class="cfg-section-head" onclick="cfgToggle('cfgSecFincas')">
+        <h3>📍 Fincas <span class="cfg-count" id="cfgCountFincas"></span></h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openFincaModal()">＋ Nueva finca</button>
+          <span class="cfg-chevron">▶</span>
+        </div>
+      </div>
+      <div class="cfg-section-body">
+        <div class="cfg-toolbar">
+          <input type="text" id="searchFincasCfg" class="cfg-search" placeholder="🔍 Buscar finca..." oninput="renderFincasConfigTable()">
+        </div>
+        <div id="fincasListConfig" class="cfg-table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- Maquinaria -->
+    <div class="cfg-section" id="cfgSecMaquinarias">
+      <div class="cfg-section-head" onclick="cfgToggle('cfgSecMaquinarias')">
+        <h3>🚜 Maquinaria <span class="cfg-count" id="cfgCountMaquinarias"></span></h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openMaquinariaModal()">＋ Nueva maquinaria</button>
+          <span class="cfg-chevron">▶</span>
+        </div>
+      </div>
+      <div class="cfg-section-body">
+        <p style="font-size:0.76rem; color:var(--mut); margin-bottom:10px;">Catálogo de tipos de maquinaria que puede llevar un operario de carga. Se usará para activar el <b>modo ayuda</b> en el acopio.</p>
+        <div class="cfg-toolbar">
+          <input type="text" id="searchMaquinarias" class="cfg-search" placeholder="🔍 Buscar por nombre, familia o descripción..." oninput="renderMaquinariasConfigTable()">
+        </div>
+        <div id="maquinariasListConfig" class="cfg-table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- Familias de maquinaria -->
+    <div class="cfg-section" id="cfgSecFamilias">
+      <div class="cfg-section-head" onclick="cfgToggle('cfgSecFamilias')">
+        <h3>🧩 Familias de Maquinaria <span class="cfg-count" id="cfgCountFamilias"></span></h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openFamiliaModal()">＋ Nueva familia</button>
+          <span class="cfg-chevron">▶</span>
+        </div>
+      </div>
+      <div class="cfg-section-body">
+        <p style="font-size:0.76rem; color:var(--mut); margin-bottom:10px;">Agrupación de la maquinaria por familia (p. ej.: Tractores, Transpaletas, Remolques). Cada maquinaria pertenece a una familia.</p>
+        <div class="cfg-toolbar">
+          <input type="text" id="searchFamilias" class="cfg-search" placeholder="🔍 Buscar familia..." oninput="renderFamiliasConfigTable()">
+        </div>
+        <div id="familiasListConfig" class="cfg-table-wrap"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal profesional: Encargado / Operario -->
+<div class="modal" id="personModal">
+  <div class="modal-content modern">
+    <div class="mform-head">
+      <div><h2 id="personModalTitle">Nuevo</h2><p id="personModalSub"></p></div>
+      <button class="close-btn" onclick="closeModal('personModal')">✕</button>
+    </div>
+    <div class="mform-body">
+      <input type="hidden" id="pmTipo" value="">
+      <input type="hidden" id="pmOriginalEmail" value="">
+      <div class="field-row">
+        <div class="field"><label for="pmNombre">Nombre *</label><input type="text" id="pmNombre" placeholder="Ej.: Juan"></div>
+        <div class="field"><label for="pmApellidos">Apellidos</label><input type="text" id="pmApellidos" placeholder="Ej.: García Pérez"></div>
+      </div>
+      <div class="field"><label for="pmEmail">Email / Usuario *</label><input type="email" id="pmEmail" placeholder="nombre@viveros.com" autocomplete="off"></div>
+      <div class="field"><label for="pmPass">Contraseña <span id="pmPassHint" style="text-transform:none; letter-spacing:0; color:var(--mut); font-weight:400;"></span></label>
+        <div class="pwd-wrap"><input type="password" id="pmPass" placeholder="••••••••" autocomplete="new-password"><button type="button" class="eye-btn" onclick="togglePwd('pmPass', this)" title="Mostrar / ocultar contraseña">👁️</button></div>
+      </div>
+      <div class="field"><label>Fincas asignadas</label><div class="chips-select" id="pmFincas"></div></div>
+      <div class="field" id="pmMaquinariaField"><label>Maquinaria que lleva</label><div class="chips-select" id="pmMaquinaria"></div></div>
+      <div class="field-row">
+        <div class="field" id="pmRolField"><label for="pmRol">Rol</label>
+          <select id="pmRol"><option value="ENCARGADO">Encargado</option><option value="SUPERUSUARIO">Superusuario</option></select>
+        </div>
+        <div class="field"><label>Estado</label>
+          <select id="pmActivo"><option value="true">Activo</option><option value="false">Dado de baja</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="mform-foot">
+      <button class="btn-sec" onclick="closeModal('personModal')">Cancelar</button>
+      <button class="btn-primary-modern" onclick="guardarPersonModal()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal profesional: Finca -->
+<div class="modal" id="fincaModal">
+  <div class="modal-content modern" style="max-width:460px;">
+    <div class="mform-head">
+      <div><h2 id="fincaModalTitle">Nueva finca</h2><p>Las fincas automáticas provienen de PEDIDOS y solo pueden ocultarse.</p></div>
+      <button class="close-btn" onclick="closeModal('fincaModal')">✕</button>
+    </div>
+    <div class="mform-body">
+      <input type="hidden" id="fmOriginal" value="">
+      <div class="field"><label for="fmNombreReal">Finca (valor real del ERP) *</label><input type="text" id="fmNombreReal" placeholder="Ej.: LA FABRICA"></div>
+      <div class="field"><label for="fmNombreMostrar">Nombre mostrado</label><input type="text" id="fmNombreMostrar" placeholder="Opcional: nombre amigable"></div>
+      <div class="field"><label>Estado</label>
+        <select id="fmActivo"><option value="true">Visible</option><option value="false">Oculta</option></select>
+      </div>
+    </div>
+    <div class="mform-foot">
+      <button class="btn-sec" onclick="closeModal('fincaModal')">Cancelar</button>
+      <button class="btn-primary-modern" onclick="guardarFincaModal()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal profesional: Maquinaria -->
+<div class="modal" id="maquinariaModal">
+  <div class="modal-content modern" style="max-width:460px;">
+    <div class="mform-head">
+      <div><h2 id="maquinariaModalTitle">Nueva maquinaria</h2><p>Tipo de maquinaria de carga del operario.</p></div>
+      <button class="close-btn" onclick="closeModal('maquinariaModal')">✕</button>
+    </div>
+    <div class="mform-body">
+      <input type="hidden" id="mmId" value="">
+      <div class="field"><label for="mmNombre">Nombre *</label><input type="text" id="mmNombre" placeholder="Ej.: Tractor con jaula"></div>
+      <div class="field"><label for="mmFamilia">Familia</label><select id="mmFamilia"><option value="">— Sin familia —</option></select></div>
+      <div class="field"><label for="mmDescripcion">Descripción</label><input type="text" id="mmDescripcion" placeholder="Opcional"></div>
+      <div class="field"><label>Estado</label>
+        <select id="mmActivo"><option value="true">Activa</option><option value="false">Inactiva</option></select>
+      </div>
+    </div>
+    <div class="mform-foot">
+      <button class="btn-sec" onclick="closeModal('maquinariaModal')">Cancelar</button>
+      <button class="btn-primary-modern" onclick="guardarMaquinariaModal()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal profesional: Familia de maquinaria -->
+<div class="modal" id="familiaModal">
+  <div class="modal-content modern" style="max-width:460px;">
+    <div class="mform-head">
+      <div><h2 id="familiaModalTitle">Nueva familia</h2><p>Agrupa tipos de maquinaria (p. ej.: Tractores, Transpaletas).</p></div>
+      <button class="close-btn" onclick="closeModal('familiaModal')">✕</button>
+    </div>
+    <div class="mform-body">
+      <input type="hidden" id="famId" value="">
+      <div class="field"><label for="famNombre">Nombre *</label><input type="text" id="famNombre" placeholder="Ej.: Tractores"></div>
+      <div class="field"><label for="famDescripcion">Descripción</label><input type="text" id="famDescripcion" placeholder="Opcional"></div>
+      <div class="field"><label>Estado</label>
+        <select id="famActivo"><option value="true">Activa</option><option value="false">Inactiva</option></select>
+      </div>
+    </div>
+    <div class="mform-foot">
+      <button class="btn-sec" onclick="closeModal('familiaModal')">Cancelar</button>
+      <button class="btn-primary-modern" onclick="guardarFamiliaModal()">💾 Guardar</button>
     </div>
   </div>
 </div>
@@ -218,7 +471,9 @@
     <div id="modalAlerts"></div>
     <div id="modalBody"></div>
     <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
-      <button id="btnVerPunteoModal" onclick="" style="background:var(--lime); color:#062325;">👁️ Ver Informe Punteo (HTML)</button>
+      <button id="btnVerPunteoModal" onclick="" style="background:var(--lime); color:#062325;">📄 Punteo</button>
+      <button id="btnVerDetalleModal" onclick="" class="btn-sec">📋 Detalle Pistoleo</button>
+      <button id="btnVerControlModal" onclick="" class="btn-sec">📊 Control Acopio</button>
       <a id="btnDescargarPdfModal" href="#" target="_blank" class="button" style="text-decoration:none; padding:8px 14px; font-weight:700; border-radius:8px; font-size:0.88rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); display:inline-block;">⬇️ Descargar PDF</a>
       <button onclick="closeModal('orderModal')" class="btn-sec">Cerrar</button>
     </div>
@@ -231,6 +486,7 @@
     <div class="modal-header">
       <h2 id="previewTitle">Vista Previa del Informe</h2>
       <div style="display:flex; gap:8px; align-items:center;">
+        <button onclick="volverADetallePedido()" style="padding:6px 12px; font-size:0.82rem;">← Volver</button>
         <button onclick="printPreviewFrame()" style="padding:6px 12px; font-size:0.82rem;">🖨️ Imprimir</button>
         <a id="previewPdfLink" href="#" target="_blank" style="text-decoration:none; padding:6px 12px; font-size:0.82rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); border-radius:8px; font-weight:700; display:inline-block;">⬇️ Descargar PDF</a>
         <button class="close-btn" onclick="closeModal('previewModal')">✕</button>
@@ -274,7 +530,7 @@
   let fechasData = [];
   let selectedDate = null;
   let currentView = 'pedidos';
-  let filterEstado = 'activos';
+  let filterEstado = 'todos';
   let etiquetasDiaData = null;
 
   let historicoFechasData = [];
@@ -290,6 +546,7 @@
     else if (currentView === 'etiquetas') { loadEtiquetasDia(); }
     else if (currentView === 'historico') { loadHistoricoFechas(); }
     else if (currentView === 'reparto') { renderReparto(); }
+    else if (currentView === 'carga') { loadCarga(); }
   }
 
   function switchView(v) {
@@ -298,23 +555,68 @@
     document.getElementById('tabEtiquetas').className = 'nav-tab' + (v === 'etiquetas' ? ' active' : '');
     document.getElementById('tabHistorico').className = 'nav-tab' + (v === 'historico' ? ' active' : '');
     document.getElementById('tabReparto').className = 'nav-tab' + (v === 'reparto' ? ' active' : '');
+    document.getElementById('tabCarga').className = 'nav-tab' + (v === 'carga' ? ' active' : '');
     document.getElementById('tabConfig').className = 'nav-tab' + (v === 'config' ? ' active' : '');
 
     document.getElementById('viewPedidos').style.display = v === 'pedidos' ? '' : 'none';
     document.getElementById('viewEtiquetas').style.display = v === 'etiquetas' ? '' : 'none';
     document.getElementById('viewHistorico').style.display = v === 'historico' ? '' : 'none';
     document.getElementById('viewReparto').style.display = v === 'reparto' ? '' : 'none';
+    document.getElementById('viewCarga').style.display = v === 'carga' ? '' : 'none';
     document.getElementById('viewConfig').style.display = v === 'config' ? '' : 'none';
 
     if (v === 'pedidos') loadOrders();
     else if (v === 'etiquetas') loadEtiquetasDia();
     else if (v === 'historico') loadHistoricoFechas();
     else if (v === 'reparto') renderReparto();
+    else if (v === 'carga') loadCarga();
     else if (v === 'config') renderConfigView();
   }
 
   let encargadosList = [];
   let operariosList = [];
+  let fincasCfgList = [];
+  let maquinariasList = [];
+
+  function togglePwd(inputId, btn) {
+    const inp = document.getElementById(inputId);
+    if (!inp) return;
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+    if (btn) btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
+  }
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  async function loadFincasCfg() {
+    try {
+      const res = await fetch(`/api/fincas/gestion?k=${MANAGER_KEY}`);
+      if (res.ok) fincasCfgList = (await res.json()).fincas || [];
+    } catch (e) { console.error("Error cargando fincas", e); }
+  }
+
+  async function loadMaquinarias() {
+    try {
+      const res = await fetch(`/api/manager/maquinarias?k=${MANAGER_KEY}`);
+      if (res.ok) maquinariasList = (await res.json()).maquinarias || [];
+    } catch (e) { console.error("Error cargando maquinarias", e); }
+  }
+
+  let familiasList = [];
+
+  async function loadFamilias() {
+    try {
+      const res = await fetch(`/api/manager/maquinarias-familias?k=${MANAGER_KEY}`);
+      if (res.ok) familiasList = (await res.json()).familias || [];
+    } catch (e) { console.error("Error cargando familias", e); }
+  }
+
+  function initials(nombre, apellidos) {
+    const a = (nombre || '?').trim()[0] || '?';
+    const b = (apellidos || '').trim()[0] || '';
+    return (a + b).toUpperCase();
+  }
 
   async function loadEncargados() {
     try {
@@ -340,69 +642,233 @@
     }
   }
 
-  function formatDateDDMMYYYY(isoStr) {
-    if (!isoStr) return '';
-    const clean = isoStr.split('T')[0];
-    const parts = clean.split('-');
-    if (parts.length === 3) {
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-    return isoStr;
-  }
-
   async function renderConfigView() {
-    await loadEncargados();
-    await loadOperarios();
+    await Promise.all([loadEncargados(), loadOperarios(), loadFincasCfg(), loadMaquinarias(), loadFamilias()]);
     renderEncargadosConfigTable();
     renderOperariosConfigTable();
+    renderFincasConfigTable();
+    renderMaquinariasConfigTable();
+    renderFamiliasConfigTable();
+  }
+
+  function cfgToggle(id) {
+    const sec = document.getElementById(id);
+    if (sec) sec.classList.toggle('open');
+  }
+
+  function setCfgCount(elId, n) {
+    const el = document.getElementById(elId);
+    if (el) el.textContent = n ? `(${n})` : '';
   }
 
   function renderEncargadosConfigTable() {
     const cont = document.getElementById('encargadosListConfig');
     if (!cont) return;
-    let html = '<table><thead><tr><th>Nombre</th><th>Email</th><th>Acción</th></tr></thead><tbody>';
-    encargadosList.forEach(e => {
-      html += `<tr><td><b>${e.nombre}</b></td><td style="font-size:0.75rem; color:var(--mut);">${e.email}</td><td><button class="btn-sec" onclick="eliminarEncargado('${e.email}')" style="padding:2px 6px; font-size:0.7rem;">🗑️</button></td></tr>`;
+    const q = (document.getElementById('searchEncargados')?.value || '').toLowerCase();
+    const lista = encargadosList.filter(e =>
+      !q || `${e.nombre} ${e.apellidos || ''} ${e.email}`.toLowerCase().includes(q));
+    setCfgCount('cfgCountEncargados', lista.length);
+    if (!lista.length) {
+      cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin encargados que coincidan.</div>';
+      return;
+    }
+    let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Fincas</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
+    lista.forEach(e => {
+      html += `<tr>
+        <td><div class="person-cell"><span class="avatar">${escHtml(initials(e.nombre, e.apellidos))}</span><div><b>${escHtml(e.nombre)}</b> <span style="color:var(--mut);">${escHtml(e.apellidos || '')}</span></div></div></td>
+        <td style="font-size:0.78rem; color:var(--mut);">${escHtml(e.email)}</td>
+        <td style="font-size:0.72rem; max-width:180px;">${escHtml((e.fincas_carga || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
+        <td><span class="pill ${e.activo !== false ? 'pill-ok' : 'pill-off'}">${e.activo !== false ? 'Activo' : 'Baja'}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="icon-btn" onclick='openPersonModal("encargado", ${JSON.stringify(JSON.stringify(e))})' title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarEncargado('${escHtml(e.email)}', '${escHtml(e.nombre)}')" title="Dar de baja / eliminar">🗑️</button>
+        </td>
+      </tr>`;
     });
-    html += '</tbody></table>';
-    cont.innerHTML = html;
+    cont.innerHTML = html + '</tbody></table>';
   }
 
   function renderOperariosConfigTable() {
     const cont = document.getElementById('operariosListConfig');
     if (!cont) return;
-    let html = '<table><thead><tr><th>Nombre</th><th>Email</th><th>Acción</th></tr></thead><tbody>';
-    operariosList.forEach(op => {
-      html += `<tr><td><b>${op.nombre} ${op.apellidos || ''}</b></td><td style="font-size:0.75rem; color:var(--mut);">${op.email}</td><td><button class="btn-sec" onclick="eliminarOperario('${op.email}')" style="padding:2px 6px; font-size:0.7rem;">🗑️</button></td></tr>`;
+    const q = (document.getElementById('searchOperarios')?.value || '').toLowerCase();
+    const lista = operariosList.filter(o =>
+      !q || `${o.nombre} ${o.apellidos || ''} ${o.email} ${o.maquinaria || ''}`.toLowerCase().includes(q));
+    setCfgCount('cfgCountOperarios', lista.length);
+    if (!lista.length) {
+      cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin operarios que coincidan.</div>';
+      return;
+    }
+    let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Maquinaria</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
+    lista.forEach(op => {
+      html += `<tr>
+        <td><div class="person-cell"><span class="avatar">${escHtml(initials(op.nombre, op.apellidos))}</span><div><b>${escHtml(op.nombre)}</b> <span style="color:var(--mut);">${escHtml(op.apellidos || '')}</span></div></div></td>
+        <td style="font-size:0.78rem; color:var(--mut);">${escHtml(op.email)}</td>
+        <td style="font-size:0.72rem; max-width:160px;">${escHtml((op.maquinaria || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
+        <td><span class="pill ${op.activo !== false ? 'pill-ok' : 'pill-off'}">${op.activo !== false ? 'Activo' : 'Baja'}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="icon-btn" onclick='openPersonModal("operario", ${JSON.stringify(JSON.stringify(op))})' title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarOperario('${escHtml(op.email)}', '${escHtml(op.nombre)}')" title="Eliminar">🗑️</button>
+        </td>
+      </tr>`;
     });
-    html += '</tbody></table>';
-    cont.innerHTML = html;
+    cont.innerHTML = html + '</tbody></table>';
   }
 
-  async function guardarEncargadoConfig() {
-    const nombre = document.getElementById('encNombre').value.trim();
-    const email = document.getElementById('encEmail').value.trim();
-    const password = document.getElementById('encPass').value.trim();
-    const fincas_carga = document.getElementById('encFincas').value.trim();
-    if (!nombre || !email) {
-      alert("Nombre y Email son obligatorios");
+  function renderFincasConfigTable() {
+    const cont = document.getElementById('fincasListConfig');
+    if (!cont) return;
+    const q = (document.getElementById('searchFincasCfg')?.value || '').toLowerCase();
+    const lista = fincasCfgList.filter(f => !q || `${f.finca} ${f.nombre}`.toLowerCase().includes(q));
+    if (!lista.length) {
+      cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin fincas que coincidan.</div>';
       return;
     }
+    let html = '<table class="cfg-table"><thead><tr><th>Finca</th><th>Nombre mostrado</th><th>Tipo</th><th>Estado</th><th style="width:120px;">Acciones</th></tr></thead><tbody>';
+    lista.forEach(f => {
+      html += `<tr>
+        <td><b>${escHtml(f.finca)}</b></td>
+        <td style="color:var(--blue);">${escHtml(f.nombre || f.finca)}</td>
+        <td><span class="pill">${f.manual ? 'Manual' : 'Auto (pedidos)'}</span></td>
+        <td><span class="pill ${f.oculto ? 'pill-off' : 'pill-ok'}">${f.oculto ? 'Oculta' : 'Visible'}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="icon-btn" onclick='openFincaModal(${JSON.stringify(JSON.stringify(f))})' title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarFincaCfg('${escHtml(f.finca)}')" title="${f.manual ? 'Eliminar' : 'Ocultar'}">${f.manual ? '🗑️' : '🙈'}</button>
+        </td>
+      </tr>`;
+    });
+    cont.innerHTML = html + '</tbody></table>';
+    setCfgCount('cfgCountFincas', lista.length);
+  }
+
+  function renderMaquinariasConfigTable() {
+    const cont = document.getElementById('maquinariasListConfig');
+    if (!cont) return;
+    const q = (document.getElementById('searchMaquinarias')?.value || '').toLowerCase();
+    const lista = maquinariasList.filter(m => !q || `${m.nombre} ${m.descripcion} ${m.familia || ''}`.toLowerCase().includes(q));
+    setCfgCount('cfgCountMaquinarias', lista.length);
+    if (!lista.length) {
+      cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin maquinaria dada de alta todavía.</div>';
+      return;
+    }
+    let html = '<table class="cfg-table"><thead><tr><th style="width:22%;">Nombre</th><th style="width:18%;">Familia</th><th>Descripción</th><th style="width:12%;">Estado</th><th style="width:110px;">Acciones</th></tr></thead><tbody>';
+    lista.forEach(m => {
+      html += `<tr>
+        <td><b>${escHtml(m.nombre)}</b></td>
+        <td>${m.familia ? `<span class="pill">${escHtml(m.familia)}</span>` : '<span style="color:var(--mut);">—</span>'}</td>
+        <td style="font-size:0.76rem; color:var(--mut);">${escHtml(m.descripcion || '—')}</td>
+        <td><span class="pill ${m.activo !== false ? 'pill-ok' : 'pill-off'}">${m.activo !== false ? 'Activa' : 'Inactiva'}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="icon-btn" onclick='openMaquinariaModal(${JSON.stringify(JSON.stringify(m))})' title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarMaquinaria('${escHtml(m.id)}', '${escHtml(m.nombre)}')" title="Eliminar">🗑️</button>
+        </td>
+      </tr>`;
+    });
+    cont.innerHTML = html + '</tbody></table>';
+  }
+
+  function renderFamiliasConfigTable() {
+    const cont = document.getElementById('familiasListConfig');
+    if (!cont) return;
+    const q = (document.getElementById('searchFamilias')?.value || '').toLowerCase();
+    const lista = familiasList.filter(f => !q || `${f.nombre} ${f.descripcion}`.toLowerCase().includes(q));
+    setCfgCount('cfgCountFamilias', lista.length);
+    if (!lista.length) {
+      cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin familias dadas de alta todavía.</div>';
+      return;
+    }
+    let html = '<table class="cfg-table"><thead><tr><th style="width:26%;">Nombre</th><th>Descripción</th><th style="width:16%;">Maquinarias</th><th style="width:12%;">Estado</th><th style="width:110px;">Acciones</th></tr></thead><tbody>';
+    lista.forEach(f => {
+      const nMq = maquinariasList.filter(m => m.familia === f.nombre).length;
+      html += `<tr>
+        <td><b>${escHtml(f.nombre)}</b></td>
+        <td style="font-size:0.76rem; color:var(--mut);">${escHtml(f.descripcion || '—')}</td>
+        <td><span class="pill">${nMq} maq.</span></td>
+        <td><span class="pill ${f.activo !== false ? 'pill-ok' : 'pill-off'}">${f.activo !== false ? 'Activa' : 'Inactiva'}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="icon-btn" onclick='openFamiliaModal(${JSON.stringify(JSON.stringify(f))})' title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarFamilia('${escHtml(f.id)}', '${escHtml(f.nombre)}')" title="Eliminar">🗑️</button>
+        </td>
+      </tr>`;
+    });
+    cont.innerHTML = html + '</tbody></table>';
+  }
+
+  // ===== Modal persona (encargado / operario) =====
+  function chipsSelect(containerId, items, seleccionadas) {
+    const cont = document.getElementById(containerId);
+    const sel = new Set(seleccionadas.map(s => s.trim()).filter(Boolean));
+    cont.innerHTML = items.length
+      ? items.map(v => `<span class="chip-sel${sel.has(v) ? ' on' : ''}" data-val="${escHtml(v)}" onclick="this.classList.toggle('on'); this.dataset.on=this.classList.contains('on');">${escHtml(v)}</span>`).join('')
+      : '<span style="color:var(--mut); font-size:0.78rem;">No hay elementos dados de alta.</span>';
+  }
+
+  function chipsSelected(containerId) {
+    return [...document.querySelectorAll(`#${containerId} .chip-sel.on`)].map(el => el.dataset.val);
+  }
+
+  async function openPersonModal(tipo, dataJson) {
+    const data = dataJson ? JSON.parse(dataJson) : null;
+    document.getElementById('pmTipo').value = tipo;
+    document.getElementById('pmOriginalEmail').value = data?.email || '';
+    document.getElementById('pmNombre').value = data?.nombre || '';
+    document.getElementById('pmApellidos').value = data?.apellidos || '';
+    document.getElementById('pmEmail').value = data?.email || '';
+    document.getElementById('pmPass').value = '';
+    document.getElementById('pmPass').type = 'password';
+    document.getElementById('pmRol').value = data?.rol && data.rol !== 'ENCARGADO' ? data.rol : 'ENCARGADO';
+    document.getElementById('pmActivo').value = data ? String(data.activo !== false) : 'true';
+    document.getElementById('personModalTitle').textContent = tipo === 'encargado'
+      ? (data ? `Editar encargado — ${data.nombre}` : 'Nuevo encargado')
+      : (data ? `Editar operario — ${data.nombre}` : 'Nuevo operario');
+    document.getElementById('personModalSub').textContent = tipo === 'encargado'
+      ? 'Empleado con acceso a la app de pistoleo.'
+      : 'Trabajador de carga al que se le reparte faena.';
+    document.getElementById('pmPassHint').textContent = data ? '(vacío = no cambia)' : '(vacío = por defecto "1234")';
+    const esOp = tipo === 'operario';
+    document.getElementById('pmMaquinariaField').style.display = esOp ? '' : 'none';
+    document.getElementById('pmRolField').style.display = esOp ? 'none' : '';
+    const nombresFinca = fincasCfgList.filter(f => !f.oculto).map(f => f.nombre || f.finca);
+    chipsSelect('pmFincas', nombresFinca, (data?.fincas_carga || '').split(','));
+    chipsSelect('pmMaquinaria', maquinariasList.filter(m => m.activo !== false).map(m => m.nombre), (data?.maquinaria || '').split(','));
+    document.getElementById('personModal').classList.add('open');
+  }
+
+  async function guardarPersonModal() {
+    const tipo = document.getElementById('pmTipo').value;
+    const nombre = document.getElementById('pmNombre').value.trim();
+    const apellidos = document.getElementById('pmApellidos').value.trim();
+    const emailOriginal = document.getElementById('pmOriginalEmail').value.trim();
+    const email = document.getElementById('pmEmail').value.trim();
+    const password = document.getElementById('pmPass').value.trim();
+    const activo = document.getElementById('pmActivo').value === 'true';
+    const fincas = chipsSelected('pmFincas').join(', ');
+    if (!nombre || !email) { alert("Nombre y Email son obligatorios"); return; }
     try {
-      const res = await fetch(`/api/encargados/gestion?k=${MANAGER_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, email, password, fincas_carga, activo: true })
-      });
+      let res;
+      if (tipo === 'encargado') {
+        res = await fetch(`/api/encargados/gestion?k=${MANAGER_KEY}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: emailOriginal || undefined, nombre, apellidos, email, password,
+            fincas_carga: fincas, rol: document.getElementById('pmRol').value, activo
+          })
+        });
+      } else {
+        res = await fetch(`/api/operarios?k=${MANAGER_KEY}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email, nombre, apellidos, password, fincas_carga: fincas,
+            maquinaria: chipsSelected('pmMaquinaria').join(', '), activo
+          })
+        });
+      }
       if (res.ok) {
-        alert("Encargado guardado correctamente");
-        document.getElementById('encNombre').value = '';
-        document.getElementById('encEmail').value = '';
-        document.getElementById('encPass').value = '';
-        document.getElementById('encFincas').value = '';
+        closeModal('personModal');
         renderConfigView();
       } else {
-        alert("Error al guardar encargado");
+        const err = await res.text();
+        alert("Error al guardar: " + err);
       }
     } catch (e) {
       console.error(e);
@@ -410,44 +876,165 @@
     }
   }
 
-  async function guardarOperarioConfig() {
-    const nombre = document.getElementById('opNombre').value.trim();
-    const apellidos = document.getElementById('opApellidos').value.trim();
-    const email = document.getElementById('opEmail').value.trim();
-    const password = document.getElementById('opPass').value.trim();
-    if (!nombre || !email) {
-      alert("Nombre y Email son obligatorios");
-      return;
-    }
+  // ===== Modal finca =====
+  function openFincaModal(dataJson) {
+    const f = dataJson ? JSON.parse(dataJson) : null;
+    document.getElementById('fmOriginal').value = f?.finca || '';
+    document.getElementById('fmNombreReal').value = f?.finca || '';
+    document.getElementById('fmNombreReal').disabled = !!f;
+    document.getElementById('fmNombreMostrar').value = (f && f.nombre !== f.finca) ? (f.nombre || '') : '';
+    document.getElementById('fmActivo').value = f ? String(!f.oculto) : 'true';
+    document.getElementById('fincaModalTitle').textContent = f ? `Editar finca — ${f.finca}` : 'Nueva finca';
+    document.getElementById('fincaModal').classList.add('open');
+  }
+
+  async function guardarFincaModal() {
+    const original = document.getElementById('fmOriginal').value.trim();
+    const finca = (document.getElementById('fmNombreReal').value || original).trim();
+    const nombreMostrar = document.getElementById('fmNombreMostrar').value.trim();
+    const activo = document.getElementById('fmActivo').value === 'true';
+    if (!finca) { alert("Indica el nombre de la finca"); return; }
     try {
-      const res = await fetch(`/api/operarios?k=${MANAGER_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, apellidos, email, password, activo: true })
+      const res = await fetch(`/api/fincas?k=${MANAGER_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ finca, nombre: nombreMostrar || null, activo })
       });
-      if (res.ok) {
-        alert("Operario guardado correctamente");
-        document.getElementById('opNombre').value = '';
-        document.getElementById('opApellidos').value = '';
-        document.getElementById('opEmail').value = '';
-        document.getElementById('opPass').value = '';
-        renderConfigView();
-      } else {
-        alert("Error al guardar operario");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Error de red");
+      if (res.ok) { closeModal('fincaModal'); renderConfigView(); }
+      else alert("Error al guardar la finca");
+    } catch (e) { console.error(e); alert("Error de red"); }
+  }
+
+  async function eliminarFincaCfg(finca) {
+    const f = fincasCfgList.find(x => x.finca === finca);
+    const msg = f && f.manual
+      ? `¿Eliminar definitivamente la finca manual "${finca}"?`
+      : `¿Ocultar la finca "${finca}" para los empleados? Las cargas siguen entrando; podrás volver a mostrarla.`;
+    if (!confirm(msg)) return;
+    try {
+      await fetch(`/api/fincas/eliminar?k=${MANAGER_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ finca })
+      });
+      renderConfigView();
+    } catch (e) { console.error(e); }
+  }
+
+  // ===== Modal maquinaria =====
+  function openMaquinariaModal(dataJson) {
+    const m = dataJson ? JSON.parse(dataJson) : null;
+    document.getElementById('mmId').value = m?.id || '';
+    document.getElementById('mmNombre').value = m?.nombre || '';
+    const selFam = document.getElementById('mmFamilia');
+    selFam.innerHTML = '<option value="">— Sin familia —</option>' +
+      familiasList.filter(f => f.activo !== false).map(f => `<option value="${escHtml(f.nombre)}">${escHtml(f.nombre)}</option>`).join('');
+    selFam.value = m?.familia || '';
+    if (m?.familia && !selFam.value) {
+      const opt = document.createElement('option');
+      opt.value = m.familia; opt.textContent = m.familia + ' (inactiva)';
+      selFam.appendChild(opt); selFam.value = m.familia;
+    }
+    document.getElementById('mmDescripcion').value = m?.descripcion || '';
+    document.getElementById('mmActivo').value = m ? String(m.activo !== false) : 'true';
+    document.getElementById('maquinariaModalTitle').textContent = m ? `Editar maquinaria — ${m.nombre}` : 'Nueva maquinaria';
+    document.getElementById('maquinariaModal').classList.add('open');
+  }
+
+  async function conEnvioUnico(modalId, fn) {
+    const btn = document.querySelector(`#${modalId} .mform-foot .btn-primary-modern`);
+    if (btn && btn.disabled) return;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
+    try { await fn(); }
+    finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
     }
   }
 
-  async function eliminarEncargado(email) {
-    if (!confirm(`¿Dar de baja al encargado ${email}?`)) return;
+  async function guardarMaquinariaModal() {
+    await conEnvioUnico('maquinariaModal', async () => {
+    const id = document.getElementById('mmId').value.trim();
+    const nombre = document.getElementById('mmNombre').value.trim();
+    const descripcion = document.getElementById('mmDescripcion').value.trim();
+    const familia = document.getElementById('mmFamilia').value;
+    const activo = document.getElementById('mmActivo').value === 'true';
+    if (!nombre) { alert("Indica el nombre de la maquinaria"); return; }
     try {
+      const res = await fetch(`/api/manager/maquinarias?k=${MANAGER_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id || null, nombre, descripcion, familia, activo })
+      });
+      if (res.ok) { closeModal('maquinariaModal'); renderConfigView(); }
+      else alert("Error al guardar la maquinaria");
+    } catch (e) { console.error(e); alert("Error de red"); }
+    });
+  }
+
+  async function eliminarMaquinaria(id, nombre) {
+    if (!id) return;
+    if (!confirm(`¿Eliminar la maquinaria "${nombre}"?`)) return;
+    try {
+      await fetch(`/api/manager/maquinarias/eliminar?k=${MANAGER_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      renderConfigView();
+    } catch (e) { console.error(e); }
+  }
+
+  // ===== Modal familia de maquinaria =====
+  function openFamiliaModal(dataJson) {
+    const f = dataJson ? JSON.parse(dataJson) : null;
+    document.getElementById('famId').value = f?.id || '';
+    document.getElementById('famNombre').value = f?.nombre || '';
+    document.getElementById('famDescripcion').value = f?.descripcion || '';
+    document.getElementById('famActivo').value = f ? String(f.activo !== false) : 'true';
+    document.getElementById('familiaModalTitle').textContent = f ? `Editar familia — ${f.nombre}` : 'Nueva familia';
+    document.getElementById('familiaModal').classList.add('open');
+  }
+
+  async function guardarFamiliaModal() {
+    await conEnvioUnico('familiaModal', async () => {
+    const id = document.getElementById('famId').value.trim();
+    const nombre = document.getElementById('famNombre').value.trim();
+    const descripcion = document.getElementById('famDescripcion').value.trim();
+    const activo = document.getElementById('famActivo').value === 'true';
+    if (!nombre) { alert("Indica el nombre de la familia"); return; }
+    try {
+      const res = await fetch(`/api/manager/maquinarias-familias?k=${MANAGER_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id || null, nombre, descripcion, activo })
+      });
+      if (res.ok) { closeModal('familiaModal'); renderConfigView(); }
+      else alert("Error al guardar la familia");
+    } catch (e) { console.error(e); alert("Error de red"); }
+    });
+  }
+
+  async function eliminarFamilia(id, nombre) {
+    if (!id) return;
+    const nMq = maquinariasList.filter(m => m.familia === nombre).length;
+    const extra = nMq ? `\n\nHay ${nMq} maquinaria(s) asignada(s) a esta familia; quedarán sin familia.` : '';
+    if (!confirm(`¿Eliminar la familia "${nombre}"?${extra}`)) return;
+    try {
+      await fetch(`/api/manager/maquinarias-familias/eliminar?k=${MANAGER_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      renderConfigView();
+    } catch (e) { console.error(e); }
+  }
+
+  async function eliminarEncargado(email, nombre) {
+    if (!confirm(`¿Qué hacer con el encargado ${nombre}?\n\nAceptar = dar de baja (conserva histórico)\nNo hay tercera opción: para reactivarlo usa Editar → Activo.`)) return;
+    try {
+      const enc = encargadosList.find(e => e.email === email);
       await fetch(`/api/encargados/gestion?k=${MANAGER_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre: email, email, activo: false })
+        body: JSON.stringify({
+          nombre: enc?.nombre || email,
+          apellidos: enc?.apellidos || '',
+          email, activo: false
+        })
       });
       renderConfigView();
     } catch (e) {
@@ -455,8 +1042,8 @@
     }
   }
 
-  async function eliminarOperario(email) {
-    if (!confirm(`¿Eliminar al operario ${email}?`)) return;
+  async function eliminarOperario(email, nombre) {
+    if (!confirm(`¿Eliminar definitivamente al operario ${nombre} (${email})?`)) return;
     try {
       await fetch(`/api/operarios/eliminar?k=${MANAGER_KEY}`, {
         method: 'POST',
@@ -469,21 +1056,79 @@
     }
   }
 
+  function formatDateDDMMYYYY(isoStr) {
+    if (!isoStr) return '';
+    const clean = isoStr.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return isoStr;
+  }
+
+
+  // ===== D-73: mensajes sin leer (localStorage + actividad del chat) =====
+  const LECTURAS_KEY = 'pickingve_panel_lecturas';
+  let unreadMap = {}; // clave "pedido" o "pedido|linea" -> ultimo mensaje ajeno a oficina
+
+  function getLecturas() {
+    try { return JSON.parse(localStorage.getItem(LECTURAS_KEY) || '{}'); } catch (e) { return {}; }
+  }
+
+  function marcarLeido(clave) {
+    const lecturas = getLecturas();
+    lecturas[clave] = new Date().toISOString();
+    localStorage.setItem(LECTURAS_KEY, JSON.stringify(lecturas));
+    document.querySelectorAll(`[data-unread-key="${CSS.escape(clave)}"]`).forEach(el => el.classList.remove('btn-msg-unread'));
+  }
+
+  function esSinLeer(pedidoId, lineaHuella) {
+    const clave = lineaHuella ? `${pedidoId}|${lineaHuella}` : pedidoId;
+    const ultimo = unreadMap[clave] || unreadMap[pedidoId];
+    if (!ultimo) return false;
+    const leido = getLecturas()[clave];
+    return !leido || new Date(ultimo) > new Date(leido);
+  }
+
+  async function loadUnread() {
+    try {
+      const res = await fetch(`/api/comentarios/recientes?k=${MANAGER_KEY}`);
+      if (res.ok) {
+        unreadMap = {};
+        ((await res.json()).recientes || []).forEach(r => {
+          const clave = r.linea_huella ? `${r.pedido_id}|${r.linea_huella}` : r.pedido_id;
+          unreadMap[clave] = r.ultimo_mensaje;
+        });
+      }
+    } catch (e) { console.error("Error cargando mensajes recientes", e); }
+  }
+
+  // ===== D-74: cantidades de planta del pedido (excluye refs 99990-99999 / 9999x) =====
+  function esRefControl(ref) {
+    const n = parseInt(ref, 10);
+    return (n >= 99990 && n <= 99999) || String(ref || '').startsWith('9999');
+  }
+
+  function totalesPlanta(o) {
+    const lineas = (o.lineas || []).filter(l => !esRefControl(l.referencia));
+    const solicitada = lineas.reduce((a, l) => a + (l.pendientes || 0), 0);
+    const acopiada = lineas.reduce((a, l) => a + (l.acopiado || 0), 0);
+    const asignada = lineas.filter(l => (l.operarioAsignado || '').trim())
+                           .reduce((a, l) => a + (l.pendientes || 0), 0);
+    return { solicitada, acopiada, asignada };
+  }
+
   async function renderReparto() {
-    if (!encargadosList.length) {
-      await loadEncargados();
-    }
-    if (!operariosList.length) {
-      await loadOperarios();
-    }
+    await loadUnread();
+    if (!operariosList.length) await loadOperarios();
     const dateVal = document.getElementById('filterDateReparto').value || selectedDate;
     document.getElementById('filterDateReparto').value = dateVal;
-    
+
     try {
       const res = await fetch(`/api/manager/orders?fecha=${dateVal}&estado=todos&k=${MANAGER_KEY}`);
       const data = await res.json();
       const orders = data.pedidos || [];
-      
+
       const fincaSel = document.getElementById('filterFincaReparto');
       const currentFinca = fincaSel.value;
       const fincas = [...new Set(orders.map(o => o.finca).filter(Boolean))].sort();
@@ -495,7 +1140,7 @@
 
       const filtered = orders.filter(o => {
         const matchFinca = !fincaFilter || (o.finca || '').toUpperCase() === fincaFilter;
-        const matchSearch = !searchVal || 
+        const matchSearch = !searchVal ||
           (o.numero || '').toLowerCase().includes(searchVal) ||
           (o.cliente || '').toLowerCase().includes(searchVal) ||
           (o.clienteFiscal || '').toLowerCase().includes(searchVal);
@@ -504,33 +1149,201 @@
 
       const container = document.getElementById('repartoContainer');
       if (!filtered.length) {
+        window._repartoOrders = null;
         container.innerHTML = '<div style="text-align: center; color: var(--mut); padding: 40px;">No hay pedidos para esta fecha y filtros de reparto.</div>';
         return;
       }
 
-      let html = '';
-      filtered.forEach(o => {
-        const fiscalName = o.clienteFiscal || o.cliente || 'N/D';
-        const commercialDiff = o.cliente && o.cliente !== o.clienteFiscal ? `<span style="font-style:italic; color:var(--blue); margin-left:6px;">(${o.cliente})</span>` : '';
-        const orderRef = o.referenciaPedido ? `<span style="color:var(--warn); margin-left:10px;">Ref. Pedido: <b>${o.referenciaPedido}</b></span>` : '';
-        const brandHeader = o.marcaPedido ? `<span class="badge b-yellow" style="margin-left:8px;">Marca Pedido: ${o.marcaPedido}</span>` : '';
-        const comercial = o.agente ? `Comercial: <b>${o.agente}</b>` : 'Comercial: N/D';
-        const zone = o.sector || 'N/D';
-        
-        html += `
+      window._repartoOrders = filtered;
+      container.innerHTML = filtered.map(renderPedidoRepartoCard).join('');
+    } catch (e) {
+      console.error(e);
+      document.getElementById('repartoContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar el reparto de faena.</div>';
+    }
+  }
+
+  // ===== D-74: tabla comparativa de carga por operario =====
+  function calcularCargaPorOperario(orders) {
+    const carga = {};
+    operariosList.forEach(op => {
+      if (!op.activo && !(op.nombre in carga)) {
+        carga[op.nombre] = { nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0 };
+      }
+      if (op.activo !== false) {
+        carga[op.nombre] = carga[op.nombre] || { nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0 };
+      }
+    });
+    orders.forEach(o => {
+      (o.lineas || []).forEach(l => {
+        if (esRefControl(l.referencia)) return;
+        const detOps = {};
+        (l.detalleOperarios || '').split(',').forEach(par => {
+          const [nom, cant] = par.split(':');
+          if (nom && nom.trim()) detOps[nom.trim()] = parseInt(cant) || 0;
+        });
+        Object.entries(detOps).forEach(([nom, cant]) => {
+          if (carga[nom]) carga[nom].recogido += cant;
+        });
+        const opAsig = (l.operarioAsignado || '').trim();
+        if (opAsig && carga[opAsig]) {
+          carga[opAsig].asignado += l.pendientes || 0;
+          carga[opAsig].queda += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
+        }
+        const keyLinea = `${o.serie}_${o.numero}`;
+        const cambios = cambiosFaenaPendientes[keyLinea] || {};
+        Object.entries(cambios).forEach(([posicion, nuevoOp]) => {
+          if (String(l.posicion) === String(posicion) && nuevoOp && carga[nuevoOp]) {
+            carga[nuevoOp].preasignado += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
+          }
+        });
+      });
+    });
+    return Object.values(carga).sort((a, b) => b.asignado - a.asignado);
+  }
+
+  function renderTablaCargaOperarios(orders) {
+    const filas = calcularCargaPorOperariosWrapper(orders);
+    if (!filas.length) {
+      return `<div class="carga-box"><h3>⚖️ Carga por Operario</h3>
+        <p style="color:var(--mut); font-size:0.82rem;">No hay operarios activos dados de alta en Configuración.</p></div>`;
+    }
+    const maxQueda = Math.max(1, ...filas.map(f => f.queda));
+    let html = `<div class="carga-box"><h3>⚖️ Carga por Operario <span style="font-weight:400; color:var(--mut); font-size:0.78rem;">— comparativa para valorar reasignaciones antes de guardar</span></h3>
+      <table class="carga-table">
+        <thead><tr>
+          <th>Operario</th><th>Maquinaria</th><th style="text-align:right;">Asignado</th><th style="text-align:right;">Recogido</th>
+          <th style="text-align:right;">Queda por acopiar</th><th style="text-align:right;">Preasignado*</th><th>Equilibrio</th>
+        </tr></thead><tbody>`;
+    filas.forEach(f => {
+      const sobrecargado = f.queda >= maxQueda * 0.75 && f.queda > 0;
+      html += `<tr style="${sobrecargado ? 'background:rgba(224,90,78,0.07);' : ''}">
+        <td><b>${escHtml(f.nombre)}</b></td>
+        <td style="font-size:0.74rem; color:var(--mut);">${escHtml(f.maquinaria || '—')}</td>
+        <td class="carga-num" style="text-align:right;">${f.asignado}</td>
+        <td class="carga-num" style="text-align:right; color:var(--lime);">${f.recogido}</td>
+        <td class="carga-num ${sobrecargado ? 'sobrecarga' : ''}" style="text-align:right;">${f.queda}${sobrecargado ? ' ⚠' : ''}</td>
+        <td class="carga-num" style="text-align:right; color:var(--warn);">${f.preasignado || ''}</td>
+        <td><div style="background:var(--card2); border-radius:4px; height:8px; overflow:hidden;"><div style="height:100%; width:${Math.round(f.queda / maxQueda * 100)}%; background:${sobrecargado ? 'var(--bad)' : 'var(--lime)'};"></div></div></td>
+      </tr>`;
+    });
+    html += `</tbody></table>
+      <p style="font-size:0.72rem; color:var(--mut); margin-top:8px;">
+        * Preasignado: cambios de operario aún sin guardar ("Guardar Reparto"). Asignado: unidades pendientes de las líneas con ese operario ya guardado.
+        Recogido: unidades que el operario ya ha pistoleado hoy. Las filas marcadas en rojo concentran más faena pendiente: valora reasignar líneas.</p></div>`;
+    return html;
+  }
+
+  function calcularCargaPorOperariosWrapper(orders) {
+    return calcularCargaPorOperario(orders);
+  }
+
+  function renderPedidoRepartoCard(o) {
+    const fiscalName = o.clienteFiscal || o.cliente || 'N/D';
+    const commercialDiff = o.cliente && o.cliente !== o.clienteFiscal ? `<span style="font-style:italic; color:var(--blue); margin-left:6px;">(${escHtml(o.cliente)})</span>` : '';
+    const orderRef = o.referenciaPedido ? `<span style="color:var(--warn); margin-left:10px;">Ref.: <b>${escHtml(o.referenciaPedido)}</b></span>` : '';
+    const tot = totalesPlanta(o);
+    const qtyBox = `<span class="pill pill-ok" title="Cantidad de planta a acopiar / acopiada / con operario asignado (sin refs 99990-99999)" style="margin-left:8px;">🌱 ${tot.solicitada} · ✅ ${tot.acopiada} · 👷 ${tot.asignada}</span>`;
+    const brandHeader = o.marcaPedido
+      ? `<span class="badge blink-prio b-yellow" style="margin-left:8px;">🏷️ ${escHtml(o.marcaPedido)}</span>`
+      : '';
+    const comercial = o.agente ? `Comercial: <b>${escHtml(o.agente)}</b>` : 'Comercial: N/D';
+    const zone = o.sector || 'N/D';
+    const obsBtn = o.notasPedido
+      ? `<button class="icon-btn" onclick="event.stopPropagation(); openObsModal('Observaciones — Pedido #${o.numero}', '${escHtml(o.notasPedido).replace(/'/g, '&#39;')}')" title="Observaciones del pedido">📝 Observaciones</button>`
+      : '';
+    const msgBlink = esSinLeer(o.numero, '') ? ' btn-msg-unread' : '';
+
+    let lineasHtml = (o.lineas || []).map((l, idx) => {
+      const lineNum = l.posicion || (idx + 1);
+      const isPrio = !!l.prioritario;
+      const prioBadge = isPrio
+        ? '<span class="badge b-yellow blink-prio">⭐ Prioritario</span>'
+        : '<span class="badge badge-noprio">No prioritario</span>';
+
+      let marcaInfo = '';
+      if (l.marca && l.marca !== o.marcaPedido) {
+        marcaInfo = `<br><small class="marca-linea-aviso">⚠ Marca distinta: ${escHtml(l.marca)}</small>`;
+      } else if (l.marca) {
+        marcaInfo = `<br><small style="color:var(--mut);">Marca: ${escHtml(l.marca)}</small>`;
+      }
+
+      let rowStyle = '';
+      if (l.marcado) {
+        rowStyle = 'border: 2px solid #e0a13c !important; background: rgba(224,161,60,0.08);';
+      } else if (isPrio) {
+        rowStyle = 'background: rgba(224,161,60,0.04);';
+      }
+
+      const fullOp = l.operarios || '—';
+      const encargadoPick = fullOp !== '—' ? escHtml(fullOp.split(',')[0].trim().split(' ')[0]) : '—';
+
+      const detalleOps = {};
+      (l.detalleOperarios || '').split(',').forEach(par => {
+        const [nom, cant] = par.split(':');
+        if (nom && nom.trim()) detalleOps[nom.trim()] = parseInt(cant) || 0;
+      });
+      detalleOpsGlobal[`${o.serie}_${o.numero}_${lineNum}`] = detalleOps;
+      const cogidoAsignado = (l.operarioAsignado && detalleOps[l.operarioAsignado] !== undefined)
+        ? detalleOps[l.operarioAsignado]
+        : Object.values(detalleOps).reduce((a, b) => a + b, 0);
+
+      let opOptions = '<option value="">-- Sin asignar --</option>';
+      operariosList.forEach(op => {
+        if (!op.activo) return;
+        const sel = (l.operarioAsignado === op.nombre) ? 'selected' : '';
+        opOptions += `<option value="${escHtml(op.nombre)}" ${sel}>${escHtml(op.nombre)}</option>`;
+      });
+
+      const huella = l.huellaDigital || String(lineNum);
+      mapaPosicionHuella[`${o.serie}_${o.numero}_${lineNum}`] = l.huellaDigital || '';
+      const infoBtn = (l.observaciones || '').trim()
+        ? `<button class="icon-btn" onclick='openObsModal("Observaciones línea ${lineNum} — Ref ${escHtml(l.referencia)}", "${escHtml(l.observaciones).replace(/'/g, '&#39;')}")' title="${escHtml(l.observaciones)}">📝 Info</button>`
+        : '';
+      const lineMsgBlink = esSinLeer(o.numero, l.huellaDigital) ? ' btn-msg-unread' : '';
+
+      return `
+            <tr style="${rowStyle}">
+              <td><b>${lineNum}</b></td>
+              <td style="color:var(--blue); font-weight:700; white-space:nowrap;">${escHtml(l.referencia)}</td>
+              <td>${escHtml(l.descripcion)} ${marcaInfo}</td>
+              <td style="white-space:nowrap;">${escHtml(l.litraje || '—')}</td>
+              <td style="white-space:nowrap;">${escHtml(l.sector || '—')}</td>
+              <td style="color:var(--mut); white-space:nowrap;">${escHtml(l.ubicacionExtra || '—')}</td>
+              <td style="white-space:nowrap;">${escHtml(l.fincaLinea || o.finca || '—')}</td>
+              <td style="white-space:nowrap;">${prioBadge}</td>
+              <td><b>${l.pendientes}</b></td>
+              <td style="color:var(--lime); font-weight:700;">${l.acopiado}</td>
+              <td id="cogido_${o.serie}_${o.numero}_${lineNum}" style="font-weight:700; color:var(--warn);">${cogidoAsignado || '—'}</td>
+              <td style="font-size:0.78rem; font-weight:700; color:var(--blue);">${encargadoPick}</td>
+              <td>
+                <select style="width:120px; font-size:0.78rem;" data-pedido="${o.serie}_${o.numero}" data-linea="${lineNum}" onchange="cambiarOperarioFaena(this)">
+                  ${opOptions}
+                </select>
+              </td>
+              <td>
+                <div style="display:flex; gap:4px; align-items:center;">
+                  ${infoBtn}
+                  <button class="btn-sec${lineMsgBlink}" data-unread-key="${o.numero}|${huella}" onclick="openChatModal('${o.numero}', '${huella}')" style="padding:2px 6px; font-size:0.7rem;" title="Chat / Mensajes">💬</button>
+                </div>
+              </td>
+            </tr>`;
+    }).join('');
+
+    return `
           <div class="card" style="margin-bottom: 16px; border-color: var(--line);">
             <div class="card-header" style="cursor:pointer;" onclick="toggleRepartoOrder('${o.serie}_${o.numero}')">
               <div>
-                <div class="order-id">📦 Pedido #${o.numero} <small style="color:var(--mut)">(${o.serie})</small> ${orderRef} ${brandHeader}</div>
-                <div class="client-name" style="font-size:0.95rem; margin-top:2px;"><b>${fiscalName}</b> ${commercialDiff}</div>
-                <div style="font-size:0.8rem; color:var(--mut); margin-top:4px;">📍 Finca: <b>${o.finca || 'S/F'}</b> | Zona carga: <b>${zone}</b> | 👤 ${comercial}</div>
+                <div class="order-id">📦 Pedido #${o.numero} ${orderRef} ${brandHeader} ${qtyBox}</div>
+                <div class="client-name" style="font-size:0.95rem; margin-top:2px;"><b>${escHtml(fiscalName)}</b> ${commercialDiff}</div>
+                <div style="font-size:0.8rem; color:var(--mut); margin-top:4px;">📍 Finca: <b>${escHtml(o.finca || 'S/F')}</b> | Zona carga: <b>${escHtml(zone)}</b> | 👤 ${comercial}</div>
               </div>
               <div style="display:flex; gap:8px; align-items:center;">
-                <button class="btn-sec" onclick="event.stopPropagation(); openChatModal('${o.numero}', '')" style="padding:4px 8px; font-size:0.75rem;">💬 Mensajes</button>
-                <span style="font-size:0.85rem; color:var(--lime); font-weight:700;">▼ Ver Líneas</span>
+                ${obsBtn}
+                <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="event.stopPropagation(); openChatModal('${o.numero}', '')" style="padding:4px 8px; font-size:0.75rem;">💬 Mensajes</button>
+                <span style="font-size:0.85rem; color:var(--lime); font-weight:700;">▼ Líneas</span>
               </div>
             </div>
-            
+
             <div id="reparto_lines_${o.serie}_${o.numero}" style="display:none; margin-top:12px; border-top:1px solid var(--line); padding-top:10px; overflow-x:auto;">
               <table>
                 <thead>
@@ -551,88 +1364,11 @@
                     <th>Acciones</th>
                   </tr>
                 </thead>
-                <tbody>
-        `;
-
-        (o.lineas || []).forEach((l, idx) => {
-          const lineNum = l.posicion || (idx + 1);
-          const isPrio = l.prioritario;
-          const prioBadge = isPrio ? '<span class="badge b-yellow">Prioritario</span>' : '';
-          
-          let marcaInfo = '';
-          if (l.marca && l.marca !== o.marcaPedido) {
-            marcaInfo = `<br><small style="color:var(--warn);">⚠ Marca: ${l.marca}</small>`;
-          }
-
-          // Si está marcado, reborde amarillo (#e0a13c) como en la app de picking
-          let rowStyle = '';
-          if (l.marcado) {
-            rowStyle = 'border: 2px solid #e0a13c !important; background: rgba(224,161,60,0.08);';
-          } else if (isPrio) {
-            rowStyle = 'background: rgba(224,161,60,0.04);';
-          }
-          
-          const fullOp = l.operarios || '—';
-          const encargadoPick = fullOp !== '—' ? fullOp.split(',')[0].trim().split(' ')[0] : '—';
-          
-          const detalleOps = {};
-          (l.detalleOperarios || '').split(',').forEach(par => {
-            const [nom, cant] = par.split(':');
-            if (nom && nom.trim()) detalleOps[nom.trim()] = parseInt(cant) || 0;
-          });
-          detalleOpsGlobal[`${o.serie}_${o.numero}_${lineNum}`] = detalleOps;
-          const cogidoAsignado = (l.operarioAsignado && detalleOps[l.operarioAsignado] !== undefined)
-            ? detalleOps[l.operarioAsignado]
-            : Object.values(detalleOps).reduce((a, b) => a + b, 0);
-          
-          let opOptions = '<option value="">-- Sin asignar --</option>';
-          operariosList.forEach(op => {
-            if (!op.activo) return;
-            const sel = (l.operarioAsignado === op.nombre) ? 'selected' : '';
-            opOptions += `<option value="${op.nombre}" ${sel}>${op.nombre}</option>`;
-          });
-
-          html += `
-            <tr style="${rowStyle}">
-              <td><b>${lineNum}</b></td>
-              <td style="color:var(--blue); font-weight:700; white-space:nowrap;">${l.referencia}</td>
-              <td>${l.descripcion} ${marcaInfo}</td>
-              <td style="white-space:nowrap;">${l.litraje || '—'}</td>
-              <td style="white-space:nowrap;">${l.sector || '—'}</td>
-              <td style="color:var(--mut); white-space:nowrap;">${l.ubicacionExtra || '—'}</td>
-              <td style="white-space:nowrap;">${l.fincaLinea || o.finca || '—'}</td>
-              <td style="white-space:nowrap;">${prioBadge}</td>
-              <td><b>${l.pendientes}</b></td>
-              <td style="color:var(--lime); font-weight:700;">${l.acopiado}</td>
-              <td id="cogido_${o.serie}_${o.numero}_${lineNum}" style="font-weight:700; color:var(--warn);">${cogidoAsignado || '—'}</td>
-              <td style="font-size:0.78rem; font-weight:700; color:var(--blue);">${encargadoPick}</td>
-              <td>
-                <select style="width:110px; font-size:0.78rem;" data-pedido="${o.serie}_${o.numero}" data-linea="${lineNum}" onchange="cambiarOperarioFaena(this)">
-                  ${opOptions}
-                </select>
-              </td>
-              <td>
-                <div style="display:flex; gap:4px; align-items:center;">
-                  <button class="btn-sec" onclick="openObsModal('Pedido #${o.numero} - Línea ${lineNum}', '${l.descripcion} (Ref: ${l.referencia})\\nObservaciones / Notas: ${l.observaciones || l.notas || o.notasPedido || 'Ninguna'}\\nUbicación: ${l.ubicacionExtra || 'N/D'}\\nFinca: ${l.fincaLinea || o.finca}')" style="padding:2px 6px; font-size:0.7rem;" title="Ver Observaciones">ℹ️</button>
-                  <button class="btn-sec" onclick="openChatModal('${o.numero}', '${l.huellaDigital || lineNum}')" style="padding:2px 6px; font-size:0.7rem;" title="Chat / Mensajes">💬</button>
-                </div>
-              </td>
-            </tr>
-          `;
-        });
-
-        html += `
+                <tbody>${lineasHtml}
                 </tbody>
               </table>
             </div>
-          </div>
-        `;
-      });
-      container.innerHTML = html;
-    } catch (e) {
-      console.error(e);
-      document.getElementById('repartoContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar el reparto de faena.</div>';
-    }
+          </div>`;
   }
 
   function loadRepartoData() {
@@ -661,12 +1397,78 @@
     } else if (cell) {
       cell.textContent = '—';
     }
+    refrescarTablaCarga();
+  }
+
+  function refrescarTablaCarga() {
+    if (window._cargaOrders) {
+      const cont = document.getElementById('cargaContainer');
+      if (cont) cont.innerHTML = renderTablaCargaOperarios(window._cargaOrders);
+    }
+  }
+
+  async function loadCarga() {
+    if (!operariosList.length) await loadOperarios();
+    const el = document.getElementById('filterDateCarga');
+    if (!el.value && selectedDate) el.value = selectedDate;
+    try {
+      const res = await fetch(`/api/manager/orders?fecha=${el.value}&estado=todos&k=${MANAGER_KEY}`);
+      const orders = (await res.json()).pedidos || [];
+      window._cargaOrders = orders;
+      document.getElementById('cargaContainer').innerHTML = renderTablaCargaOperarios(orders);
+    } catch (e) {
+      console.error(e);
+      document.getElementById('cargaContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar la carga de operarios.</div>';
+    }
+  }
+
+  function selectFechaCarga(fecha) {
+    document.getElementById('filterDateCarga').value = fecha;
+    loadCarga();
   }
 
   async function guardarRepartoFaena() {
-    alert("¡Reparto de faena guardado y asignado correctamente a los operarios en BigQuery!");
-    cambiosFaenaPendientes = {};
-    renderReparto();
+    const cambios = [];
+    Object.entries(cambiosFaenaPendientes).forEach(([pedidoKey, lineas]) => {
+      Object.entries(lineas).forEach(([linea, operario]) => {
+        // linea es la posición visual; necesitamos la huella real de esa línea
+        const huella = posicionAHuella(pedidoKey, linea);
+        cambios.push({
+          pedido_id: pedidoKey.split('_').pop(),
+          linea_huella: huella,
+          operario_nombre: operario || ''
+        });
+      });
+    });
+    if (!cambios.length) {
+      alert("No hay cambios de asignación pendientes de guardar.");
+      return;
+    }
+    if (!confirm(`¿Guardar el reparto de faena?\n\nSe enviarán ${cambios.length} asignación(es). Los operarios las verán cuando se active el módulo de faena en la app.`)) return;
+    try {
+      const res = await fetch(`/api/manager/reparto?k=${MANAGER_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asignaciones: cambios })
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        alert(`✅ Reparto guardado: ${data.guardadas} asignación(es) registradas${data.borradas ? `, ${data.borradas} desasignada(s)` : ''}.`);
+        cambiosFaenaPendientes = {};
+        renderReparto();
+      } else {
+        alert("Error al guardar el reparto: " + (data.detail || res.status));
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error de red al guardar el reparto");
+    }
+  }
+
+  // Mapa posición -> huella construido durante el render del reparto
+  let mapaPosicionHuella = {};
+  function posicionAHuella(pedidoKey, posicion) {
+    return (mapaPosicionHuella[`${pedidoKey}_${posicion}`]) || String(posicion);
   }
 
   function selectFechaReparto(fecha) {
@@ -680,6 +1482,7 @@
   async function openChatModal(pedidoId, lineaHuella) {
     currentChatPedido = pedidoId;
     currentChatLinea = lineaHuella || null;
+    marcarLeido(lineaHuella ? `${pedidoId}|${lineaHuella}` : pedidoId);
     document.getElementById('chatModalTitle').innerText = `💬 Chat Pedido #${pedidoId}${lineaHuella ? ' (Línea ' + lineaHuella + ')' : ''}`;
     document.getElementById('chatModal').classList.add('open');
     await loadChatMessages();
@@ -851,6 +1654,7 @@
 
   async function loadOrders() {
     try {
+      await loadUnread();
       const dateVal = document.getElementById('filterDate').value;
       const url = `/api/manager/orders?fecha=${dateVal}&estado=${filterEstado}&k=${MANAGER_KEY}`;
       const res = await fetch(url);
@@ -908,14 +1712,11 @@
 
     let html = '';
     for (const [finca, orders] of Object.entries(byFinca)) {
-      html += `<div class="finca-group"><div class="finca-title">📍 ${finca} (${orders.length} pedidos)</div><div class="grid">`;
+      html += `<div class="finca-group"><div class="finca-title">📍 ${escHtml(finca)} (${orders.length} pedidos)</div><div class="grid">`;
       orders.forEach(o => {
-        const plantLines = (o.lineas || []).filter(l => {
-          const refNum = parseInt(l.referencia, 10);
-          return !( (refNum >= 99990 && refNum <= 99999) || (l.referencia || '').startsWith('9999') );
-        });
-        const totalRequested = plantLines.reduce((acc, l) => acc + (l.pendientes || 0), 0);
-        const totalPicked = plantLines.reduce((acc, l) => acc + (l.acopiado || 0), 0);
+        const tot = totalesPlanta(o);
+        const totalRequested = tot.solicitada;
+        const totalPicked = tot.acopiada;
         const pct = totalRequested > 0 ? Math.min(100, Math.round((totalPicked / totalRequested) * 100)) : (totalPicked > 0 ? 100 : 0);
 
         let badgeHtml = '<span class="badge b-blue">⏳ Sin Acopiar</span>';
@@ -932,17 +1733,22 @@
           cardClass = 'card-en_proceso';
         }
 
+        const brandBadge = o.marcaPedido ? `<span class="badge blink-prio b-yellow" style="margin-left:6px;">🏷️ ${escHtml(o.marcaPedido)}</span>` : '';
+        const qtyBox = `<span class="pill pill-ok" title="A acopiar · Acopiada · Asignada a faena" style="margin-left:6px;">🌱 ${tot.solicitada} · ✅ ${tot.acopiada} · 👷 ${tot.asignada}</span>`;
+        const obsBtn = o.notasPedido ? `<button class="icon-btn" onclick="openObsModal('Observaciones — Pedido #${o.numero}', '${escHtml(o.notasPedido).replace(/'/g, '&#39;')}')" title="Observaciones del pedido">📝</button>` : '';
+        const msgBlink = esSinLeer(o.numero, '') ? ' btn-msg-unread' : '';
+
         html += `
           <div class="card ${cardClass}">
             <div class="card-header">
               <div>
-                <div class="order-id">Pedido #${o.numero} <small style="color:var(--mut)">(${o.serie})</small></div>
-                <div class="client-name">${o.cliente}</div>
+                <div class="order-id">Pedido #${o.numero} ${brandBadge} ${qtyBox}</div>
+                <div class="client-name">${escHtml(o.cliente)}</div>
               </div>
               <div>${badgeHtml}</div>
             </div>
             <div style="font-size:0.8rem; color:var(--mut); margin-bottom:6px;">
-              📅 Carga: <b>${formatDateDDMMYYYY(o.fechaCarga) || 'N/D'}</b> | Zona: <b>${o.sector || 'N/D'}</b>
+              📅 Carga: <b>${formatDateDDMMYYYY(o.fechaCarga) || 'N/D'}</b> | Zona: <b>${escHtml(o.sector || 'N/D')}</b>
             </div>
             <div class="progress-box">
               <div class="progress-text">
@@ -956,6 +1762,8 @@
             <div class="card-actions">
               <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">👁️ Informe Punteo</button>
               <button class="btn-sec" onclick="openOrderDetails('${o.serie}', '${o.numero}')">🔍 Detalle</button>
+              ${obsBtn}
+              <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="openChatModal('${o.numero}', '')">💬 Mensajes</button>
             </div>
           </div>
         `;
@@ -1223,14 +2031,28 @@
   }
 
   // --- VISOR DE INFORMES MODAL ---
-  function verInformePunteo(numero) {
+  function verInformePunteo(numero, fromDetalle) {
     const htmlUrl = `/api/manager/reporte/${numero}?formato=html&k=${MANAGER_KEY}`;
     const pdfUrl = `/api/manager/reporte/${numero}?formato=pdf&k=${MANAGER_KEY}`;
+    pedidoEnDetalle = fromDetalle ? numero : null;
     openPreviewModal(`Informe Punteo — Pedido #${numero}`, htmlUrl, pdfUrl);
+  }
+
+  function verInformeDetalle(numero, fromDetalle) {
+    const htmlUrl = `/api/manager/informe/detalle/${numero}?k=${MANAGER_KEY}`;
+    pedidoEnDetalle = fromDetalle ? numero : null;
+    openPreviewModal(`Detalle del Pistoleo — Pedido #${numero}`, htmlUrl, null);
+  }
+
+  function verInformeControl(numero, fromDetalle) {
+    const htmlUrl = `/api/manager/informe/control/${numero}?k=${MANAGER_KEY}`;
+    pedidoEnDetalle = fromDetalle ? numero : null;
+    openPreviewModal(`Control de Acopio — Pedido #${numero}`, htmlUrl, null);
   }
 
   function verInformeDesglose(numero) {
     const htmlUrl = `/api/manager/informe/desglose/${numero}?k=${MANAGER_KEY}`;
+    pedidoEnDetalle = null;
     openPreviewModal(`Desglose Exhaustivo — Pedido #${numero}`, htmlUrl, null);
   }
 
@@ -1245,6 +2067,15 @@
       pdfBtn.style.display = 'none';
     }
     document.getElementById('previewModal').classList.add('open');
+  }
+
+  let pedidoEnDetalle = null;
+
+  function volverADetallePedido() {
+    closeModal('previewModal');
+    if (pedidoEnDetalle !== null) {
+      document.getElementById('orderModal').classList.add('open');
+    }
   }
 
   function printPreviewFrame() {
@@ -1314,10 +2145,19 @@
 
       document.getElementById('btnVerPunteoModal').onclick = () => {
         closeModal('orderModal');
-        verInformePunteo(data.numero);
+        verInformePunteo(data.numero, true);
+      };
+      document.getElementById('btnVerDetalleModal').onclick = () => {
+        closeModal('orderModal');
+        verInformeDetalle(data.numero, true);
+      };
+      document.getElementById('btnVerControlModal').onclick = () => {
+        closeModal('orderModal');
+        verInformeControl(data.numero, true);
       };
       document.getElementById('btnDescargarPdfModal').href = `/api/manager/reporte/${data.numero}?formato=pdf&k=${MANAGER_KEY}`;
 
+      pedidoEnDetalle = data.numero;
       document.getElementById('modalBody').innerHTML = bodyHtml;
       document.getElementById('orderModal').classList.add('open');
     } catch (e) {

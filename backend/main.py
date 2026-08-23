@@ -31,6 +31,9 @@ PICKING_TABLE = "picking_registros"
 ENCARGADOS_TABLE = "encargados"
 OPERARIOS_TABLE = "operarios"
 FINCAS_TABLE = "fincas"
+MAQUINARIAS_TABLE = "maquinarias"
+MAQUINARIAS_FAMILIAS_TABLE = "maquinaria_familias"
+REPARTO_TABLE = "reparto_faena"
 API_KEY = os.getenv("API_KEY", "")
 PASSWORD_SALT = os.getenv("PASSWORD_SALT", "pickingve-2026")
 MAX_REGISTROS = 1000
@@ -95,7 +98,7 @@ def _query(sql: str) -> list[dict[str, Any]]:
 def _ensure_picking_table() -> None:
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
-        client.get_dataset(dataset_ref)
+        client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
     except NotFound:
         client.create_dataset(dataset_ref)
     client.query(
@@ -132,7 +135,7 @@ def _hash_password(usuario: str, password: str) -> str:
 def _ensure_encargados_table() -> None:
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
-        client.get_dataset(dataset_ref)
+        client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
     except NotFound:
         client.create_dataset(dataset_ref)
     client.query(
@@ -153,12 +156,46 @@ def _ensure_encargados_table() -> None:
     _ensure_column(ENCARGADOS_TABLE, "modo", "modo STRING")
     _ensure_column(ENCARGADOS_TABLE, "email", "email STRING")
     _ensure_column(ENCARGADOS_TABLE, "activo", "activo BOOL")
+    _ensure_column(ENCARGADOS_TABLE, "apellidos", "apellidos STRING")
+
+
+def _migrar_apellidos_encargados() -> None:
+    """D-69: separa nombre y apellidos en encargados existentes.
+
+    Solo toca filas con apellidos vacío y nombre con espacios: el primer
+    token queda como nombre y el resto como apellidos. Idempotente.
+    """
+    rows = _query(
+        f"""
+        SELECT id, nombre
+        FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`
+        WHERE (apellidos IS NULL OR apellidos = '') AND nombre LIKE '% %'
+        """
+    )
+    for r in rows:
+        partes = (r.get("nombre") or "").strip().split()
+        if len(partes) < 2:
+            continue
+        client.query(
+            f"""
+            UPDATE `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`
+            SET nombre = @nombre, apellidos = @apellidos
+            WHERE id = @id
+            """,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("nombre", "STRING", partes[0]),
+                    bigquery.ScalarQueryParameter("apellidos", "STRING", " ".join(partes[1:])),
+                    bigquery.ScalarQueryParameter("id", "STRING", r["id"]),
+                ]
+            ),
+        ).result()
 
 
 def _ensure_operarios_table() -> None:
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
-        client.get_dataset(dataset_ref)
+        client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
     except NotFound:
         client.create_dataset(dataset_ref)
     client.query(
@@ -177,12 +214,75 @@ def _ensure_operarios_table() -> None:
     _ensure_column(OPERARIOS_TABLE, "apellidos", "apellidos STRING")
     _ensure_column(OPERARIOS_TABLE, "email", "email STRING")
     _ensure_column(OPERARIOS_TABLE, "activo", "activo BOOL")
+    _ensure_column(OPERARIOS_TABLE, "maquinaria", "maquinaria STRING")
+
+
+def _ensure_maquinarias_table() -> None:
+    dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
+    try:
+        client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
+    except NotFound:
+        client.create_dataset(dataset_ref)
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_TABLE}` (
+            id STRING,
+            nombre STRING,
+            descripcion STRING,
+            activo BOOL
+        )
+        """
+    ).result()
+    _ensure_column(MAQUINARIAS_TABLE, "descripcion", "descripcion STRING")
+    _ensure_column(MAQUINARIAS_TABLE, "activo", "activo BOOL")
+    _ensure_column(MAQUINARIAS_TABLE, "familia", "familia STRING")
+
+
+def _ensure_maquinaria_familias_table() -> None:
+    """D-76: familias de maquinaria (catálogo configurable en el panel)."""
+    dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
+    try:
+        client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
+    except NotFound:
+        client.create_dataset(dataset_ref)
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_FAMILIAS_TABLE}` (
+            id STRING,
+            nombre STRING,
+            descripcion STRING,
+            activo BOOL
+        )
+        """
+    ).result()
+    _ensure_column(MAQUINARIAS_FAMILIAS_TABLE, "descripcion", "descripcion STRING")
+    _ensure_column(MAQUINARIAS_FAMILIAS_TABLE, "activo", "activo BOOL")
+
+
+def _ensure_reparto_table() -> None:
+    """D-72: reparto de faena por línea (pedido + huella) para la app futura."""
+    dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
+    try:
+        client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
+    except NotFound:
+        client.create_dataset(dataset_ref)
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` (
+            pedido_id STRING,
+            linea_huella STRING,
+            operario_email STRING,
+            operario_nombre STRING,
+            actualizado_en TIMESTAMP
+        )
+        """
+    ).result()
 
 
 def _ensure_fincas_table() -> None:
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
-        client.get_dataset(dataset_ref)
+        client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
     except NotFound:
         client.create_dataset(dataset_ref)
     client.query(
@@ -331,8 +431,12 @@ def _ensure_column(table: str, column: str, ddl: str) -> None:
 def _startup() -> None:
     _ensure_picking_table()
     _ensure_encargados_table()
+    _migrar_apellidos_encargados()
     _ensure_operarios_table()
     _ensure_fincas_table()
+    _ensure_maquinarias_table()
+    _ensure_maquinaria_familias_table()
+    _ensure_reparto_table()
     _ensure_notificaciones_tables()
     _ensure_matriculas_table()
     _ensure_etiquetas_table()
@@ -1062,7 +1166,39 @@ def crear_comentario_adjunto(
     return {"ok": True, "adjunto_url": url}
 
 
-@app.get("/api/pedidos/matriculas")
+@app.get("/api/comentarios/recientes")
+def comentarios_recientes(
+    request: Request,
+    dias: int = Query(default=14, ge=1, le=60),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """D-73: actividad de chat por pedido/línea para marcar "sin leer" en el panel.
+
+    Devuelve el último mensaje ajeno a oficina (rol APP/ENCARGADO) por
+    pedido+línea en los últimos N días. El panel compara con su marca local
+    de última lectura (localStorage) para hacer parpadear el botón Mensajes.
+    """
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    rows = [
+        dict(r)
+        for r in client.query(
+            f"""
+            SELECT pedido_id, COALESCE(linea_huella, '') AS linea_huella,
+                   COUNT(*) AS total,
+                   FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ', MAX(creado_en)) AS ultimo_mensaje
+            FROM `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}`
+            WHERE creado_en > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @dias DAY)
+              AND rol NOT IN ('OFICINA', 'ADMIN')
+            GROUP BY pedido_id, linea_huella
+            """,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("dias", "INT64", dias)]
+            ),
+        ).result()
+    ]
+    return {"recientes": rows}
 def lista_matriculas(
     pedido: str = Query(...),
     x_api_key: Optional[str] = Header(default=None),
@@ -1123,6 +1259,41 @@ def guardar_matricula(
                     {_esc(muelle_limpio)}, {_esc(foto_url)}, CURRENT_TIMESTAMP())
         """
     ).result()
+
+    # D-15X: primera matrícula de CAMIÓN registrada = camión en muelle.
+    # Aviso ultra prioritario a los encargados de la finca del pedido.
+    if tipo == "CAMION" and matricula_limpia:
+        try:
+            previas = _query(
+                f"SELECT 1 FROM `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` "
+                f"WHERE pedido_id = {_esc(pedido_id)} AND tipo = 'CAMION' "
+                f"AND matricula != '' AND creado_en < CURRENT_TIMESTAMP() - INTERVAL 1 MINUTE LIMIT 1"
+            )
+            ya_aviso = bool(previas)
+            if not ya_aviso:
+                finca = _finca_pedido(pedido_id)
+                muelle_txt = f" en {muelle_limpio}" if muelle_limpio else ""
+                cuerpo = (
+                    f"🚚 El camión {matricula_limpia}{muelle_txt} está en el cargadero "
+                    f"del pedido {pedido_id}: prioridad máxima para las líneas pendientes."
+                )
+                for email in _encargados_finca(finca):
+                    _enviar_fcm(
+                        email,
+                        f"Camión en muelle · Pedido {pedido_id}",
+                        cuerpo[:300],
+                        {"tipo": "camion_llegado", "pedido": pedido_id},
+                    )
+                bot_token = os.getenv("TELEGRAM_MESSAGES_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "")
+                chat_id = _oficina_chat_id(bot_token) if bot_token else None
+                if bot_token and chat_id:
+                    _telegram_request(
+                        bot_token,
+                        "sendMessage",
+                        {"chat_id": chat_id, "text": cuerpo},
+                    )
+        except Exception:
+            pass
     return {"ok": True, "foto_url": foto_url}
 
 
@@ -1482,14 +1653,19 @@ def lista_encargados(
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
     rows = _query(
         f"""
-        SELECT id, nombre, usuario, password_hash, rol, fincas_carga, modo, email, activo
+        SELECT id, nombre, apellidos, usuario, password_hash, rol, fincas_carga, modo, email, activo
         FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`
         ORDER BY nombre
         """
     )
     return {
         "encargados": [
-            {**r, "email": r.get("email") or "", "activo": r.get("activo") is not False}
+            {
+                **r,
+                "email": r.get("email") or "",
+                "apellidos": r.get("apellidos") or "",
+                "activo": r.get("activo") is not False,
+            }
             for r in rows
         ]
     }
@@ -1506,14 +1682,20 @@ def lista_operarios(
     _ensure_operarios_table()
     rows = _query(
         f"""
-        SELECT id, nombre, apellidos, email, password_hash, fincas_carga, activo
+        SELECT id, nombre, apellidos, email, password_hash, fincas_carga, maquinaria, activo
         FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`
         ORDER BY nombre
         """
     )
     return {
         "operarios": [
-            {**r, "email": r.get("email") or "", "apellidos": r.get("apellidos") or "", "activo": r.get("activo") is not False}
+            {
+                **r,
+                "email": r.get("email") or "",
+                "apellidos": r.get("apellidos") or "",
+                "maquinaria": r.get("maquinaria") or "",
+                "activo": r.get("activo") is not False,
+            }
             for r in rows
         ]
     }
@@ -1526,6 +1708,7 @@ class OperarioRequest(BaseModel):
     email: str
     password: Optional[str] = None
     fincas_carga: str = ""
+    maquinaria: str = ""
     activo: bool = True
 
 
@@ -1541,7 +1724,7 @@ def crear_operario(
     _ensure_operarios_table()
     op_id = req.id or uuid.uuid4().hex
     pwd_hash = _hash_password(req.email, req.password) if req.password else None
-    
+
     existing = _query(f"SELECT password_hash FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}` WHERE email = {_esc(req.email)}")
     if not pwd_hash and existing:
         pwd_hash = existing[0].get("password_hash")
@@ -1551,10 +1734,12 @@ def crear_operario(
     client.query(
         f"""
         MERGE `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}` T
-        USING (SELECT {_esc(op_id)} AS id, {_esc(req.nombre)} AS nombre, {_esc(req.apellidos)} AS apellidos, {_esc(req.email)} AS email, {_esc(pwd_hash)} AS password_hash, {_esc(req.fincas_carga)} AS fincas_carga, {str(req.activo).upper()} AS activo) S
+        USING (SELECT {_esc(op_id)} AS id, {_esc(req.nombre)} AS nombre, {_esc(req.apellidos)} AS apellidos,
+                      {_esc(req.email)} AS email, {_esc(pwd_hash)} AS password_hash, {_esc(req.fincas_carga)} AS fincas_carga,
+                      {_esc(req.maquinaria)} AS maquinaria, {str(req.activo).upper()} AS activo) S
         ON T.email = S.email
-        WHEN MATCHED THEN UPDATE SET nombre = S.nombre, apellidos = S.apellidos, password_hash = COALESCE(S.password_hash, T.password_hash), fincas_carga = S.fincas_carga, activo = S.activo
-        WHEN NOT MATCHED THEN INSERT (id, nombre, apellidos, email, password_hash, fincas_carga, activo) VALUES (S.id, S.nombre, S.apellidos, S.email, S.password_hash, S.fincas_carga, S.activo)
+        WHEN MATCHED THEN UPDATE SET nombre = S.nombre, apellidos = S.apellidos, password_hash = COALESCE(S.password_hash, T.password_hash), fincas_carga = S.fincas_carga, maquinaria = S.maquinaria, activo = S.activo
+        WHEN NOT MATCHED THEN INSERT (id, nombre, apellidos, email, password_hash, fincas_carga, maquinaria, activo) VALUES (S.id, S.nombre, S.apellidos, S.email, S.password_hash, S.fincas_carga, S.maquinaria, S.activo)
         """
     ).result()
     return {"ok": True}
@@ -1593,9 +1778,10 @@ def lista_fincas(
 @app.get("/api/fincas/gestion")
 def lista_fincas_gestion(
     request: Request,
+    k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    _verify_key(x_api_key)
+    _verify_manager_key(k, x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
     filas = {
         r["finca"]: r
@@ -1635,9 +1821,10 @@ class FincaDeleteBody(BaseModel):
 def crear_finca(
     request: Request,
     body: FincaBody,
+    k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    _verify_key(x_api_key)
+    _verify_manager_key(k, x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     _ensure_fincas_table()
     _cache_clear()
@@ -1685,9 +1872,10 @@ def crear_finca(
 def eliminar_finca(
     request: Request,
     body: FincaDeleteBody,
+    k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    _verify_key(x_api_key)
+    _verify_manager_key(k, x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     _ensure_fincas_table()
     _cache_clear()
@@ -1711,16 +1899,448 @@ def eliminar_finca(
             ),
         ).result()
         return {"ok": 1, "ocultada": True}
+    return {"ok": 1}
+
+
+class MaquinariaBody(BaseModel):
+    id: Optional[str] = None
+    nombre: str = Field(min_length=1, max_length=128)
+    descripcion: str = Field(default="", max_length=256)
+    familia: str = Field(default="", max_length=128)
+    activo: bool = True
+
+
+@app.get("/api/manager/maquinarias")
+def lista_maquinarias(
+    request: Request,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    _ensure_maquinarias_table()
+    rows = _query(
+        f"""
+        SELECT id, nombre, descripcion, familia, activo
+        FROM `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_TABLE}`
+        ORDER BY nombre
+        """
+    )
+    return {
+        "maquinarias": [
+            {
+                **r,
+                "descripcion": r.get("descripcion") or "",
+                "familia": r.get("familia") or "",
+                "activo": r.get("activo") is not False,
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.post("/api/manager/maquinarias")
+def guardar_maquinaria(
+    request: Request,
+    body: MaquinariaBody,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    _ensure_maquinarias_table()
+    mq_id = body.id or ""
+    if not mq_id:
+        # D-77: alta idempotente — si ya existe una maquinaria con el mismo
+        # nombre (doble clic incluido), se actualiza esa fila en vez de duplicar.
+        existentes = _query(
+            f"""
+            SELECT id FROM `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_TABLE}`
+            WHERE LOWER(TRIM(nombre)) = LOWER(TRIM({_esc(body.nombre)}))
+            ORDER BY id LIMIT 1
+            """
+        )
+        mq_id = existentes[0]["id"] if existentes else f"MQ-{uuid.uuid4().hex[:8].upper()}"
     client.query(
         f"""
-        DELETE FROM `{PROJECT}.{PICKING_DATASET}.{FINCAS_TABLE}`
-        WHERE finca = @finca
-        """,
-        job_config=bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("finca", "STRING", finca)]
-        ),
+        MERGE `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_TABLE}` T
+        USING (SELECT {_esc(mq_id)} AS id, {_esc(body.nombre.strip())} AS nombre,
+                      {_esc(body.descripcion)} AS descripcion, {_esc((body.familia or '').strip())} AS familia,
+                      {str(body.activo).upper()} AS activo) S
+        ON T.id = S.id
+        WHEN MATCHED THEN UPDATE SET nombre = S.nombre, descripcion = S.descripcion, familia = S.familia, activo = S.activo
+        WHEN NOT MATCHED THEN INSERT (id, nombre, descripcion, familia, activo) VALUES (S.id, S.nombre, S.descripcion, S.familia, S.activo)
+        """
     ).result()
-    return {"ok": 1}
+    return {"ok": True}
+
+
+# ===== D-76: Familias de maquinaria =====
+
+
+@app.get("/api/manager/maquinarias-familias")
+def lista_maquinarias_familias(
+    request: Request,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    _ensure_maquinaria_familias_table()
+    rows = _query(
+        f"""
+        SELECT id, nombre, descripcion, activo
+        FROM `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_FAMILIAS_TABLE}`
+        ORDER BY nombre
+        """
+    )
+    return {
+        "familias": [
+            {**r, "descripcion": r.get("descripcion") or "", "activo": r.get("activo") is not False}
+            for r in rows
+        ]
+    }
+
+
+@app.post("/api/manager/maquinarias-familias")
+def guardar_maquinaria_familia(
+    request: Request,
+    body: MaquinariaBody,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    _ensure_maquinaria_familias_table()
+    fam_id = body.id or ""
+    if not fam_id:
+        # D-77: alta idempotente — si ya existe una familia con el mismo
+        # nombre (doble clic incluido), se actualiza esa fila en vez de duplicar.
+        existentes = _query(
+            f"""
+            SELECT id FROM `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_FAMILIAS_TABLE}`
+            WHERE LOWER(TRIM(nombre)) = LOWER(TRIM({_esc(body.nombre)}))
+            ORDER BY id LIMIT 1
+            """
+        )
+        fam_id = existentes[0]["id"] if existentes else f"MF-{uuid.uuid4().hex[:8].upper()}"
+    client.query(
+        f"""
+        MERGE `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_FAMILIAS_TABLE}` T
+        USING (SELECT {_esc(fam_id)} AS id, {_esc(body.nombre.strip())} AS nombre,
+                      {_esc(body.descripcion)} AS descripcion, {str(body.activo).upper()} AS activo) S
+        ON T.id = S.id
+        WHEN MATCHED THEN UPDATE SET nombre = S.nombre, descripcion = S.descripcion, activo = S.activo
+        WHEN NOT MATCHED THEN INSERT (id, nombre, descripcion, activo) VALUES (S.id, S.nombre, S.descripcion, S.activo)
+        """
+    ).result()
+    return {"ok": True}
+
+
+@app.post("/api/manager/maquinarias-familias/eliminar")
+def eliminar_maquinaria_familia(
+    request: Request,
+    body: dict[str, str],
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    fam_id = (body.get("id") or "").strip()
+    if not fam_id:
+        raise HTTPException(400, "Id de familia obligatorio")
+    client.query(
+        f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_FAMILIAS_TABLE}` WHERE id = {_esc(fam_id)}"
+    ).result()
+    return {"ok": True}
+
+
+@app.post("/api/manager/maquinarias/eliminar")
+def eliminar_maquinaria(
+    request: Request,
+    body: dict[str, str],
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    mq_id = (body.get("id") or "").strip()
+    if not mq_id:
+        raise HTTPException(400, "Id de maquinaria obligatorio")
+    client.query(
+        f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{MAQUINARIAS_TABLE}` WHERE id = {_esc(mq_id)}"
+    ).result()
+    return {"ok": True}
+
+
+@app.get("/api/manager/reparto")
+def lista_reparto(
+    request: Request,
+    fecha: Optional[str] = Query(None, description="Fecha de carga (YYYY-MM-DD)"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """D-72: asignaciones de faena guardadas para los pedidos de una fecha."""
+    _verify_manager_key(k, x_api_key)
+    target_date = date.today()
+    if fecha and fecha not in ("null", "undefined", ""):
+        try:
+            target_date = date.fromisoformat(fecha)
+        except ValueError:
+            pass
+    rows = [
+        dict(r)
+        for r in client.query(
+            f"""
+            SELECT rf.pedido_id, rf.linea_huella, rf.operario_email, rf.operario_nombre,
+                   FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ', rf.actualizado_en) AS actualizado_en
+            FROM `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` rf
+            JOIN `{PROJECT}.{DATASET}.PEDIDOS` p ON p.NUMERO_PEDIDO = rf.pedido_id
+            WHERE DATE(p.FECHA_CARGA) = @fecha
+            """,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("fecha", "DATE", target_date.isoformat())]
+            ),
+        ).result()
+    ]
+    return {"asignaciones": rows}
+
+
+class RepartoAsignacion(BaseModel):
+    pedido_id: str
+    linea_huella: str
+    operario_nombre: str = ""
+    operario_email: str = ""
+
+
+class RepartoBody(BaseModel):
+    asignaciones: list[RepartoAsignacion]
+
+
+@app.post("/api/manager/reparto")
+def guardar_reparto(
+    request: Request,
+    body: RepartoBody,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """D-72: guarda el reparto de faena.
+
+    La app Android (cuando exista el módulo de faena) leerá esta tabla con
+    GET /api/manager/reparto?fecha=... o un endpoint dedicado por encargado.
+    Clave lógica: (pedido_id, linea_huella). Operario vacío = desasignar.
+    """
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    _ensure_reparto_table()
+    emails = {
+        r["nombre"]: r["email"]
+        for r in _query(
+            f"SELECT nombre, email FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`"
+        )
+    }
+    guardadas, borradas = 0, 0
+    for a in body.asignaciones:
+        huella = (a.linea_huella or "").strip()
+        pedido = (a.pedido_id or "").strip()
+        if not pedido or not huella:
+            continue
+        op_nombre = (a.operario_nombre or "").strip()
+        if not op_nombre:
+            client.query(
+                f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` "
+                f"WHERE pedido_id = {_esc(pedido)} AND linea_huella = {_esc(huella)}"
+            ).result()
+            borradas += 1
+            continue
+        op_email = a.operario_email or emails.get(op_nombre, "")
+        client.query(
+            f"""
+            MERGE `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` T
+            USING (
+                SELECT {_esc(pedido)} AS pedido_id, {_esc(huella)} AS linea_huella,
+                       {_esc(op_email)} AS operario_email, {_esc(op_nombre)} AS operario_nombre,
+                       CURRENT_TIMESTAMP() AS actualizado_en
+            ) S
+            ON T.pedido_id = S.pedido_id AND T.linea_huella = S.linea_huella
+            WHEN MATCHED THEN UPDATE SET operario_email = S.operario_email, operario_nombre = S.operario_nombre, actualizado_en = S.actualizado_en
+            WHEN NOT MATCHED THEN INSERT (pedido_id, linea_huella, operario_email, operario_nombre, actualizado_en)
+                VALUES (S.pedido_id, S.linea_huella, S.operario_email, S.operario_nombre, S.actualizado_en)
+            """
+        ).result()
+        guardadas += 1
+    return {"ok": True, "guardadas": guardadas, "borradas": borradas}
+
+
+# ---------------- D-15X Logística: cierre de línea, discrepancias y perfil operario ----------------
+
+CIERRES_TABLE = "cierres_linea"
+
+MOTIVOS_CIERRE_ETIQUETAS = {
+    "SIN_STOCK": "No hay planta suficiente en campo",
+    "PLANTA_DANADA": "Planta dañada o en mal estado",
+    "CALIBRE_NO_COMERCIAL": "Calibre/tamaño no comercial",
+    "NO_ENCONTRADA": "No se ha encontrado la referencia",
+    "CLIMATOLOGIA": "Daños por climatología",
+    "OTRO": "Otro motivo",
+}
+
+
+def _ensure_cierres_table() -> None:
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{CIERRES_TABLE}` (
+            id STRING NOT NULL,
+            pedido_id STRING NOT NULL,
+            linea_huella STRING NOT NULL,
+            cantidad_faltante INT64,
+            motivo STRING,
+            motivo_texto STRING,
+            operario_email STRING,
+            operario_nombre STRING,
+            creado_en TIMESTAMP
+        )
+        """
+    ).result()
+
+
+class CierreLineaBody(BaseModel):
+    pedido_id: str
+    linea_huella: str
+    cantidad_faltante: int = 0
+    motivo: str = Field(min_length=3, max_length=48)
+    motivo_texto: str = Field(default="", max_length=500)
+    operario_email: str = ""
+    operario_nombre: str = ""
+
+
+@app.post("/api/logistica/cierre-linea")
+def cerrar_linea(
+    req: CierreLineaBody,
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """El operario cierra una línea sin completarla; la oficina recibe el motivo."""
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    if req.motivo not in MOTIVOS_CIERRE_ETIQUETAS:
+        raise HTTPException(status_code=422, detail="Motivo no válido")
+    _ensure_cierres_table()
+    client.query(
+        f"INSERT INTO `{PROJECT}.{PICKING_DATASET}.{CIERRES_TABLE}` "
+        f"(id, pedido_id, linea_huella, cantidad_faltante, motivo, motivo_texto, operario_email, operario_nombre, creado_en) "
+        f"VALUES ({_esc(uuid.uuid4())}, {_esc(req.pedido_id)}, {_esc(req.linea_huella)}, {int(req.cantidad_faltante)}, "
+        f"{_esc(req.motivo)}, {_esc(req.motivo_texto)}, {_esc(req.operario_email)}, {_esc(req.operario_nombre)}, CURRENT_TIMESTAMP())"
+    ).result()
+
+    etiqueta = MOTIVOS_CIERRE_ETIQUETAS[req.motivo]
+    detalle = req.motivo_texto.strip()
+    pos = _posicion_linea(req.pedido_id, req.linea_huella)
+    ref = f"Pedido {req.pedido_id}" + (f" · Línea {pos}" if pos else "")
+    cuerpo = (
+        f"✖️ Línea cerrada por {req.operario_nombre or 'un operario'} ({ref}): "
+        f"faltan {req.cantidad_faltante} uds — {etiqueta}"
+        + (f": {detalle}" if detalle else "")
+    )
+    try:
+        ofis = _query(
+            f"SELECT email FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}` WHERE rol = 'SUPERUSUARIO'"
+        )
+        for ofi in ofis:
+            _enviar_fcm(
+                ofi["email"],
+                "Línea cerrada en campo",
+                cuerpo[:300],
+                {"tipo": "cierre_linea", "pedido": req.pedido_id, "linea": req.linea_huella},
+            )
+    except Exception:
+        pass
+    bot_token = os.getenv("TELEGRAM_MESSAGES_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = _oficina_chat_id(bot_token) if bot_token else None
+    if bot_token and chat_id:
+        try:
+            contexto = _contexto_pedido(req.pedido_id)
+            texto = f"{cuerpo}\n———\n{contexto}" if contexto else cuerpo
+            _telegram_request(
+                bot_token,
+                "sendMessage",
+                {"chat_id": chat_id, "text": texto},
+            )
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+class DiscrepanciaBody(BaseModel):
+    pedido_id: str
+    linea_huella: str
+    declarado: int = 0
+    puntado: int = 0
+    mensaje: str = Field(default="", max_length=500)
+    operario_email: str = ""
+
+
+@app.post("/api/logistica/discrepancia")
+def notificar_discrepancia(
+    req: DiscrepanciaBody,
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """El encargado punta menos unidades de las que declaró el operario: se le pide justificación."""
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    if not req.operario_email:
+        raise HTTPException(status_code=400, detail="operario_email obligatorio")
+    pos = _posicion_linea(req.pedido_id, req.linea_huella)
+    cuerpo = (
+        f"Falta planta en {req.pedido_id}" +
+        (f" línea {pos}" if pos else "") +
+        f": declaraste {req.declarado} uds y se han puntuado {req.puntado} uds."
+    )
+    if req.mensaje.strip():
+        cuerpo += f" {req.mensaje.strip()}"
+    _enviar_fcm(
+        req.operario_email,
+        "Falta planta: indica el motivo",
+        cuerpo[:300],
+        {
+            "tipo": "discrepancia",
+            "pedido": req.pedido_id,
+            "linea": req.linea_huella,
+            "declarado": str(req.declarado),
+            "puntado": str(req.puntado),
+        },
+    )
+    return {"ok": True}
+
+
+@app.get("/api/perfil-operario")
+def perfil_operario(
+    request: Request,
+    email: str = Query(..., description="Email del operario"),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """Perfil ligero para la app de logística (maquinaria y fincas)."""
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    try:
+        _ensure_operarios_table()
+        rows = client.query(
+            f"""
+            SELECT email, nombre, maquinaria, fincas_carga
+            FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`
+            WHERE LOWER(email) = LOWER({_esc(email)}) LIMIT 1
+            """
+        ).result()
+    except Exception:
+        rows = []
+    r = next(iter(rows), None)
+    return {
+        "email": (r.get("email") or email) if r else email,
+        "nombre": (r.get("nombre") or "") if r else "",
+        "maquinaria": (r.get("maquinaria") or "") if r else "",
+        "fincas_carga": (r.get("fincas_carga") or "") if r else "",
+    }
 
 
 class LoginBody(BaseModel):
@@ -1742,6 +2362,7 @@ class EncargadoBody(BaseModel):
 
 class EncargadoGestionBody(BaseModel):
     nombre: str = Field(min_length=1, max_length=128)
+    apellidos: str = Field(default="", max_length=128)
     email: str = Field(min_length=3, max_length=128)
     password: str = Field(default="", max_length=128)
     fincas_carga: str = Field(default="", max_length=256)
@@ -1772,19 +2393,21 @@ def gestionar_encargado(
     client.query(
         f"""
         MERGE `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}` T
-        USING (SELECT {_esc(enc_id)} AS id, {_esc(body.nombre)} AS nombre, {_esc(usuario)} AS usuario,
+        USING (SELECT {_esc(enc_id)} AS id, {_esc(body.nombre)} AS nombre, {_esc(body.apellidos)} AS apellidos,
+                      {_esc(usuario)} AS usuario,
                       {_esc(pwd_hash)} AS password_hash, {_esc(body.rol)} AS rol,
                       {_esc(body.fincas_carga)} AS fincas_carga, 'PICKING' AS modo,
                       {_esc(body.email)} AS email, {str(body.activo).upper()} AS activo) S
         ON T.id = S.id
         WHEN MATCHED THEN UPDATE SET
             nombre = S.nombre,
+            apellidos = S.apellidos,
             email = S.email,
             password_hash = IF(S.password_hash = '', T.password_hash, S.password_hash),
             fincas_carga = S.fincas_carga,
             activo = S.activo
-        WHEN NOT MATCHED THEN INSERT (id, nombre, usuario, password_hash, rol, fincas_carga, modo, email, activo)
-            VALUES (S.id, S.nombre, S.usuario, S.password_hash, S.rol, S.fincas_carga, S.modo, S.email, S.activo)
+        WHEN NOT MATCHED THEN INSERT (id, nombre, apellidos, usuario, password_hash, rol, fincas_carga, modo, email, activo)
+            VALUES (S.id, S.nombre, S.apellidos, S.usuario, S.password_hash, S.rol, S.fincas_carga, S.modo, S.email, S.activo)
         """
     ).result()
     return {"ok": True}
@@ -2119,12 +2742,47 @@ def pedidos(
                     "marca": r.get("MARCA") or "",
                     "fincaRelevada": r.get("FINCA_RELEVADA") or "",
                     "sectorRelevado": r.get("SECTOR_RELEVADO") or "",
+                    "operarioEmail": r.get("_OPERARIO_EMAIL") or "",
+                    "operarioNombre": r.get("_OPERARIO_NOMBRE") or "",
                     "ubicacion": r.get("UBICACION_EXTRA") or "",
                     "prioridad": r.get("PRIORIDAD") or "",
                     "accion": r.get("ACCION_LOGISTICA") or "",
                     "observaciones": r.get("NOTA_LINEA_PEDIDO") or "",
                 }
             )
+    # D-15X: reparto de faena (D-72) adjuntado por lotes para no romper la
+    # consulta principal si la tabla aún no existe.
+    try:
+        _ensure_reparto_table()
+        claves = list(pedidos.keys())
+        for i in range(0, len(claves), 200):
+            lote = [k.split("_")[-1] for k in claves[i:i + 200]]
+            asignaciones = [
+                dict(r)
+                for r in client.query(
+                    f"""
+                    SELECT pedido_id, linea_huella, operario_email, operario_nombre
+                    FROM `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}`
+                    WHERE pedido_id IN UNNEST(@pedidos)
+                    """,
+                    job_config=bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ArrayQueryParameter("pedidos", "STRING", lote)
+                        ]
+                    ),
+                ).result()
+            ]
+            por_numero = {k.split("_")[-1]: pedidos[k] for k in claves}
+            for a in asignaciones:
+                p = por_numero.get(str(a.get("pedido_id") or ""))
+                if p is None:
+                    continue
+                for linea in p["lineas"]:
+                    if linea.get("huella") == a.get("linea_huella"):
+                        linea["operarioEmail"] = (a.get("operario_email") or "").strip()
+                        linea["operarioNombre"] = (a.get("operario_nombre") or "").strip()
+    except Exception:
+        pass
     return {
         "desde": desde.isoformat() if desde else None,
         "fecha": fecha.isoformat() if fecha else None,
@@ -2644,7 +3302,9 @@ def manager_orders(
     
     st_filter = (estado or "").strip().lower()
     if not st_filter:
-        st_filter = "todos" if incluirEnviados else "activos"
+        # D-70: por defecto se muestran TODOS los estados del día: un pedido
+        # acopiado al completo o cargado no desaparece del listado.
+        st_filter = "todos"
 
     filtro_sql = ""
     if st_filter in ("pendientes", "pendiente"):
@@ -2678,7 +3338,8 @@ def manager_orders(
                 COALESCE(pr.DETALLE_OPS, '') AS DETALLE_OPS,
                 CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
                 CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
-                COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO
+                COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO,
+                COALESCE(rf.operario_nombre, '') AS OPERARIO_ASIGNADO
          FROM `{PROJECT}.{DATASET}.PEDIDOS` p
          LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
          LEFT JOIN `{PROJECT}.{DATASET}.AGENTE` ag ON ag.ID_AGENTE = p.CODIGO_AGENTE
@@ -2713,6 +3374,8 @@ def manager_orders(
         LEFT JOIN (
             SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
         ) pf ON pf.order_id = p.NUMERO_PEDIDO
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` rf
+            ON rf.pedido_id = p.NUMERO_PEDIDO AND rf.linea_huella = l.HUELLA_DIGITAL
         WHERE DATE(p.FECHA_CARGA) = @fecha{filtro_sql}
         ORDER BY p.NUMERO_PEDIDO DESC, l.POSICION_PEDIDO
     """
@@ -2751,6 +3414,7 @@ def manager_orders(
                 "direccionDescarga": r.get("DIRECCION_DESCARGA") or "",
                 "agente": r.get("AGENTE") or "",
                 "marcaPedido": r.get("MARCA_PEDIDO") or "",
+                "notasPedido": r.get("NOTAS_PEDIDO") or "",
                 "fechaCarga": str(r.get("FECHA_CARGA")) if r.get("FECHA_CARGA") else None,
                 "sector": r.get("SECTOR_CARGA") or "",
                 "finca": r.get("FINCA_CARGA") or "",
@@ -2780,6 +3444,7 @@ def manager_orders(
                     "acopiado": int(r.get("ACOPIADO") or 0),
                     "operarios": r.get("OPERARIOS") or "",
                     "detalleOperarios": r.get("DETALLE_OPS") or "",
+                    "operarioAsignado": r.get("OPERARIO_ASIGNADO") or "",
                 }
             )
     return {"fecha": target_date.isoformat(), "pedidos": list(pedidos.values())}
@@ -2962,6 +3627,42 @@ def manager_informe_desglose(
     _verify_manager_key(k, x_api_key)
     try:
         html = punteo_html.build_desglose_html(
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+            numero_pedido,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return HTMLResponse(content=html)
+
+
+@app.get("/api/manager/informe/detalle/{numero_pedido}")
+def manager_informe_detalle(
+    numero_pedido: str,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Informe HTML del Detalle del Pistoleo (A4 horizontal, un evento por línea)."""
+    _verify_manager_key(k, x_api_key)
+    try:
+        html = punteo_html.build_detalle_html(
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+            numero_pedido,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return HTMLResponse(content=html)
+
+
+@app.get("/api/manager/informe/control/{numero_pedido}")
+def manager_informe_control(
+    numero_pedido: str,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Informe HTML del Control de Acopio (A4 horizontal con trazabilidad de sustituciones)."""
+    _verify_manager_key(k, x_api_key)
+    try:
+        html = punteo_html.build_control_html(
             client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
             numero_pedido,
         )

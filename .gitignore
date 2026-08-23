@@ -41,3 +41,10 @@ __pycache__/
 
 # APKs generados (carpeta fija de salida)
 apks/
+
+# Copias de seguridad locales (no versionar)
+backups/
+
+# Sesiones de navegador MCP
+.playwright-mcp/
+opencode-export.json

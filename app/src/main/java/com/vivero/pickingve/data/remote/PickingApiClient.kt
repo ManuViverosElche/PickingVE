@@ -259,4 +259,42 @@ class PickingApiClient(
         }
         return response.body<ApiMatriculaResponse>().fotoUrl
     }
+
+    suspend fun fetchPerfilOperario(email: String): PerfilOperarioResponse =
+        client.get("$baseUrl/perfil-operario") {
+            auth()
+            url.parameters.append("email", email)
+        }.body<PerfilOperarioResponse>()
+
+    suspend fun notificarDiscrepancia(
+        pedidoId: String,
+        lineaHuella: String,
+        declarado: Int,
+        puntado: Int,
+        mensaje: String,
+        operarioEmail: String
+    ) {
+        client.post("$baseUrl/logistica/discrepancia") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(
+                DiscrepanciaRequest(
+                    pedidoId = pedidoId,
+                    lineaHuella = lineaHuella,
+                    declarado = declarado,
+                    puntado = puntado,
+                    mensaje = mensaje,
+                    operarioEmail = operarioEmail
+                )
+            )
+        }
+    }
+
+    suspend fun cerrarLinea(request: CierreLineaRequest) {
+        client.post("$baseUrl/logistica/cierre-linea") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+    }
 }

@@ -993,4 +993,30 @@ fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
             lastMessage.value = "Desacopiado ${line.productId} x $qty"
         }
     }
+
+    /** Cierra la línea sin completarla, con motivo prediseñado o libre (logística). */
+    fun cerrarLinea(line: OrderLineEntity, motivo: String, motivoTexto: String) {
+        viewModelScope.launch {
+            val faltante = (line.requestedQty - maxOf(
+                line.pickedQty,
+                line.acopiadoServidor
+            )).coerceAtLeast(0)
+            repository.cerrarLinea(line, motivo, motivoTexto, faltante)
+            lastMessage.value = "Línea cerrada: ${line.productName}" +
+                if (motivoTexto.isNotBlank()) " ($motivoTexto)" else ""
+        }
+    }
+
+    /** Avisa a la oficina de un desfase entre lo declarado por el operario y lo puntuado. */
+    fun notificarDiscrepancia(pedidoId: String, lineaHuella: String, declarado: Int, puntado: Int) {
+        viewModelScope.launch {
+            repository.notificarDiscrepancia(
+                pedidoId = pedidoId,
+                lineaHuella = lineaHuella,
+                declarado = declarado,
+                puntado = puntado,
+                mensaje = "El operario declaró $declarado uds y se han puntuado $puntado uds"
+            )
+        }
+    }
 }

@@ -13,6 +13,8 @@ import com.vivero.pickingve.ui.admin.AdminFincasScreen
 import com.vivero.pickingve.ui.admin.AdminFincasViewModel
 import com.vivero.pickingve.ui.admin.AdminUsersScreen
 import com.vivero.pickingve.ui.admin.AdminUsersViewModel
+import com.vivero.pickingve.ui.logistica.FaenaDashboardScreen
+import com.vivero.pickingve.ui.logistica.FaenaDashboardViewModel
 import com.vivero.pickingve.ui.login.LoginScreen
 import com.vivero.pickingve.ui.login.LoginViewModel
 import com.vivero.pickingve.ui.mode.InventarioScreen
@@ -46,6 +48,8 @@ fun AppNavHost(
         viewModel { AdminUsersViewModel() }
     val adminFincasViewModel: AdminFincasViewModel =
         viewModel { AdminFincasViewModel() }
+    val faenaViewModel: FaenaDashboardViewModel =
+        viewModel { FaenaDashboardViewModel(repository) }
 
     var loggedIn by remember { mutableStateOf(repository.currentEncargado() != null) }
     var screen by remember {
@@ -82,9 +86,19 @@ fun AppNavHost(
                 screen = AppScreen.PICKING
             },
             onOpenSettings = { screen = AppScreen.SETTINGS },
+            onOpenFaena = { screen = AppScreen.FAENA },
             onLogout = {
                 repository.logout()
                 loggedIn = false
+            }
+        )
+
+        AppScreen.FAENA -> FaenaDashboardScreen(
+            viewModel = faenaViewModel,
+            onBack = { screen = AppScreen.ORDERS },
+            onOpenPedido = { orderId ->
+                pickingViewModel.selectOrder(orderId)
+                screen = AppScreen.PICKING
             }
         )
 
@@ -143,4 +157,4 @@ private fun initialScreen(modo: String?): AppScreen = when (modo) {
     else -> AppScreen.ORDERS
 }
 
-private enum class AppScreen { ORDERS, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }
+private enum class AppScreen { ORDERS, FAENA, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }
