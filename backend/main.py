@@ -29,6 +29,7 @@ DATASET = "GestionComercialVE"
 PICKING_DATASET = "pickingve"
 PICKING_TABLE = "picking_registros"
 ENCARGADOS_TABLE = "encargados"
+OPERARIOS_TABLE = "operarios"
 FINCAS_TABLE = "fincas"
 API_KEY = os.getenv("API_KEY", "")
 PASSWORD_SALT = os.getenv("PASSWORD_SALT", "pickingve-2026")
@@ -152,6 +153,30 @@ def _ensure_encargados_table() -> None:
     _ensure_column(ENCARGADOS_TABLE, "modo", "modo STRING")
     _ensure_column(ENCARGADOS_TABLE, "email", "email STRING")
     _ensure_column(ENCARGADOS_TABLE, "activo", "activo BOOL")
+
+
+def _ensure_operarios_table() -> None:
+    dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
+    try:
+        client.get_dataset(dataset_ref)
+    except NotFound:
+        client.create_dataset(dataset_ref)
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}` (
+            id STRING,
+            nombre STRING,
+            apellidos STRING,
+            email STRING,
+            password_hash STRING,
+            fincas_carga STRING,
+            activo BOOL
+        )
+        """
+    ).result()
+    _ensure_column(OPERARIOS_TABLE, "apellidos", "apellidos STRING")
+    _ensure_column(OPERARIOS_TABLE, "email", "email STRING")
+    _ensure_column(OPERARIOS_TABLE, "activo", "activo BOOL")
 
 
 def _ensure_fincas_table() -> None:
@@ -306,6 +331,7 @@ def _ensure_column(table: str, column: str, ddl: str) -> None:
 def _startup() -> None:
     _ensure_picking_table()
     _ensure_encargados_table()
+    _ensure_operarios_table()
     _ensure_fincas_table()
     _ensure_notificaciones_tables()
     _ensure_matriculas_table()
@@ -1469,6 +1495,87 @@ def lista_encargados(
     }
 
 
+@app.get("/api/operarios")
+def lista_operarios(
+    request: Request,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    _ensure_operarios_table()
+    rows = _query(
+        f"""
+        SELECT id, nombre, apellidos, email, password_hash, fincas_carga, activo
+        FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`
+        ORDER BY nombre
+        """
+    )
+    return {
+        "operarios": [
+            {**r, "email": r.get("email") or "", "apellidos": r.get("apellidos") or "", "activo": r.get("activo") is not False}
+            for r in rows
+        ]
+    }
+
+
+class OperarioRequest(BaseModel):
+    id: Optional[str] = None
+    nombre: str
+    apellidos: str = ""
+    email: str
+    password: Optional[str] = None
+    fincas_carga: str = ""
+    activo: bool = True
+
+
+@app.post("/api/operarios")
+def crear_operario(
+    req: OperarioRequest,
+    request: Request,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    _ensure_operarios_table()
+    op_id = req.id or uuid.uuid4().hex
+    pwd_hash = _hash_password(req.email, req.password) if req.password else None
+    
+    existing = _query(f"SELECT password_hash FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}` WHERE email = {_esc(req.email)}")
+    if not pwd_hash and existing:
+        pwd_hash = existing[0].get("password_hash")
+    elif not pwd_hash:
+        pwd_hash = _hash_password(req.email, "1234")
+
+    client.query(
+        f"""
+        MERGE `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}` T
+        USING (SELECT {_esc(op_id)} AS id, {_esc(req.nombre)} AS nombre, {_esc(req.apellidos)} AS apellidos, {_esc(req.email)} AS email, {_esc(pwd_hash)} AS password_hash, {_esc(req.fincas_carga)} AS fincas_carga, {str(req.activo).upper()} AS activo) S
+        ON T.email = S.email
+        WHEN MATCHED THEN UPDATE SET nombre = S.nombre, apellidos = S.apellidos, password_hash = COALESCE(S.password_hash, T.password_hash), fincas_carga = S.fincas_carga, activo = S.activo
+        WHEN NOT MATCHED THEN INSERT (id, nombre, apellidos, email, password_hash, fincas_carga, activo) VALUES (S.id, S.nombre, S.apellidos, S.email, S.password_hash, S.fincas_carga, S.activo)
+        """
+    ).result()
+    return {"ok": True}
+
+
+@app.post("/api/operarios/eliminar")
+def eliminar_operario(
+    req: dict[str, str],
+    request: Request,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    email = req.get("email")
+    if not email:
+        raise HTTPException(400, "Email obligatorio")
+    client.query(f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}` WHERE email = {_esc(email)}").result()
+    return {"ok": True}
+
+
 @app.get("/api/fincas")
 def lista_fincas(
     request: Request,
@@ -1631,6 +1738,56 @@ class EncargadoBody(BaseModel):
     modo: str = Field(default="PICKING", max_length=16)
     email: str = Field(default="", max_length=128)
     activo: bool = True
+
+
+class EncargadoGestionBody(BaseModel):
+    nombre: str = Field(min_length=1, max_length=128)
+    email: str = Field(min_length=3, max_length=128)
+    password: str = Field(default="", max_length=128)
+    fincas_carga: str = Field(default="", max_length=256)
+    rol: str = Field(default="ENCARGADO", max_length=32)
+    activo: bool = True
+
+
+@app.post("/api/encargados/gestion")
+def gestionar_encargado(
+    request: Request,
+    body: EncargadoGestionBody,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_manager_key(k, x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    _ensure_encargados_table()
+    usuario = body.email.split("@")[0].lower()
+    enc_id = f"ID-{uuid.uuid4().hex[:10].upper()}"
+    pwd_hash = _hash_password(usuario, body.password) if body.password else ""
+    existing = _query(
+        f"SELECT id FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}` WHERE LOWER(email) = {_esc(body.email.lower())} OR LOWER(usuario) = {_esc(usuario)}"
+    )
+    if existing:
+        enc_id = existing[0]["id"]
+        if not body.password:
+            pwd_hash = ""
+    client.query(
+        f"""
+        MERGE `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}` T
+        USING (SELECT {_esc(enc_id)} AS id, {_esc(body.nombre)} AS nombre, {_esc(usuario)} AS usuario,
+                      {_esc(pwd_hash)} AS password_hash, {_esc(body.rol)} AS rol,
+                      {_esc(body.fincas_carga)} AS fincas_carga, 'PICKING' AS modo,
+                      {_esc(body.email)} AS email, {str(body.activo).upper()} AS activo) S
+        ON T.id = S.id
+        WHEN MATCHED THEN UPDATE SET
+            nombre = S.nombre,
+            email = S.email,
+            password_hash = IF(S.password_hash = '', T.password_hash, S.password_hash),
+            fincas_carga = S.fincas_carga,
+            activo = S.activo
+        WHEN NOT MATCHED THEN INSERT (id, nombre, usuario, password_hash, rol, fincas_carga, modo, email, activo)
+            VALUES (S.id, S.nombre, S.usuario, S.password_hash, S.rol, S.fincas_carga, S.modo, S.email, S.activo)
+        """
+    ).result()
+    return {"ok": True}
 
 
 @app.post("/api/encargados")
@@ -2518,6 +2675,7 @@ def manager_orders(
                 COALESCE(st.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '') AS SECTOR_DESC,
                 COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
                 COALESCE(pr.OPERARIOS, '') AS OPERARIOS,
+                COALESCE(pr.DETALLE_OPS, '') AS DETALLE_OPS,
                 CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
                 CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
                 COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO
@@ -2531,9 +2689,18 @@ def manager_orders(
          LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = l.CODIGO_LITRAJE
          LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN (
-            SELECT order_id, order_line_id, SUM(cantidad_partida) AS ACOPIADO,
-                   STRING_AGG(DISTINCT empleado_nombre, ', ') AS OPERARIOS
-            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            SELECT order_id, order_line_id,
+                   SUM(cantidad) AS ACOPIADO,
+                   STRING_AGG(empleado, ', ') AS OPERARIOS,
+                   STRING_AGG(detalle, ', ') AS DETALLE_OPS
+            FROM (
+                SELECT order_id, order_line_id,
+                       COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido') AS empleado,
+                       CONCAT(COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido'), ':', CAST(SUM(cantidad_partida) AS INT64)) AS detalle,
+                       SUM(cantidad_partida) AS cantidad
+                FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+                GROUP BY order_id, order_line_id, empleado_nombre
+            )
             GROUP BY order_id, order_line_id
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
         LEFT JOIN (
@@ -2612,6 +2779,7 @@ def manager_orders(
                     "pendientes": r.get("UNIDADES_PENDIENTES") or 0,
                     "acopiado": int(r.get("ACOPIADO") or 0),
                     "operarios": r.get("OPERARIOS") or "",
+                    "detalleOperarios": r.get("DETALLE_OPS") or "",
                 }
             )
     return {"fecha": target_date.isoformat(), "pedidos": list(pedidos.values())}
