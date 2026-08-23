@@ -3330,7 +3330,7 @@ def compensar(
     client.query(
         f"""
         MERGE `{PROJECT}.{PICKING_DATASET}.{COMPENSACIONES_TABLE}` T
-        USING (SELECT * FROM UNNEST([STRUCT<record_id STRING, pedido_id STRING, cantidad FLOAT64>]{values})) S
+        USING (SELECT * FROM UNNEST([STRUCT<record_id STRING, pedido_id STRING, cantidad FLOAT64>{values}])) S
         ON T.record_id = S.record_id
         WHEN NOT MATCHED THEN
           INSERT (record_id, pedido_id, cantidad, creado_en)
