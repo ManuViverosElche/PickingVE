@@ -1,4 +1,4 @@
-package com.vivero.pickingve.ui.login
+﻿package com.vivero.pickingve.ui.login
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,8 +25,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,7 +43,7 @@ fun LoginScreen(
     viewModel: LoginViewModel,
     onLoginSuccess: () -> Unit
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     var selectedUsuario by remember { mutableStateOf<String?>(null) }
     var password by remember { mutableStateOf("") }
 
@@ -110,7 +110,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Contraseña") },
+                label = { Text("ContraseÃ±a") },
                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 singleLine = true,
                 enabled = selectedUsuario != null,
@@ -128,7 +128,7 @@ fun LoginScreen(
                             } else {
                                 Icons.Filled.Visibility
                             },
-                            contentDescription = if (showPassword) "Ocultar contraseña" else "Mostrar contraseña",
+                            contentDescription = if (showPassword) "Ocultar contraseÃ±a" else "Mostrar contraseÃ±a",
                             tint = if (selectedUsuario != null) BrandGreen else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

@@ -1,4 +1,4 @@
-package com.vivero.pickingve.ui.admin
+﻿package com.vivero.pickingve.ui.admin
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -30,8 +30,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,7 +51,7 @@ fun AdminUsersScreen(
     viewModel: AdminUsersViewModel,
     onBack: () -> Unit
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -109,7 +109,7 @@ fun AdminUsersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gestión de usuarios") },
+                title = { Text("GestiÃ³n de usuarios") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
@@ -149,7 +149,7 @@ fun AdminUsersScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text(if (editing) "Nueva contraseña (vacío = no cambia)" else "Contraseña") },
+                label = { Text(if (editing) "Nueva contraseÃ±a (vacÃ­o = no cambia)" else "ContraseÃ±a") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -250,7 +250,7 @@ fun AdminUsersScreen(
                         onClick = { viewModel.cancelarEdicion() },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Cancelar edición")
+                        Text("Cancelar ediciÃ³n")
                     }
                 }
             }
@@ -259,13 +259,13 @@ fun AdminUsersScreen(
 
             Text("Usuarios dados de alta", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Toca un usuario para editarlo (email, rol, modo, estado, fincas o contraseña).",
+                "Toca un usuario para editarlo (email, rol, modo, estado, fincas o contraseÃ±a).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (state.encargados.isEmpty()) {
                 Text(
-                    "Sin usuarios todavía",
+                    "Sin usuarios todavÃ­a",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -286,7 +286,7 @@ fun AdminUsersScreen(
                         ) {
                             Text(e.nombre, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                if (e.activo) e.modo else "${e.modo} · BAJA",
+                                if (e.activo) e.modo else "${e.modo} Â· BAJA",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (e.activo) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -296,7 +296,7 @@ fun AdminUsersScreen(
                             )
                         }
                         Text(
-                            "@${e.usuario} · ${e.rol}",
+                            "@${e.usuario} Â· ${e.rol}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

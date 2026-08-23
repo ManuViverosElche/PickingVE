@@ -1,4 +1,4 @@
-package com.vivero.pickingve.ui.admin
+﻿package com.vivero.pickingve.ui.admin
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,8 +30,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,7 +46,7 @@ fun AdminFincasScreen(
     viewModel: AdminFincasViewModel,
     onBack: () -> Unit
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var nuevaFinca by remember { mutableStateOf("") }
     var fincaEditando by remember { mutableStateOf<ApiFinca?>(null) }
@@ -100,7 +100,7 @@ fun AdminFincasScreen(
             text = {
                 Text(
                     "Se borra definitivamente. Si la finca vuelve a aparecer en pedidos " +
-                        "nuevos, se volverá a importar automáticamente."
+                        "nuevos, se volverÃ¡ a importar automÃ¡ticamente."
                 )
             },
             confirmButton = {
@@ -124,7 +124,7 @@ fun AdminFincasScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gestión de fincas") },
+                title = { Text("GestiÃ³n de fincas") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
@@ -144,9 +144,9 @@ fun AdminFincasScreen(
         ) {
             Text(
                 "Las fincas detectadas en pedidos y las dadas de alta manualmente se asignan " +
-                    "a cada empleado desde Gestión de usuarios. Puedes renombrarlas, ocultarlas " +
+                    "a cada empleado desde GestiÃ³n de usuarios. Puedes renombrarlas, ocultarlas " +
                     "(el interruptor oculta/muestra: las ocultas no se ofrecen al empleado, pero sus " +
-                    "pedidos siguen sincronizándose) o eliminarlas definitivamente.",
+                    "pedidos siguen sincronizÃ¡ndose) o eliminarlas definitivamente.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -170,7 +170,7 @@ fun AdminFincasScreen(
                     },
                     enabled = nuevaFinca.isNotBlank()
                 ) {
-                    Text("Añadir")
+                    Text("AÃ±adir")
                 }
             }
 
@@ -178,7 +178,7 @@ fun AdminFincasScreen(
                 CircularProgressIndicator(modifier = Modifier.padding(top = 24.dp))
             } else if (state.fincas.isEmpty()) {
                 Text(
-                    "Sin fincas todavía",
+                    "Sin fincas todavÃ­a",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -194,7 +194,7 @@ fun AdminFincasScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(finca.nombre, style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    if (finca.oculto) "Oculta" else if (finca.manual) "Manual" else "Automática (de pedidos)",
+                                    if (finca.oculto) "Oculta" else if (finca.manual) "Manual" else "AutomÃ¡tica (de pedidos)",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

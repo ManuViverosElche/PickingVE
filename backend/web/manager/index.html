@@ -667,21 +667,22 @@
     const q = (document.getElementById('searchEncargados')?.value || '').toLowerCase();
     const lista = encargadosList.filter(e =>
       !q || `${e.nombre} ${e.apellidos || ''} ${e.email}`.toLowerCase().includes(q));
+    _cfgFiltered.encargados = lista;
     setCfgCount('cfgCountEncargados', lista.length);
     if (!lista.length) {
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin encargados que coincidan.</div>';
       return;
     }
     let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Fincas</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
-    lista.forEach(e => {
+    lista.forEach((e, i) => {
       html += `<tr>
         <td><div class="person-cell"><span class="avatar">${escHtml(initials(e.nombre, e.apellidos))}</span><div><b>${escHtml(e.nombre)}</b> <span style="color:var(--mut);">${escHtml(e.apellidos || '')}</span></div></div></td>
         <td style="font-size:0.78rem; color:var(--mut);">${escHtml(e.email)}</td>
         <td style="font-size:0.72rem; max-width:180px;">${escHtml((e.fincas_carga || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
         <td><span class="pill ${e.activo !== false ? 'pill-ok' : 'pill-off'}">${e.activo !== false ? 'Activo' : 'Baja'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick='openPersonModal("encargado", ${JSON.stringify(JSON.stringify(e))})' title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarEncargado('${escHtml(e.email)}', '${escHtml(e.nombre)}')" title="Dar de baja / eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openPersonModal('encargado', ${i})" title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarEncargado(${i})" title="Dar de baja / eliminar">🗑️</button>
         </td>
       </tr>`;
     });
@@ -694,21 +695,22 @@
     const q = (document.getElementById('searchOperarios')?.value || '').toLowerCase();
     const lista = operariosList.filter(o =>
       !q || `${o.nombre} ${o.apellidos || ''} ${o.email} ${o.maquinaria || ''}`.toLowerCase().includes(q));
+    _cfgFiltered.operarios = lista;
     setCfgCount('cfgCountOperarios', lista.length);
     if (!lista.length) {
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin operarios que coincidan.</div>';
       return;
     }
     let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Maquinaria</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
-    lista.forEach(op => {
+    lista.forEach((op, i) => {
       html += `<tr>
         <td><div class="person-cell"><span class="avatar">${escHtml(initials(op.nombre, op.apellidos))}</span><div><b>${escHtml(op.nombre)}</b> <span style="color:var(--mut);">${escHtml(op.apellidos || '')}</span></div></div></td>
         <td style="font-size:0.78rem; color:var(--mut);">${escHtml(op.email)}</td>
         <td style="font-size:0.72rem; max-width:160px;">${escHtml((op.maquinaria || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
         <td><span class="pill ${op.activo !== false ? 'pill-ok' : 'pill-off'}">${op.activo !== false ? 'Activo' : 'Baja'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick='openPersonModal("operario", ${JSON.stringify(JSON.stringify(op))})' title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarOperario('${escHtml(op.email)}', '${escHtml(op.nombre)}')" title="Eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openPersonModal('operario', ${i})" title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarOperario(${i})" title="Eliminar">🗑️</button>
         </td>
       </tr>`;
     });
@@ -720,20 +722,21 @@
     if (!cont) return;
     const q = (document.getElementById('searchFincasCfg')?.value || '').toLowerCase();
     const lista = fincasCfgList.filter(f => !q || `${f.finca} ${f.nombre}`.toLowerCase().includes(q));
+    _cfgFiltered.fincas = lista;
     if (!lista.length) {
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin fincas que coincidan.</div>';
       return;
     }
     let html = '<table class="cfg-table"><thead><tr><th>Finca</th><th>Nombre mostrado</th><th>Tipo</th><th>Estado</th><th style="width:120px;">Acciones</th></tr></thead><tbody>';
-    lista.forEach(f => {
+    lista.forEach((f, i) => {
       html += `<tr>
         <td><b>${escHtml(f.finca)}</b></td>
         <td style="color:var(--blue);">${escHtml(f.nombre || f.finca)}</td>
         <td><span class="pill">${f.manual ? 'Manual' : 'Auto (pedidos)'}</span></td>
         <td><span class="pill ${f.oculto ? 'pill-off' : 'pill-ok'}">${f.oculto ? 'Oculta' : 'Visible'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick='openFincaModal(${JSON.stringify(JSON.stringify(f))})' title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarFincaCfg('${escHtml(f.finca)}')" title="${f.manual ? 'Eliminar' : 'Ocultar'}">${f.manual ? '🗑️' : '🙈'}</button>
+          <button class="icon-btn" onclick="openFincaModal(${i})" title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarFincaCfg(${i})" title="${f.manual ? 'Eliminar' : 'Ocultar'}">${f.manual ? '🗑️' : '🙈'}</button>
         </td>
       </tr>`;
     });
@@ -746,21 +749,22 @@
     if (!cont) return;
     const q = (document.getElementById('searchMaquinarias')?.value || '').toLowerCase();
     const lista = maquinariasList.filter(m => !q || `${m.nombre} ${m.descripcion} ${m.familia || ''}`.toLowerCase().includes(q));
+    _cfgFiltered.maquinarias = lista;
     setCfgCount('cfgCountMaquinarias', lista.length);
     if (!lista.length) {
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin maquinaria dada de alta todavía.</div>';
       return;
     }
     let html = '<table class="cfg-table"><thead><tr><th style="width:22%;">Nombre</th><th style="width:18%;">Familia</th><th>Descripción</th><th style="width:12%;">Estado</th><th style="width:110px;">Acciones</th></tr></thead><tbody>';
-    lista.forEach(m => {
+    lista.forEach((m, i) => {
       html += `<tr>
         <td><b>${escHtml(m.nombre)}</b></td>
         <td>${m.familia ? `<span class="pill">${escHtml(m.familia)}</span>` : '<span style="color:var(--mut);">—</span>'}</td>
         <td style="font-size:0.76rem; color:var(--mut);">${escHtml(m.descripcion || '—')}</td>
         <td><span class="pill ${m.activo !== false ? 'pill-ok' : 'pill-off'}">${m.activo !== false ? 'Activa' : 'Inactiva'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick='openMaquinariaModal(${JSON.stringify(JSON.stringify(m))})' title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarMaquinaria('${escHtml(m.id)}', '${escHtml(m.nombre)}')" title="Eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openMaquinariaModal(${i})" title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarMaquinaria(${i})" title="Eliminar">🗑️</button>
         </td>
       </tr>`;
     });
@@ -772,13 +776,14 @@
     if (!cont) return;
     const q = (document.getElementById('searchFamilias')?.value || '').toLowerCase();
     const lista = familiasList.filter(f => !q || `${f.nombre} ${f.descripcion}`.toLowerCase().includes(q));
+    _cfgFiltered.familias = lista;
     setCfgCount('cfgCountFamilias', lista.length);
     if (!lista.length) {
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin familias dadas de alta todavía.</div>';
       return;
     }
     let html = '<table class="cfg-table"><thead><tr><th style="width:26%;">Nombre</th><th>Descripción</th><th style="width:16%;">Maquinarias</th><th style="width:12%;">Estado</th><th style="width:110px;">Acciones</th></tr></thead><tbody>';
-    lista.forEach(f => {
+    lista.forEach((f, i) => {
       const nMq = maquinariasList.filter(m => m.familia === f.nombre).length;
       html += `<tr>
         <td><b>${escHtml(f.nombre)}</b></td>
@@ -786,8 +791,8 @@
         <td><span class="pill">${nMq} maq.</span></td>
         <td><span class="pill ${f.activo !== false ? 'pill-ok' : 'pill-off'}">${f.activo !== false ? 'Activa' : 'Inactiva'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick='openFamiliaModal(${JSON.stringify(JSON.stringify(f))})' title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarFamilia('${escHtml(f.id)}', '${escHtml(f.nombre)}')" title="Eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openFamiliaModal(${i})" title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarFamilia(${i})" title="Eliminar">🗑️</button>
         </td>
       </tr>`;
     });
@@ -807,8 +812,18 @@
     return [...document.querySelectorAll(`#${containerId} .chip-sel.on`)].map(el => el.dataset.val);
   }
 
-  async function openPersonModal(tipo, dataJson) {
-    const data = dataJson ? JSON.parse(dataJson) : null;
+  const _cfgFiltered = { encargados: [], operarios: [], fincas: [], maquinarias: [], familias: [] };
+  function cfgGet(tipo, idx) { return (_cfgFiltered[tipo] || [])[idx] || null; }
+  function jsAttr(s) {
+    return String(s ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '&quot;')
+      .replace(/[\r\n]+/g, ' ');
+  }
+
+  async function openPersonModal(tipo, idx) {
+    const data = idx === undefined || idx === null ? null : cfgGet(tipo === 'encargado' ? 'encargados' : 'operarios', idx);
     document.getElementById('pmTipo').value = tipo;
     document.getElementById('pmOriginalEmail').value = data?.email || '';
     document.getElementById('pmNombre').value = data?.nombre || '';
@@ -835,6 +850,7 @@
   }
 
   async function guardarPersonModal() {
+    await conEnvioUnico('personModal', async () => {
     const tipo = document.getElementById('pmTipo').value;
     const nombre = document.getElementById('pmNombre').value.trim();
     const apellidos = document.getElementById('pmApellidos').value.trim();
@@ -874,11 +890,12 @@
       console.error(e);
       alert("Error de red");
     }
+    });
   }
 
   // ===== Modal finca =====
-  function openFincaModal(dataJson) {
-    const f = dataJson ? JSON.parse(dataJson) : null;
+  function openFincaModal(idx) {
+    const f = idx === undefined || idx === null ? null : cfgGet('fincas', idx);
     document.getElementById('fmOriginal').value = f?.finca || '';
     document.getElementById('fmNombreReal').value = f?.finca || '';
     document.getElementById('fmNombreReal').disabled = !!f;
@@ -889,6 +906,7 @@
   }
 
   async function guardarFincaModal() {
+    await conEnvioUnico('fincaModal', async () => {
     const original = document.getElementById('fmOriginal').value.trim();
     const finca = (document.getElementById('fmNombreReal').value || original).trim();
     const nombreMostrar = document.getElementById('fmNombreMostrar').value.trim();
@@ -900,28 +918,32 @@
         body: JSON.stringify({ finca, nombre: nombreMostrar || null, activo })
       });
       if (res.ok) { closeModal('fincaModal'); renderConfigView(); }
-      else alert("Error al guardar la finca");
+      else alert(`Error al guardar la finca (HTTP ${res.status})`);
     } catch (e) { console.error(e); alert("Error de red"); }
+    });
   }
 
-  async function eliminarFincaCfg(finca) {
-    const f = fincasCfgList.find(x => x.finca === finca);
-    const msg = f && f.manual
+  async function eliminarFincaCfg(idx) {
+    const f = cfgGet('fincas', idx);
+    if (!f) return;
+    const finca = f.finca;
+    const msg = f.manual
       ? `¿Eliminar definitivamente la finca manual "${finca}"?`
       : `¿Ocultar la finca "${finca}" para los empleados? Las cargas siguen entrando; podrás volver a mostrarla.`;
     if (!confirm(msg)) return;
     try {
-      await fetch(`/api/fincas/eliminar?k=${MANAGER_KEY}`, {
+      const res = await fetch(`/api/fincas/eliminar?k=${MANAGER_KEY}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ finca })
       });
+      if (!res.ok) alert(`Error al eliminar la finca (HTTP ${res.status})`);
       renderConfigView();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); alert("Error de red al eliminar la finca"); }
   }
 
   // ===== Modal maquinaria =====
-  function openMaquinariaModal(dataJson) {
-    const m = dataJson ? JSON.parse(dataJson) : null;
+  function openMaquinariaModal(idx) {
+    const m = idx === undefined || idx === null ? null : cfgGet('maquinarias', idx);
     document.getElementById('mmId').value = m?.id || '';
     document.getElementById('mmNombre').value = m?.nombre || '';
     const selFam = document.getElementById('mmFamilia');
@@ -968,21 +990,23 @@
     });
   }
 
-  async function eliminarMaquinaria(id, nombre) {
-    if (!id) return;
-    if (!confirm(`¿Eliminar la maquinaria "${nombre}"?`)) return;
+  async function eliminarMaquinaria(idx) {
+    const m = cfgGet('maquinarias', idx);
+    if (!m || !m.id) return;
+    if (!confirm(`¿Eliminar la maquinaria "${m.nombre}"?`)) return;
     try {
-      await fetch(`/api/manager/maquinarias/eliminar?k=${MANAGER_KEY}`, {
+      const res = await fetch(`/api/manager/maquinarias/eliminar?k=${MANAGER_KEY}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id: m.id })
       });
+      if (!res.ok) alert(`Error al eliminar la maquinaria (HTTP ${res.status})`);
       renderConfigView();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); alert("Error de red al eliminar la maquinaria"); }
   }
 
   // ===== Modal familia de maquinaria =====
-  function openFamiliaModal(dataJson) {
-    const f = dataJson ? JSON.parse(dataJson) : null;
+  function openFamiliaModal(idx) {
+    const f = idx === undefined || idx === null ? null : cfgGet('familias', idx);
     document.getElementById('famId').value = f?.id || '';
     document.getElementById('famNombre').value = f?.nombre || '';
     document.getElementById('famDescripcion').value = f?.descripcion || '';
@@ -1009,50 +1033,59 @@
     });
   }
 
-  async function eliminarFamilia(id, nombre) {
-    if (!id) return;
-    const nMq = maquinariasList.filter(m => m.familia === nombre).length;
+  async function eliminarFamilia(idx) {
+    const f = cfgGet('familias', idx);
+    if (!f || !f.id) return;
+    const nMq = maquinariasList.filter(m => m.familia === f.nombre).length;
     const extra = nMq ? `\n\nHay ${nMq} maquinaria(s) asignada(s) a esta familia; quedarán sin familia.` : '';
-    if (!confirm(`¿Eliminar la familia "${nombre}"?${extra}`)) return;
+    if (!confirm(`¿Eliminar la familia "${f.nombre}"?${extra}`)) return;
     try {
-      await fetch(`/api/manager/maquinarias-familias/eliminar?k=${MANAGER_KEY}`, {
+      const res = await fetch(`/api/manager/maquinarias-familias/eliminar?k=${MANAGER_KEY}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id: f.id })
       });
+      if (!res.ok) alert(`Error al eliminar la familia (HTTP ${res.status})`);
       renderConfigView();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); alert("Error de red al eliminar la familia"); }
   }
 
-  async function eliminarEncargado(email, nombre) {
-    if (!confirm(`¿Qué hacer con el encargado ${nombre}?\n\nAceptar = dar de baja (conserva histórico)\nNo hay tercera opción: para reactivarlo usa Editar → Activo.`)) return;
+  async function eliminarEncargado(idx) {
+    const e = cfgGet('encargados', idx);
+    if (!e) return;
+    if (!confirm(`¿Qué hacer con el encargado ${e.nombre}?\n\nAceptar = dar de baja (conserva histórico)\nNo hay tercera opción: para reactivarlo usa Editar → Activo.`)) return;
     try {
-      const enc = encargadosList.find(e => e.email === email);
-      await fetch(`/api/encargados/gestion?k=${MANAGER_KEY}`, {
+      const res = await fetch(`/api/encargados/gestion?k=${MANAGER_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nombre: enc?.nombre || email,
-          apellidos: enc?.apellidos || '',
-          email, activo: false
+          nombre: e.nombre,
+          apellidos: e.apellidos || '',
+          email: e.email, activo: false
         })
       });
+      if (!res.ok) alert(`Error al dar de baja al encargado (HTTP ${res.status})`);
       renderConfigView();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
+      alert("Error de red al dar de baja al encargado");
     }
   }
 
-  async function eliminarOperario(email, nombre) {
-    if (!confirm(`¿Eliminar definitivamente al operario ${nombre} (${email})?`)) return;
+  async function eliminarOperario(idx) {
+    const op = cfgGet('operarios', idx);
+    if (!op) return;
+    if (!confirm(`¿Eliminar definitivamente al operario ${op.nombre} (${op.email})?`)) return;
     try {
-      await fetch(`/api/operarios/eliminar?k=${MANAGER_KEY}`, {
+      const res = await fetch(`/api/operarios/eliminar?k=${MANAGER_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email: op.email })
       });
+      if (!res.ok) alert(`Error al eliminar el operario (HTTP ${res.status})`);
       renderConfigView();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
+      alert("Error de red al eliminar el operario");
     }
   }
 
@@ -1126,6 +1159,7 @@
 
     try {
       const res = await fetch(`/api/manager/orders?fecha=${dateVal}&estado=todos&k=${MANAGER_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const orders = data.pedidos || [];
 
@@ -1249,7 +1283,7 @@
     const comercial = o.agente ? `Comercial: <b>${escHtml(o.agente)}</b>` : 'Comercial: N/D';
     const zone = o.sector || 'N/D';
     const obsBtn = o.notasPedido
-      ? `<button class="icon-btn" onclick="event.stopPropagation(); openObsModal('Observaciones — Pedido #${o.numero}', '${escHtml(o.notasPedido).replace(/'/g, '&#39;')}')" title="Observaciones del pedido">📝 Observaciones</button>`
+      ? `<button class="icon-btn" onclick="event.stopPropagation(); openObsModal('Observaciones — Pedido #${o.numero}', '${jsAttr(o.notasPedido)}')" title="Observaciones del pedido">📝 Observaciones</button>`
       : '';
     const msgBlink = esSinLeer(o.numero, '') ? ' btn-msg-unread' : '';
 
@@ -1297,7 +1331,7 @@
       const huella = l.huellaDigital || String(lineNum);
       mapaPosicionHuella[`${o.serie}_${o.numero}_${lineNum}`] = l.huellaDigital || '';
       const infoBtn = (l.observaciones || '').trim()
-        ? `<button class="icon-btn" onclick='openObsModal("Observaciones línea ${lineNum} — Ref ${escHtml(l.referencia)}", "${escHtml(l.observaciones).replace(/'/g, '&#39;')}")' title="${escHtml(l.observaciones)}">📝 Info</button>`
+        ? `<button class="icon-btn" onclick="openObsModal('Observaciones línea ${lineNum} — Ref ${jsAttr(l.referencia)}', '${jsAttr(l.observaciones)}')" title="${escHtml(l.observaciones)}">📝 Info</button>`
         : '';
       const lineMsgBlink = esSinLeer(o.numero, l.huellaDigital) ? ' btn-msg-unread' : '';
 
@@ -1413,6 +1447,7 @@
     if (!el.value && selectedDate) el.value = selectedDate;
     try {
       const res = await fetch(`/api/manager/orders?fecha=${el.value}&estado=todos&k=${MANAGER_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const orders = (await res.json()).pedidos || [];
       window._cargaOrders = orders;
       document.getElementById('cargaContainer').innerHTML = renderTablaCargaOperarios(orders);
@@ -1472,7 +1507,13 @@
   }
 
   function selectFechaReparto(fecha) {
+    const nPedidos = Object.keys(cambiosFaenaPendientes).length;
+    if (nPedidos > 0 && !confirm(`Hay cambios de reparto sin guardar en ${nPedidos} pedido(s).\nAl cambiar de fecha se DESCARTARÁN.\n\n¿Continuar?`)) {
+      return;
+    }
+    if (nPedidos > 0) cambiosFaenaPendientes = {};
     document.getElementById('filterDateReparto').value = fecha;
+    renderDateChipsReparto();
     renderReparto();
   }
 
@@ -1495,6 +1536,7 @@
       let url = `/api/comentarios?pedido=${currentChatPedido}&k=${MANAGER_KEY}`;
       if (currentChatLinea) url += `&linea=${currentChatLinea}`;
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const msgs = data.comentarios || [];
       if (!msgs.length) {
@@ -1508,9 +1550,9 @@
         const align = esOficina ? 'margin-left:auto;' : 'margin-right:auto;';
         html += `
           <div style="background:${bg}; border-radius:8px; padding:8px 12px; max-width:85%; ${align} font-size:0.85rem;">
-            <div style="font-weight:700; color:var(--lime); font-size:0.75rem; margin-bottom:2px;">${m.autor_nombre || m.autor_email} (${m.rol})</div>
-            <div>${m.texto}</div>
-            <div style="font-size:0.68rem; color:var(--mut); text-align:right; margin-top:2px;">${m.creado_en || ''}</div>
+            <div style="font-weight:700; color:var(--lime); font-size:0.75rem; margin-bottom:2px;">${escHtml(m.autor_nombre || m.autor_email)} (${escHtml(m.rol)})</div>
+            <div>${escHtml(m.texto)}</div>
+            <div style="font-size:0.68rem; color:var(--mut); text-align:right; margin-top:2px;">${escHtml(m.creado_en || '')}</div>
           </div>
         `;
       });
@@ -1603,12 +1645,6 @@
     cont.innerHTML = html;
   }
 
-  function selectFechaReparto(fecha) {
-    document.getElementById('filterDateReparto').value = fecha;
-    renderDateChipsReparto();
-    renderReparto();
-  }
-
   function selectFecha(fecha) {
     selectedDate = fecha;
     document.getElementById('filterDate').value = fecha;
@@ -1658,6 +1694,7 @@
       const dateVal = document.getElementById('filterDate').value;
       const url = `/api/manager/orders?fecha=${dateVal}&estado=${filterEstado}&k=${MANAGER_KEY}`;
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       allOrdersData = data.pedidos || [];
       populateFincas(allOrdersData);
@@ -1735,7 +1772,7 @@
 
         const brandBadge = o.marcaPedido ? `<span class="badge blink-prio b-yellow" style="margin-left:6px;">🏷️ ${escHtml(o.marcaPedido)}</span>` : '';
         const qtyBox = `<span class="pill pill-ok" title="A acopiar · Acopiada · Asignada a faena" style="margin-left:6px;">🌱 ${tot.solicitada} · ✅ ${tot.acopiada} · 👷 ${tot.asignada}</span>`;
-        const obsBtn = o.notasPedido ? `<button class="icon-btn" onclick="openObsModal('Observaciones — Pedido #${o.numero}', '${escHtml(o.notasPedido).replace(/'/g, '&#39;')}')" title="Observaciones del pedido">📝</button>` : '';
+        const obsBtn = o.notasPedido ? `<button class="icon-btn" onclick="openObsModal('Observaciones — Pedido #${o.numero}', '${jsAttr(o.notasPedido)}')" title="Observaciones del pedido">📝</button>` : '';
         const msgBlink = esSinLeer(o.numero, '') ? ' btn-msg-unread' : '';
 
         html += `
@@ -2090,6 +2127,7 @@
   async function openOrderDetails(serie, numero) {
     try {
       const res = await fetch(`/api/manager/report/${numero}?k=${MANAGER_KEY}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
       document.getElementById('modalTitle').innerText = `Detalle Pedido #${data.numero} — ${data.cliente}`;

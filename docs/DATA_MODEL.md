@@ -1,6 +1,23 @@
 # Modelo de Datos - PickingVE
 
-## Entidades Principales (Room DB / SQLite)
+> **Fuente de verdad**: `app/schemas/com.vivero.pickingve.data.local.AppDatabase/21.json`
+> (esquema Room v21, exportado automáticamente). Las tablas siguientes son un
+> resumen orientativo con los campos principales; el esquema JSON manda.
+
+## Entidades (Room DB, versión 21 — 8 tablas)
+
+| Tabla | Entidad | Contenido |
+|-------|---------|-----------|
+| `products` | ProductEntity | Catálogo: artículos + variantes EAN (con litraje/sector) |
+| `orders` | OrderEntity | Cabeceras de pedido: cliente, estado, finca/sector/muelle carga, fecha carga, matrículas+fotos, cargado/sobrante, pickingActual, modificado |
+| `order_lines` | OrderLineEntity | Líneas: solicitado/acopiado, huella (`orderLineId`), posición, litraje/sector/desc, prioridad, ubicación, marcado, vigente, acopiadoServidor, finca/sector acopio, operario asignado, motivo cierre |
+| `picking_records` | PickingRecordEntity | Registros reales de pistoleo: EAN escaneado/OCR, ref original vs servida, medida/calibre, batchQty, etiquetas (needsLabel/reason/format/sent), empleado, deleted/wasUploaded/syncedBigQuery |
+| `encargados` | EncargadoEntity | Usuarios con acceso: nombre, usuario, hash password, rol, modo, email, activo, fincasCarga |
+| `litrajes` | LitrajeEntity | Catálogo de litrajes (id, descripción) |
+| `sectores` | SectorEntity | Catálogo de sectores (id, descripción) |
+| `chat_estado` | ChatEstadoEntity | Badge 💬 por hilo (pedido o pedido+línea): último creado_en, sin_leer |
+
+## Entidades Principales (resumen histórico)
 
 ### 1. `products` (Catálogo de Artículos)
 | Campo | Tipo | Descripción |

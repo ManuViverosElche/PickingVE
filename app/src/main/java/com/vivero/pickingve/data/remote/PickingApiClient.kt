@@ -24,15 +24,29 @@ import kotlinx.serialization.json.Json
 class PickingApiClient(
     private val baseUrl: String = REST_BASE_URL
 ) {
-    private val client = HttpClient(CIO) {
-        expectSuccess = true
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = 30_000
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis = 30_000
+    private val client = sharedHttpClient
+
+    suspend fun compensarRegistros(registros: List<CompensaRegistro>): CompensaResponse =
+        client.post("$baseUrl/picking/compensar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(CompensaBody(registros))
+        }.body<CompensaResponse>()
+
+    companion object {
+        /** Cliente HTTP compartido: crear uno por llamada filtra sockets/hilos. */
+        private val sharedHttpClient: HttpClient by lazy {
+            HttpClient(CIO) {
+                expectSuccess = true
+                install(ContentNegotiation) {
+                    json(Json { ignoreUnknownKeys = true })
+                }
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 30_000
+                    connectTimeoutMillis = 10_000
+                    socketTimeoutMillis = 30_000
+                }
+            }
         }
     }
 

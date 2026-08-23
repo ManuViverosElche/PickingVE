@@ -63,7 +63,7 @@ class OrderListViewModel(
         .observeOrdersWithTotals()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val today = LocalDate.now()
+    private fun today(): LocalDate = LocalDate.now()
 
     val availableDays: StateFlow<List<LocalDate>> = allOrders
         .map { orders ->
@@ -74,7 +74,7 @@ class OrderListViewModel(
                         .toLocalDate()
                 }
             }
-            .filter { !it.isBefore(today) }
+            .filter { !it.isBefore(today()) }
             .distinct()
             .sorted()
         }
@@ -105,7 +105,7 @@ class OrderListViewModel(
                 val dateOk = if (q.isNotEmpty()) {
                     true
                 } else {
-                    date != null && !date.isBefore(today) && date in daysToShow
+                    date != null && !date.isBefore(today()) && date in daysToShow
                 }
                 val fincaOk = if (q.isNotEmpty()) {
                     true

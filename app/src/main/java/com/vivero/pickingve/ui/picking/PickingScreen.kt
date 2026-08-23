@@ -81,8 +81,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -131,9 +131,9 @@ fun PickingScreen(
     deepLinkCambioTipo: String? = null,
     onDeepLinkConsumed: () -> Unit = {}
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val pendingLabels by viewModel.pendingLabels.collectAsState()
-    val chatEstados by viewModel.chatEstados.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val pendingLabels by viewModel.pendingLabels.collectAsStateWithLifecycle()
+    val chatEstados by viewModel.chatEstados.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(false) }
     var scannerModo by remember { mutableStateOf<CameraModo?>(null) }

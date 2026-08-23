@@ -29,11 +29,18 @@ class TelegramReporter(
     private val chatId: String
 ) {
 
-    private val client = HttpClient(CIO) {
-        install(HttpTimeout) {
-            requestTimeoutMillis = 30_000
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis = 30_000
+    private val client = sharedHttpClient
+
+    private companion object {
+        /** Cliente HTTP compartido: crear uno por llamada filtra sockets/hilos. */
+        val sharedHttpClient: HttpClient by lazy {
+            HttpClient(CIO) {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 30_000
+                    connectTimeoutMillis = 10_000
+                    socketTimeoutMillis = 30_000
+                }
+            }
         }
     }
 

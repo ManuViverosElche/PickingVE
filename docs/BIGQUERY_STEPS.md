@@ -75,7 +75,7 @@ Android app ──HTTPS──▶ API REST (Cloud Run) ──SDK BigQuery──�
 ```
 
 - La service account de GCP vive solo en el backend; nunca en el APK.
-- Endpoints mínimos: `GET /api/pedidos?fecha=&finca=`, `GET /api/productos`, `GET /api/ean`, `POST /api/picking/upload`.
+- Endpoints reales del backend (ver `backend/main.py`): `GET /api/pedidos`, `GET /api/catalogo` (artículos+EAN+litrajes+sectores), `GET /api/catalogo/version`, `POST /api/picking/upload`, `POST /api/picking/compensar`, entre otros.
 
 ## Paso de conexión de la app
 1. Cambiar en `app/src/main/java/com/vivero/pickingve/util/Constants.kt`:

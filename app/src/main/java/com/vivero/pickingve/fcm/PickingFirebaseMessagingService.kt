@@ -114,7 +114,7 @@ class PickingFirebaseMessagingService : FirebaseMessagingService() {
             .build()
         try {
             NotificationManagerCompat.from(this).notify(
-                if (urgente) 2 else 1,
+                if (urgente) 2 else "n_$tipo|$pedido|$linea".hashCode(),
                 notification
             )
         } catch (e: SecurityException) {

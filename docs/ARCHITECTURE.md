@@ -13,27 +13,30 @@ La aplicación sigue el patrón recomendado por Google para Android moderno (Jet
                                v
 +-------------------------------------------------------------+
 |                    ViewModel Layer (StateFlow)              |
-|   PickingViewModel, SyncViewModel, SettingsViewModel        |
+|   PickingViewModel, OrderListViewModel, FaenaDashboardVM,   |
+|   SettingsViewModel, LoginViewModel, AdminFincas/UsersVM    |
 +-------------------------------------------------------------+
                                |
                                v
 +-------------------------------------------------------------+
 |                    Domain Layer (Use Cases)                 |
-|   ProcessScanUseCase, MatchOcrUseCase, SyncBigQueryUseCase  |
+|   ParsePlantPassportUseCase, MatchOcrUseCase, ScanDebouncer |
 +-------------------------------------------------------------+
                                |
                                v
 +-------------------------------------------------------------+
 |               Data Layer (Repository Pattern)               |
-|   PickingRepositoryImpl, ProductRepositoryImpl              |
+|   PickingRepository, SettingsRepository                     |
 +-------------------------------------------------------------+
                /                               \
               v                                 v
 +-----------------------------+   +---------------------------+
 | Local Data Source (Room DB) |   | Remote Data Source        |
-| - Products Table            |   | - BigQuery API / Proxy    |
-| - Orders Table              |   | - Telegram Bot API        |
-| - PickingLines Table        |   +---------------------------+
+| - products                  |   | - BigQuery API / Proxy    |
+| - orders + order_lines      |   | - Telegram Bot API        |
+| - picking_records           |   +---------------------------+
+| - encargados/litrajes/      |
+|   sectores/chat_estado      |
 +-----------------------------+
 ```
 
@@ -66,10 +69,10 @@ La aplicación sigue el patrón recomendado por Google para Android moderno (Jet
 ---
 
 ## 3. Tecnologías Seleccionadas
-- **Lenguaje**: Kotlin 2.0+
+- **Lenguaje**: Kotlin 1.9.24 (JVM 17)
 - **UI**: Jetpack Compose + Material Design 3
-- **Local DB**: Room Persistence Library
-- **DI**: Hilt / Koin
-- **Inyección/Red**: Ktor Client / Retrofit + OkHttp
+- **Local DB**: Room Persistence Library (esquema exportado en `app/schemas/`)
+- **DI**: sin framework; singletons manuales (`AppDatabase.getDatabase`, `HttpClient` compartido en `PickingApiClient`/`TelegramReporter`), ViewModels creados en `AppNavHost`
+- **Red**: Ktor Client (engine CIO) + kotlinx.serialization
 - **IA/Vision**: Google ML Kit (Barcode Scanning & Text Recognition)
-- **Background Jobs**: AndroidX WorkManager
+- **Background Jobs**: AndroidX WorkManager (`PickingSyncWorker`)

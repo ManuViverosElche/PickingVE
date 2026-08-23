@@ -1,4 +1,4 @@
-package com.vivero.pickingve.ui.orders
+﻿package com.vivero.pickingve.ui.orders
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,8 +40,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,15 +73,15 @@ fun OrderListScreen(
     onOpenFaena: () -> Unit,
     onLogout: () -> Unit
 ) {
-    val orders by viewModel.orders.collectAsState()
-    val availableDays by viewModel.availableDays.collectAsState()
-    val selectedDays by viewModel.selectedDays.collectAsState()
-    val assignedFincas by viewModel.assignedFincas.collectAsState()
-    val selectedFincas by viewModel.selectedFincas.collectAsState()
-    val syncState by viewModel.syncState.collectAsState()
-    val uploadState by viewModel.uploadState.collectAsState()
-    val pendingUploadCount by viewModel.pendingUploadCount.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
+    val orders by viewModel.orders.collectAsStateWithLifecycle()
+    val availableDays by viewModel.availableDays.collectAsStateWithLifecycle()
+    val selectedDays by viewModel.selectedDays.collectAsStateWithLifecycle()
+    val assignedFincas by viewModel.assignedFincas.collectAsStateWithLifecycle()
+    val selectedFincas by viewModel.selectedFincas.collectAsStateWithLifecycle()
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val uploadState by viewModel.uploadState.collectAsStateWithLifecycle()
+    val pendingUploadCount by viewModel.pendingUploadCount.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val syncStarted = remember { mutableStateOf(false) }
     var infoOrder by remember { mutableStateOf<OrderWithTotals?>(null) }
@@ -146,12 +146,12 @@ fun OrderListScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.setSearchQuery(it) },
-                placeholder = { Text("Buscar pedido: cliente, nº, muelle, marca…") },
+                placeholder = { Text("Buscar pedido: cliente, nÂº, muelle, marcaâ€¦") },
                 singleLine = true,
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Limpiar búsqueda")
+                            Icon(Icons.Filled.Close, contentDescription = "Limpiar bÃºsqueda")
                         }
                     }
                 },
@@ -218,11 +218,11 @@ fun OrderListScreen(
                 ) {
                     Text(
                         text = if (searchQuery.isNotBlank()) {
-                            "Sin pedidos para \"${searchQuery.trim()}\".\nPrueba con otro cliente, nº de pedido o muelle."
+                            "Sin pedidos para \"${searchQuery.trim()}\".\nPrueba con otro cliente, nÂº de pedido o muelle."
                         } else if (selectedDays.size == 1 && LocalDate.now() in selectedDays) {
-                            "No hay pedidos de carga para hoy.\nToca otro día para ver más pedidos."
+                            "No hay pedidos de carga para hoy.\nToca otro dÃ­a para ver mÃ¡s pedidos."
                         } else {
-                            "No hay pedidos para los días seleccionados.\nSincroniza (↻) o toca otro día."
+                            "No hay pedidos para los dÃ­as seleccionados.\nSincroniza (â†») o toca otro dÃ­a."
                         },
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center
@@ -276,8 +276,8 @@ private fun dayLabel(epochMillis: Long): String {
         .atZone(ZoneId.systemDefault())
         .toLocalDate()
     return when (date) {
-        LocalDate.now() -> "Hoy · ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
-        LocalDate.now().plusDays(1) -> "Mañana · ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
+        LocalDate.now() -> "Hoy Â· ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
+        LocalDate.now().plusDays(1) -> "MaÃ±ana Â· ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
         else -> date.format(DateTimeFormatter.ofPattern("EEEE dd/MM/yyyy", Locale("es")))
     }
 }
@@ -312,7 +312,7 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                     )
                     if (order.modificado) {
                         Text(
-                            text = "MODIFICADO · revisa las líneas",
+                            text = "MODIFICADO Â· revisa las lÃ­neas",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
@@ -386,7 +386,7 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                     text = listOf(
                         order.fincaCarga.ifBlank { null }?.let { "Finca de carga: $it" },
                         order.sectorCarga.ifBlank { null }?.let { "Sector de carga: $it" }
-                    ).filterNotNull().joinToString(" · "),
+                    ).filterNotNull().joinToString(" Â· "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
@@ -394,7 +394,7 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
             }
             if (order.cargado) {
                 Text(
-                    text = "✓ CARGADO",
+                    text = "âœ“ CARGADO",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,

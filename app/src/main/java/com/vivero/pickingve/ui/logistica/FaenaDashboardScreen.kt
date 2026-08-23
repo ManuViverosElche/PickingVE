@@ -1,4 +1,4 @@
-package com.vivero.pickingve.ui.logistica
+﻿package com.vivero.pickingve.ui.logistica
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -41,8 +41,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,7 +62,7 @@ fun FaenaDashboardScreen(
     onBack: () -> Unit,
     onOpenPedido: (String) -> Unit
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var mostrarAyuda by remember { mutableStateOf(false) }
     var fincaAbierta by remember { mutableStateOf<String?>(null) }
 
@@ -103,7 +103,7 @@ fun FaenaDashboardScreen(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            "Estás viendo la faena de ${state.ayudaDe?.nombre}",
+                            "EstÃ¡s viendo la faena de ${state.ayudaDe?.nombre}",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -131,7 +131,7 @@ fun FaenaDashboardScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "No tienes faena pendiente para los próximos días",
+                        "No tienes faena pendiente para los prÃ³ximos dÃ­as",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -204,9 +204,9 @@ private fun CabeceraPerfil(state: FaenaUiState) {
                 )
                 Text(
                     text = if (state.maquinaria.isBlank()) {
-                        "Maquinaria sin configurar · viaje estimado ${state.capacidadViaje} plantas"
+                        "Maquinaria sin configurar Â· viaje estimado ${state.capacidadViaje} plantas"
                     } else {
-                        "${state.maquinaria} · ~${state.capacidadViaje} plantas por viaje"
+                        "${state.maquinaria} Â· ~${state.capacidadViaje} plantas por viaje"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -255,7 +255,7 @@ private fun FaenaFincaCard(
                     Text(
                         text = buildString {
                             append("${finca.plantasPendientes} plantas pendientes")
-                            append(" · ~${finca.viajesEstimados} ${if (finca.viajesEstimados == 1) "viaje" else "viajes"}")
+                            append(" Â· ~${finca.viajesEstimados} ${if (finca.viajesEstimados == 1) "viaje" else "viajes"}")
                             if (maquinaria.isNotBlank()) append(" ($maquinaria)")
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -295,7 +295,7 @@ private fun FaenaFincaCard(
                                 Text(" ", style = MaterialTheme.typography.labelMedium)
                             }
                             Text(
-                                "${sector.sector} · ${sector.plantasPendientes}",
+                                "${sector.sector} Â· ${sector.plantasPendientes}",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -376,7 +376,7 @@ private fun FaenaLineaRow(linea: FaenaLinea, onClick: () -> Unit) {
                             linea.line.litrajeDesc.takeIf { it.isNotBlank() },
                             linea.marcaEfectiva.takeIf { it.isNotBlank() }?.let { "Marca $it" },
                             if (linea.line.marcado) "MARCADA" else null
-                        ).joinToString(" · "),
+                        ).joinToString(" Â· "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -414,7 +414,7 @@ private fun AyudaDialog(
         text = {
             Column {
                 Text(
-                    "Elige a qué compañero vas a ayudar. Verás su faena y lo que acopies se registrará como ayuda.",
+                    "Elige a quÃ© compaÃ±ero vas a ayudar. VerÃ¡s su faena y lo que acopies se registrarÃ¡ como ayuda.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -429,14 +429,14 @@ private fun AyudaDialog(
                         selected = actual?.id == enc.id,
                         onClick = { onSeleccion(enc) },
                         label = {
-                            Text("${enc.nombre} ($lineas líneas)")
+                            Text("${enc.nombre} ($lineas lÃ­neas)")
                         },
                         modifier = Modifier.padding(vertical = 2.dp)
                     )
                 }
                 if (candidatos.isEmpty()) {
                     Text(
-                        "No hay otros compañeros con faena asignada",
+                        "No hay otros compaÃ±eros con faena asignada",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

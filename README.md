@@ -1,6 +1,6 @@
 # PickingVE - App de Picking Offline-First para Viveros y Campo
 
-Aplicación Android para gestión y captura de picking en campo con soporte **Offline-First**, lectura de códigos EAN, reconocimiento OCR de etiquetas, gestión de equivalencias/sustituciones de referencia, cálculo por partidas/sumatorios, y envío automático de reporte CSV vía Telegram.
+Aplicación Android para gestión y captura de picking en campo con soporte **Offline-First**, lectura de códigos EAN, reconocimiento OCR de etiquetas, gestión de equivalencias/sustituciones de referencia, cálculo por partidas/sumatorios, y envío automático de reporte Excel (.xlsx) vía Telegram.
 
 ---
 

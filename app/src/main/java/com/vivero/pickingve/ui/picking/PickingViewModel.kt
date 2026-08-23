@@ -107,6 +107,17 @@ class PickingViewModel(
     private var unpickTargetLine: OrderLineEntity? = null
     private var lastOcrText: String? = null
 
+    /** Lanza en viewModelScope convirtiendo cualquier excepción en mensaje de UI (nunca crashea). */
+    private fun launchSafe(errorMessage: String, block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                lastMessage.value = "$errorMessage: ${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+    }
+
     private val lines: StateFlow<List<OrderLineEntity>> = selectedOrderId
         .flatMapLatest { id ->
             if (id == null) flowOf(emptyList())
@@ -268,7 +279,7 @@ class PickingViewModel(
         pendingSectorWarning.value = null
         pendingOcrMatch.value = null
         pendingUnpickScan.value = null
-        viewModelScope.launch { repository.clearOrderModificado(orderId) }
+        launchSafe("Error al abrir el pedido") { repository.clearOrderModificado(orderId) }
         actualizarChatEstados()
     }
 
@@ -591,8 +602,8 @@ class PickingViewModel(
     /** El encargado confirmó el desacopio por escaneo en el modal. */
     fun confirmUnpickScan() {
         val pending = pendingUnpickScan.value ?: return
-        viewModelScope.launch {
-            pendingUnpickScan.value = null
+        pendingUnpickScan.value = null
+        launchSafe("No se pudo desacopiar") {
             val orderId = selectedOrderId.value
             val target = if (orderId == null) pending.line
             else repository.orderLinesList(orderId)
@@ -804,7 +815,7 @@ class PickingViewModel(
         val batchQty = if (confirm.isLabel) 1 else qty
         pendingConfirm.value = null
         lastOcrText = null
-        viewModelScope.launch {
+        launchSafe("No se pudo registrar el acopio") {
             val pickingNumber = repository.nextPickingNumber(confirm.orderId)
             repository.createRecord(
                 orderId = confirm.orderId,
@@ -853,7 +864,7 @@ class PickingViewModel(
         zona: String? = null
     ) {
         val orderId = selectedOrderId.value ?: return
-        viewModelScope.launch {
+        launchSafe("Error al enviar el parte") {
             sendingReport.value = true
             val s = settingsRepository.load()
             val employeeEmail = repository.currentEncargado()?.email
@@ -893,7 +904,7 @@ class PickingViewModel(
     /** Sends the pending labels of the current order to Telegram and moves them to history. */
     fun sendLabelsTelegram() {
         val orderId = selectedOrderId.value ?: return
-        viewModelScope.launch {
+        launchSafe("Error al enviar las etiquetas") {
             sendingLabels.value = true
             val s = settingsRepository.load()
             val result = repository.sendLabelsTelegram(
@@ -932,7 +943,7 @@ class PickingViewModel(
         fotos: Map<String, ByteArray> = emptyMap()
     ) {
         val orderId = selectedOrderId.value ?: return
-        viewModelScope.launch {
+        launchSafe("Error al registrar el camión") {
             repository.registerTruckArrival(
                 orderId,
                 matriculaCamion,
@@ -987,7 +998,7 @@ fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
 
     /** Undo picking on a line (decrement picked quantity and real records). */
     fun unpickLine(line: OrderLineEntity, qty: Int) {
-        viewModelScope.launch {
+        launchSafe("No se pudo desacopiar") {
             repository.unpickLine(line.orderId, line.orderLineId, qty)
             subirPendientesBestEffort()
             lastMessage.value = "Desacopiado ${line.productId} x $qty"
@@ -996,7 +1007,7 @@ fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
 
     /** Cierra la línea sin completarla, con motivo prediseñado o libre (logística). */
     fun cerrarLinea(line: OrderLineEntity, motivo: String, motivoTexto: String) {
-        viewModelScope.launch {
+        launchSafe("No se pudo cerrar la línea") {
             val faltante = (line.requestedQty - maxOf(
                 line.pickedQty,
                 line.acopiadoServidor

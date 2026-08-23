@@ -147,6 +147,19 @@ data class ApiUploadResponse(
 )
 
 @Serializable
+data class CompensaRegistro(
+    @SerialName("record_id") val recordId: String,
+    @SerialName("pedido_id") val pedidoId: String,
+    val cantidad: Double
+)
+
+@Serializable
+data class CompensaBody(val registros: List<CompensaRegistro>)
+
+@Serializable
+data class CompensaResponse(val ok: Int = 0)
+
+@Serializable
 data class ApiEncargado(
     val id: String = "",
     val nombre: String = "",

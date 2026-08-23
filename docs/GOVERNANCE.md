@@ -25,10 +25,9 @@
   - Test de flujo de picking con base de datos en memoria (Room InMemoryDatabase).
 
 ## 5. Control de Versiones (Git Workflow)
-- **Ramas**:
-  - `main`: Código de producción estable.
-  - `develop`: Integración continua.
-  - `feature/*`: Desarrollo de nuevas funcionalidades.
+- **Ramas** (realidad actual del repositorio):
+  - `master`: única rama; código de producción estable.
+  - Los cambios se commitean directamente en `master` (proyecto unipersonal + agentes). Si en el futuro se añade trabajo paralelo, crear `feature/*` antes de activar `develop`.
 - **Mensajes de Commit**:
   - `feat: ...` para nuevas características.
   - `fix: ...` para corrección de errores.

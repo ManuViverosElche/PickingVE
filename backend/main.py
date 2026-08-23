@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from google.cloud import bigquery, storage
 from google.cloud.exceptions import NotFound
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 import punteo_report
 import punteo_pdf
@@ -28,6 +29,8 @@ PROJECT = os.getenv("GCP_PROJECT", "dashboard-439511")
 DATASET = "GestionComercialVE"
 PICKING_DATASET = "pickingve"
 PICKING_TABLE = "picking_registros"
+COMPENSACIONES_TABLE = "picking_compensaciones"
+PICKING_VIEW = "picking_registros_v"
 ENCARGADOS_TABLE = "encargados"
 OPERARIOS_TABLE = "operarios"
 FINCAS_TABLE = "fincas"
@@ -126,6 +129,31 @@ def _ensure_picking_table() -> None:
     ).result()
     _ensure_column(PICKING_TABLE, "empleado_email", "empleado_email STRING")
     _ensure_column(PICKING_TABLE, "empleado_nombre", "empleado_nombre STRING")
+
+
+def _ensure_compensaciones_view() -> None:
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{COMPENSACIONES_TABLE}` (
+            record_id STRING,
+            pedido_id STRING,
+            cantidad FLOAT64,
+            creado_en TIMESTAMP
+        )
+        """
+    ).result()
+    client.query(
+        f"""
+        CREATE OR REPLACE VIEW `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}` AS
+        SELECT d.* FROM (
+            SELECT p.*, ROW_NUMBER() OVER (PARTITION BY record_id ORDER BY fecha_hora DESC) AS rn
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` p
+        ) d
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{COMPENSACIONES_TABLE}` c
+            ON c.record_id = d.record_id
+        WHERE d.rn = 1 AND c.record_id IS NULL
+        """
+    ).result()
 
 
 def _hash_password(usuario: str, password: str) -> str:
@@ -430,6 +458,7 @@ def _ensure_column(table: str, column: str, ddl: str) -> None:
 @app.on_event("startup")
 def _startup() -> None:
     _ensure_picking_table()
+    _ensure_compensaciones_view()
     _ensure_encargados_table()
     _migrar_apellidos_encargados()
     _ensure_operarios_table()
@@ -467,8 +496,8 @@ async def telegram_webhook(
         raise HTTPException(status_code=401, detail="Secret token inválido o ausente")
     update = await request.json()
     if update.get("callback_query"):
-        return _telegram_callback(bot_token, update)
-    return _telegram_mensaje_texto(bot_token, update)
+        return await run_in_threadpool(_telegram_callback, bot_token, update)
+    return await run_in_threadpool(_telegram_mensaje_texto, bot_token, update)
 
 
 def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]:
@@ -2647,12 +2676,12 @@ def pedidos(
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN (
             SELECT order_id, order_line_id, SUM(cantidad_partida) AS ACOPIADO
-            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
             GROUP BY order_id, order_line_id
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
         LEFT JOIN (
             SELECT order_id, MAX(picking_numero) AS ULTIMO_PARTE
-            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
             GROUP BY order_id
         ) pn ON pn.order_id = p.NUMERO_PEDIDO
     """
@@ -3253,16 +3282,62 @@ def upload(
     existing_ids = {row["record_id"] for row in existing}
 
     nuevos = [r for r in body.registros if r.record_id not in existing_ids]
-    if not nuevos:
-        return {"ok": 0, "duplicados": len(body.registros), "accepted_ids": []}
+    if nuevos:
+        errors = client.insert_rows_json(
+            f"{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}",
+            [r.model_dump() for r in nuevos],
+        )
+        if errors:
+            raise HTTPException(status_code=500, detail=str(errors[:5]))
+    # Los duplicados también se confirman: ya están (o estarán) en la tabla y
+    # el cliente debe marcarlos como sincronizados para no reenviarlos siempre.
+    return {
+        "ok": len(nuevos),
+        "duplicados": len(pending_ids) - len(nuevos),
+        "accepted_ids": pending_ids,
+    }
 
-    errors = client.insert_rows_json(
-        f"{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}",
-        [r.model_dump() for r in nuevos],
+
+class CompensaRegistro(BaseModel):
+    record_id: str = Field(min_length=8, max_length=64)
+    pedido_id: str = Field(min_length=1, max_length=32)
+    cantidad: float
+
+
+class CompensaBody(BaseModel):
+    registros: list[CompensaRegistro] = Field(default_factory=list)
+
+
+@app.post("/api/picking/compensar")
+def compensar(
+    request: Request,
+    body: CompensaBody,
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """Registra borrados lógicos de registros ya subidos (desacopio posterior
+    a la subida). Idempotente por record_id; las lecturas usan la vista
+    `picking_registros_v`, que excluye estos record_id."""
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    if not body.registros:
+        return {"ok": 0}
+    if len(body.registros) > MAX_REGISTROS:
+        raise HTTPException(status_code=400, detail="Demasiados registros")
+    values = ", ".join(
+        f"({_esc(r.record_id)}, {_esc(r.pedido_id)}, {float(r.cantidad)})"
+        for r in body.registros
     )
-    if errors:
-        raise HTTPException(status_code=500, detail=str(errors[:5]))
-    return {"ok": len(nuevos), "duplicados": len(pending_ids) - len(nuevos), "accepted_ids": [r.record_id for r in nuevos]}
+    client.query(
+        f"""
+        MERGE `{PROJECT}.{PICKING_DATASET}.{COMPENSACIONES_TABLE}` T
+        USING (SELECT * FROM UNNEST([STRUCT<record_id STRING, pedido_id STRING, cantidad FLOAT64>]{values})) S
+        ON T.record_id = S.record_id
+        WHEN NOT MATCHED THEN
+          INSERT (record_id, pedido_id, cantidad, creado_en)
+          VALUES (S.record_id, S.pedido_id, S.cantidad, CURRENT_TIMESTAMP())
+        """
+    ).result()
+    return {"ok": len(body.registros)}
 
 
 MANAGER_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "manager")
@@ -3359,14 +3434,14 @@ def manager_orders(
                        COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido') AS empleado,
                        CONCAT(COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido'), ':', CAST(SUM(cantidad_partida) AS INT64)) AS detalle,
                        SUM(cantidad_partida) AS cantidad
-                FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+                FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
                 GROUP BY order_id, order_line_id, empleado_nombre
             )
             GROUP BY order_id, order_line_id
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
         LEFT JOIN (
             SELECT order_id, SUM(cantidad_partida) AS TOTAL_ACOPIADO
-            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
             GROUP BY order_id
         ) tot ON tot.order_id = p.NUMERO_PEDIDO
         LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m
@@ -3534,7 +3609,7 @@ def manager_report(
         LEFT JOIN (
             SELECT order_id, order_line_id, SUM(cantidad_partida) AS ACOPIADO,
                    MAX(CAST(sustituido AS INT64)) > 0 AS SUSTITUIDO
-            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
             WHERE order_id = @pedido
             GROUP BY order_id, order_line_id
         ) pr ON pr.order_line_id = l.HUELLA_DIGITAL
@@ -3595,7 +3670,7 @@ def manager_reporte(
     if fmt == "pdf":
         try:
             data = punteo_pdf.build_punteo_pdf(
-                client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+                client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
                 numero_pedido,
             )
         except ValueError as e:
@@ -3609,7 +3684,7 @@ def manager_reporte(
     else:
         try:
             html = punteo_html.build_punteo_html(
-                client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+                client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
                 numero_pedido,
             )
         except ValueError as e:
@@ -3627,7 +3702,7 @@ def manager_informe_desglose(
     _verify_manager_key(k, x_api_key)
     try:
         html = punteo_html.build_desglose_html(
-            client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
             numero_pedido,
         )
     except ValueError as e:
@@ -3645,7 +3720,7 @@ def manager_informe_detalle(
     _verify_manager_key(k, x_api_key)
     try:
         html = punteo_html.build_detalle_html(
-            client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
             numero_pedido,
         )
     except ValueError as e:
@@ -3663,7 +3738,7 @@ def manager_informe_control(
     _verify_manager_key(k, x_api_key)
     try:
         html = punteo_html.build_control_html(
-            client, PROJECT, DATASET, PICKING_DATASET, PICKING_TABLE, MATRICULAS_TABLE,
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
             numero_pedido,
         )
     except ValueError as e:
@@ -3709,7 +3784,7 @@ def manager_etiquetas_dia(
                    ANY_VALUE(r.order_line_id) AS order_line_id,
                    SUM(r.cantidad_partida) AS cantidad,
                    LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente
-            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` r
+            FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}` r
             LEFT JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l ON l.HUELLA_DIGITAL = r.order_line_id
             LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
             LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
@@ -3809,7 +3884,7 @@ def manager_etiquetas(
                ANY_VALUE(r.order_line_id) AS order_line_id,
                SUM(r.cantidad_partida) AS cantidad,
                LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente
-        FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` r
+        FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}` r
         LEFT JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l ON l.HUELLA_DIGITAL = r.order_line_id
         LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
@@ -3890,17 +3965,20 @@ async def manager_etiquetas_estado(
             (pedido_id, order_line_id, referencia, litraje, sector, estado, creado_en, actualizado_en, actualizado_por)
             VALUES (@pedido, @linea, @ref, @litraje, @sector, @estado, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), @por)
     """
-    client.query(sql, job_config=bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("pedido", "STRING", pedido),
-            bigquery.ScalarQueryParameter("linea", "STRING", linea),
-            bigquery.ScalarQueryParameter("ref", "STRING", ref),
-            bigquery.ScalarQueryParameter("litraje", "STRING", litraje),
-            bigquery.ScalarQueryParameter("sector", "STRING", sector),
-            bigquery.ScalarQueryParameter("estado", "STRING", estado),
-            bigquery.ScalarQueryParameter("por", "STRING", por),
-        ]
-    )).result()
+    def _merge_estado() -> None:
+        client.query(sql, job_config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("pedido", "STRING", pedido),
+                bigquery.ScalarQueryParameter("linea", "STRING", linea),
+                bigquery.ScalarQueryParameter("ref", "STRING", ref),
+                bigquery.ScalarQueryParameter("litraje", "STRING", litraje),
+                bigquery.ScalarQueryParameter("sector", "STRING", sector),
+                bigquery.ScalarQueryParameter("estado", "STRING", estado),
+                bigquery.ScalarQueryParameter("por", "STRING", por),
+            ]
+        )).result()
+
+    await run_in_threadpool(_merge_estado)
     return {"ok": True, "pedido": pedido, "referencia": ref, "estado": estado}
 
 
@@ -3977,7 +4055,7 @@ def manager_historico(
             ) pf ON pf.order_id = p.NUMERO_PEDIDO
             LEFT JOIN (
                 SELECT order_id, SUM(cantidad_partida) AS TOTAL_PIS, COUNT(*) AS TOTAL_EVENTOS
-                FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+                FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
                 GROUP BY order_id
             ) pr ON pr.order_id = p.NUMERO_PEDIDO
             WHERE DATE(p.FECHA_CARGA) = @fecha AND (m.pedido_id IS NOT NULL OR pf.order_id IS NOT NULL)
@@ -4040,7 +4118,7 @@ def manager_historico_detalle(
         SELECT picking_numero, picking_tipo, fecha_hora, empleado_nombre,
                ean_escaneado, ocr_texto, ref_original, ref_servida,
                sustituido, cantidad_partida, litros, medida, calibre
-        FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}`
+        FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
         WHERE order_id = @pedido
         ORDER BY fecha_hora
     """

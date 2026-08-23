@@ -1,6 +1,9 @@
 package com.vivero.pickingve.data.repository
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.vivero.pickingve.BuildConfig
 import com.vivero.pickingve.data.local.dao.ChatEstadoDao
 import com.vivero.pickingve.data.local.dao.EncargadoDao
@@ -21,11 +24,15 @@ import com.vivero.pickingve.data.remote.ApiComentario
 import com.vivero.pickingve.data.remote.ApiEncargado
 import com.vivero.pickingve.data.remote.ApiRegistro
 import com.vivero.pickingve.data.remote.ApiUploadResponse
+import com.vivero.pickingve.data.remote.CompensaRegistro
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.remote.XlsxReportGenerator
 import com.vivero.pickingve.data.remote.TelegramReporter
+import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
@@ -58,6 +65,52 @@ class PickingRepository(
 ) {
 
     private val prefs = context.getSharedPreferences("pickingve_flags", Context.MODE_PRIVATE)
+    private val uploadMutex = Mutex()
+
+    /** Prefs cifradas para datos de sesión (usuario, fincas del usuario, maquinaria). */
+    private val sesPrefs: SharedPreferences by lazy {
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                "pickingve_sesion",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            context.getSharedPreferences("pickingve_sesion_fallback", Context.MODE_PRIVATE)
+        }
+    }
+
+    init {
+        migrarSesionACifrada()
+    }
+
+    /** Migra la sesión de prefs planas a cifradas (una sola vez; hacia atrás compatible). */
+    private fun migrarSesionACifrada() {
+        val clavesTexto = listOf(
+            KEY_ENCARGADO_ID, KEY_ENCARGADO_NOMBRE, KEY_ENCARGADO_USUARIO,
+            KEY_ENCARGADO_ROL, KEY_ENCARGADO_FINCAS, KEY_ENCARGADO_MODO,
+            KEY_ENCARGADO_EMAIL, KEY_LAST_SYNC_ENCARGADO, KEY_MAQUINARIA
+        )
+        val editor = sesPrefs.edit()
+        var hayDatos = false
+        clavesTexto.forEach { k ->
+            prefs.getString(k, null)?.let { v -> editor.putString(k, v); hayDatos = true }
+        }
+        if (prefs.contains(KEY_ENCARGADO_ACTIVO)) {
+            editor.putBoolean(KEY_ENCARGADO_ACTIVO, prefs.getBoolean(KEY_ENCARGADO_ACTIVO, true))
+            hayDatos = true
+        }
+        if (!hayDatos) return
+        editor.apply()
+        val limpiar = prefs.edit()
+        (clavesTexto + KEY_ENCARGADO_ACTIVO).forEach { k -> limpiar.remove(k) }
+        limpiar.apply()
+    }
 
     private var firstSyncDone: Boolean
         get() = prefs.getBoolean(KEY_FIRST_SYNC, false)
@@ -90,9 +143,9 @@ class PickingRepository(
         }
 
     private var lastSyncEncargadoId: String?
-        get() = prefs.getString(KEY_LAST_SYNC_ENCARGADO, null)
+        get() = sesPrefs.getString(KEY_LAST_SYNC_ENCARGADO, null)
         set(value) {
-            prefs.edit().putString(KEY_LAST_SYNC_ENCARGADO, value).apply()
+            sesPrefs.edit().putString(KEY_LAST_SYNC_ENCARGADO, value).apply()
         }
 
     // ---- Encargados ----
@@ -158,7 +211,7 @@ class PickingRepository(
     }
 
     fun setCurrentEncargado(enc: EncargadoEntity) {
-        prefs.edit()
+        sesPrefs.edit()
             .putString(KEY_ENCARGADO_ID, enc.id)
             .putString(KEY_ENCARGADO_NOMBRE, enc.nombre)
             .putString(KEY_ENCARGADO_USUARIO, enc.usuario)
@@ -171,32 +224,27 @@ class PickingRepository(
     }
 
     fun currentEncargado(): EncargadoEntity? {
-        val id = prefs.getString(KEY_ENCARGADO_ID, null) ?: return null
+        val id = sesPrefs.getString(KEY_ENCARGADO_ID, null) ?: return null
         return EncargadoEntity(
             id = id,
-            nombre = prefs.getString(KEY_ENCARGADO_NOMBRE, "") ?: "",
-            usuario = prefs.getString(KEY_ENCARGADO_USUARIO, "") ?: "",
+            nombre = sesPrefs.getString(KEY_ENCARGADO_NOMBRE, "") ?: "",
+            usuario = sesPrefs.getString(KEY_ENCARGADO_USUARIO, "") ?: "",
             passwordHash = "",
-            rol = prefs.getString(KEY_ENCARGADO_ROL, "ENCARGADO") ?: "ENCARGADO",
-            fincasCarga = prefs.getString(KEY_ENCARGADO_FINCAS, "") ?: "",
-            modo = prefs.getString(KEY_ENCARGADO_MODO, "PICKING") ?: "PICKING",
-            email = prefs.getString(KEY_ENCARGADO_EMAIL, "") ?: "",
-            activo = prefs.getBoolean(KEY_ENCARGADO_ACTIVO, true)
+            rol = sesPrefs.getString(KEY_ENCARGADO_ROL, "ENCARGADO") ?: "ENCARGADO",
+            fincasCarga = sesPrefs.getString(KEY_ENCARGADO_FINCAS, "") ?: "",
+            modo = sesPrefs.getString(KEY_ENCARGADO_MODO, "PICKING") ?: "PICKING",
+            email = sesPrefs.getString(KEY_ENCARGADO_EMAIL, "") ?: "",
+            activo = sesPrefs.getBoolean(KEY_ENCARGADO_ACTIVO, true)
         )
     }
 
     fun logout() {
-        prefs.edit()
-            .remove(KEY_ENCARGADO_ID)
-            .remove(KEY_ENCARGADO_NOMBRE)
-            .remove(KEY_ENCARGADO_USUARIO)
-            .remove(KEY_ENCARGADO_ROL)
-            .remove(KEY_ENCARGADO_FINCAS)
-            .remove(KEY_ENCARGADO_MODO)
-            .remove(KEY_ENCARGADO_EMAIL)
-            .remove(KEY_ENCARGADO_ACTIVO)
-            .remove(KEY_LAST_SYNC_ENCARGADO)
-            .apply()
+        val claves = listOf(
+            KEY_ENCARGADO_ID, KEY_ENCARGADO_NOMBRE, KEY_ENCARGADO_USUARIO,
+            KEY_ENCARGADO_ROL, KEY_ENCARGADO_FINCAS, KEY_ENCARGADO_MODO,
+            KEY_ENCARGADO_EMAIL, KEY_ENCARGADO_ACTIVO, KEY_LAST_SYNC_ENCARGADO
+        )
+        sesPrefs.edit().apply { claves.forEach { remove(it) } }.apply()
     }
 
     /**
@@ -205,7 +253,7 @@ class PickingRepository(
      * edited from the admin screen apply without re-logging in.
      */
     suspend fun refreshCurrentEncargadoFromLocal() {
-        val usuario = prefs.getString(KEY_ENCARGADO_USUARIO, null) ?: return
+        val usuario = sesPrefs.getString(KEY_ENCARGADO_USUARIO, null) ?: return
         val fresh = encargadoDao.findByUsuario(usuario) ?: return
         setCurrentEncargado(fresh)
     }
@@ -457,19 +505,23 @@ class PickingRepository(
                 tipo = if (record.orderLineId == null) "AMPLIACIÓN" else ""
             )
         }
-        XlsxReportGenerator.generate(
-            file = file,
-            idPunteo = recordIdForOrder(orderId),
-            matriculaCamion = matriculaCamion,
-            matriculaRemolque = matriculaRemolque,
-            finca = finca,
-            zona = zona,
-            pesoCarga = pesoCarga,
-            muelle = orderDao.getOrder(orderId)?.muelleCarga.orEmpty(),
-            employeeEmail = employeeEmail,
-            orderNumber = orderId,
-            rows = rows
-        )
+        try {
+            XlsxReportGenerator.generate(
+                file = file,
+                idPunteo = recordIdForOrder(orderId),
+                matriculaCamion = matriculaCamion,
+                matriculaRemolque = matriculaRemolque,
+                finca = finca,
+                zona = zona,
+                pesoCarga = pesoCarga,
+                muelle = orderDao.getOrder(orderId)?.muelleCarga.orEmpty(),
+                employeeEmail = employeeEmail,
+                orderNumber = orderId,
+                rows = rows
+            )
+        } catch (e: Exception) {
+            return Result.failure(e)
+        }
 
         val reporter = TelegramReporter(botToken, chatId)
         val order = orderDao.getOrder(orderId)
@@ -1012,19 +1064,35 @@ class PickingRepository(
         }
     }
 
-    /** Uploads all not-yet-synced picking records to the backend with exponential backoff and explicit ack. */
-    suspend fun uploadPendingRegistros(api: PickingApiClient): Int {
+    /**
+     * Sube los registros pendientes al backend. Serializado con mutex para que
+     * worker y UI no dupliquen envíos concurrentes del mismo lote.
+     *
+     * Los registros borrados nunca subidos se purgan; los borrados YA subidos
+     * se compensan vía /api/picking/compensar para que BigQuery deje de
+     * contarlos. Si el backend aún no expone ese endpoint (404) se aplica el
+     * comportamiento anterior (purga local) para no bloquear despliegues mixtos;
+     * ante cualquier otro error la excepción propaga y queda pendiente para el
+     * siguiente ciclo.
+     */
+    suspend fun uploadPendingRegistros(api: PickingApiClient): Int = uploadMutex.withLock {
         val pending = pickingDao.observePendingBigQuery().first()
         if (pending.isEmpty()) return 0
 
         val toSend = mutableListOf<ApiRegistro>()
-        val toMarkSyncedLocally = mutableListOf<String>()
+        val toCompensar = mutableListOf<CompensaRegistro>()
 
         pending.forEach { r ->
             if (r.deleted && !r.wasUploaded) {
                 pickingDao.deleteRecordPhysical(r.recordId)
             } else if (r.deleted && r.wasUploaded) {
-                toMarkSyncedLocally.add(r.recordId)
+                toCompensar.add(
+                    CompensaRegistro(
+                        recordId = r.recordId,
+                        pedidoId = r.orderId,
+                        cantidad = r.batchQty.toDouble()
+                    )
+                )
             } else {
                 val qty = r.batchQty.toDouble()
                 toSend.add(ApiRegistro(
@@ -1049,24 +1117,39 @@ class PickingRepository(
             }
         }
 
-        if (toMarkSyncedLocally.isNotEmpty()) {
-            pickingDao.markSyncedBigQuery(toMarkSyncedLocally)
-            toMarkSyncedLocally.forEach { pickingDao.deleteRecordPhysical(it) }
+        if (toCompensar.isNotEmpty()) {
+            var attempt = 0
+            while (true) {
+                try {
+                    api.compensarRegistros(toCompensar)
+                    break
+                } catch (e: ClientRequestException) {
+                    if (e.response.status.value == 404) break
+                    attempt++
+                    if (attempt >= UPLOAD_MAX_ATTEMPTS) throw e
+                    kotlinx.coroutines.delay(1000L * (1L shl (attempt - 1)))
+                } catch (e: Exception) {
+                    attempt++
+                    if (attempt >= UPLOAD_MAX_ATTEMPTS) throw e
+                    kotlinx.coroutines.delay(1000L * (1L shl (attempt - 1)))
+                }
+            }
+            pickingDao.markSyncedBigQuery(toCompensar.map { it.recordId })
+            toCompensar.forEach { pickingDao.deleteRecordPhysical(it.recordId) }
         }
 
         if (toSend.isEmpty()) return 0
 
         var attempt = 0
-        val maxAttempts = 3
         var response: ApiUploadResponse? = null
 
-        while (attempt < maxAttempts) {
+        while (attempt < UPLOAD_MAX_ATTEMPTS) {
             try {
                 response = api.uploadRegistros(toSend)
                 break
             } catch (e: Exception) {
                 attempt++
-                if (attempt >= maxAttempts) throw e
+                if (attempt >= UPLOAD_MAX_ATTEMPTS) throw e
                 kotlinx.coroutines.delay(1000L * (1L shl (attempt - 1)))
             }
         }
@@ -1220,14 +1303,14 @@ class PickingRepository(
 
     /** Maquinaria del usuario actual (cacheada; se refresca al sincronizar). */
     fun maquinariaActual(): String =
-        prefs.getString(KEY_MAQUINARIA, "") ?: ""
+        sesPrefs.getString(KEY_MAQUINARIA, "") ?: ""
 
     suspend fun refrescarPerfilOperario(api: PickingApiClient) {
         val email = currentEncargado()?.email.orEmpty()
         if (email.isBlank()) return
         try {
             val perfil = api.fetchPerfilOperario(email)
-            prefs.edit().putString(KEY_MAQUINARIA, perfil.maquinaria).apply()
+            sesPrefs.edit().putString(KEY_MAQUINARIA, perfil.maquinaria).apply()
         } catch (e: Exception) {
             // Se mantiene la maquinaria cacheada sin red
         }
@@ -1364,6 +1447,7 @@ class PickingRepository(
         const val KEY_LAST_FULL_SYNC = "last_full_sync_at"
         const val KEY_LAST_SYNC_ENCARGADO = "last_sync_encargado"
         const val FULL_SYNC_MAX_AGE_MS = 12L * 60 * 60 * 1000
+        const val UPLOAD_MAX_ATTEMPTS = 3
         const val DEMO_ORDER_ID = "10045"
         const val KEY_ENCARGADO_ID = "encargado_id"
         const val KEY_ENCARGADO_NOMBRE = "encargado_nombre"
