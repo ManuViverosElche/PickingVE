@@ -373,8 +373,9 @@ class FaenaDashboardViewModel(
             else -> ClienteNombre(principal = fiscal, comercial = "")
         }
 
+        /** D-187: solo el valor EXACTO PRIORITARIO es ultra. "NO PRIORITARIO" no. */
         fun esUltra(l: FaenaLinea): Boolean =
-            l.line.prioridad.uppercase(Locale.getDefault()).contains("PRIORITARIO")
+            l.line.prioridad.trim().uppercase(Locale.getDefault()) == "PRIORITARIO"
 
         private fun esUltraEn(sector: FaenaSector): Boolean =
             sector.lineas.any { esUltra(it) }

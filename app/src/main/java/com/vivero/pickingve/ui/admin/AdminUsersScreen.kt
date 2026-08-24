@@ -205,6 +205,14 @@ fun AdminUsersScreen(
             }
 
             Text("Fincas de carga asignadas", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                // D-185: la restriccion de finca solo aplica a tractores/toros;
+                // el resto de maquinaria se mueve por todas las fincas.
+                "Solo limita a tractores/toros. Buggy, carretilla o palet: " +
+                    "no marques ninguna (podra moverse por todas).",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Column(
                 modifier = Modifier.horizontalScroll(rememberScrollState())
             ) {

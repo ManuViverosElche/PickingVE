@@ -280,6 +280,13 @@ class PickingApiClient(
             url.parameters.append("email", email)
         }.body<PerfilOperarioResponse>()
 
+    /** D-184: estado actual del pedido (albaran vs borrado real). */
+    suspend fun estadoPedido(numero: String): PedidoEstadoResponse =
+        client.get("$baseUrl/pedido-estado") {
+            auth()
+            url.parameters.append("numero", numero)
+        }.body<PedidoEstadoResponse>()
+
     suspend fun notificarDiscrepancia(
         pedidoId: String,
         lineaHuella: String,

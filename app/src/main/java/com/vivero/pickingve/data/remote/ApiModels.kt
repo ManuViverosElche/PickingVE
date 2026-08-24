@@ -133,7 +133,9 @@ data class ApiRegistro(
     @SerialName("cantidad_partida") val cantidadPartida: Double = 0.0,
     @SerialName("fecha_hora") val fechaHora: String,
     @SerialName("empleado_email") val empleadoEmail: String = "",
-    @SerialName("empleado_nombre") val empleadoNombre: String = ""
+    @SerialName("empleado_nombre") val empleadoNombre: String = "",
+    @SerialName("needs_label") val needsLabel: Boolean = false,
+    @SerialName("label_reason") val labelReason: String = ""
 )
 
 @Serializable
@@ -298,6 +300,14 @@ data class PerfilOperarioResponse(
     val nombre: String = "",
     val maquinaria: String = "",
     @SerialName("fincas_carga") val fincasCarga: String = ""
+)
+
+@Serializable
+data class PedidoEstadoResponse(
+    val numero: String = "",
+    val estado: Int = 0,
+    /** True cuando el pedido esta ALBARANEADO (pendientes a 0 por factura). */
+    val albaran: Boolean = false
 )
 
 @Serializable

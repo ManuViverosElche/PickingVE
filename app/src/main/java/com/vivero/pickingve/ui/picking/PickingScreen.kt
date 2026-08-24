@@ -1406,16 +1406,19 @@ private fun OrderLineCard(
                         text = "Marca: $marcaEfectiva (pedido)"
                     )
                 }
-                if (line.fincaAcopio.isNotBlank() &&
-                    !line.fincaAcopio.equals(order?.fincaCarga.orEmpty(), ignoreCase = true)
-                ) {
+                // D-186: ubicacion RELEVADA siempre visible cuando exista
+                // (finca y/o sector, cada uno independiente del teorico).
+                val partesRecogida = listOfNotNull(
+                    line.fincaAcopio.takeIf { it.isNotBlank() }?.let { "Finca $it" },
+                    line.sectorAcopio.takeIf { it.isNotBlank() }?.let { "Sector $it" }
+                )
+                if (partesRecogida.isNotEmpty()) {
                     LineBadge(
                         container = MaterialTheme.colorScheme.tertiaryContainer,
                         content = MaterialTheme.colorScheme.onTertiaryContainer,
                         border = null,
                         icon = { Icon(Icons.Filled.LocalShipping, null, Modifier.size(14.dp)) },
-                        text = "Recogida: ${line.fincaAcopio}" +
-                            if (line.sectorAcopio.isNotBlank()) " · ${line.sectorAcopio}" else ""
+                        text = "Recogida: ${partesRecogida.joinToString(" · ")}"
                     )
                 }
             }
@@ -1484,28 +1487,43 @@ private fun OrderLineCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PrioBadge(prioridad: String) {
-    if (esPrioridadDestacada(prioridad)) {
-        val transition = rememberInfiniteTransition(label = "prio")
-        val alpha by transition.animateFloat(
-            initialValue = 0.45f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
-            label = "prioAlpha"
-        )
-        LineBadge(
-            container = MaterialTheme.colorScheme.errorContainer,
-            content = MaterialTheme.colorScheme.onErrorContainer,
-            border = null,
-            icon = { Icon(Icons.Filled.Warning, null, Modifier.size(14.dp)) },
-            text = "PRIORITARIO",
-            modifier = Modifier.alpha(alpha)
-        )
+    val p = prioridad.trim().uppercase()
+    when {
+        // D-187: 3 estados exactos — vacio/NORMAL = sin etiqueta;
+        // "PRIORITARIO" = destacado; resto de valores = neutro.
+        p == "PRIORITARIO" -> {
+            val transition = rememberInfiniteTransition(label = "prio")
+            val alpha by transition.animateFloat(
+                initialValue = 0.45f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                label = "prioAlpha"
+            )
+            LineBadge(
+                container = MaterialTheme.colorScheme.errorContainer,
+                content = MaterialTheme.colorScheme.onErrorContainer,
+                border = null,
+                icon = { Icon(Icons.Filled.Warning, null, Modifier.size(14.dp)) },
+                text = "PRIORITARIO",
+                modifier = Modifier.alpha(alpha)
+            )
+        }
+        p.isNotBlank() && p != "NORMAL" -> {
+            LineBadge(
+                container = MaterialTheme.colorScheme.surfaceVariant,
+                content = MaterialTheme.colorScheme.onSurfaceVariant,
+                border = null,
+                icon = null,
+                text = prioridad
+            )
+        }
     }
 }
 
 private fun esPrioridadDestacada(prioridad: String): Boolean {
-    val p = prioridad.uppercase()
-    return p.isNotBlank() && p != "NORMAL" && p != "NO PRIORIDAD"
+    // D-187: SOLO el valor exacto PRIORITARIO destaca. "NO PRIORITARIO" es un
+    // estado distinto y el VACIO no significa prioritario.
+    return prioridad.trim().uppercase() == "PRIORITARIO"
 }
 
 @OptIn(ExperimentalLayoutApi::class)

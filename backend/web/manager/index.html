@@ -1196,38 +1196,54 @@
     }
   }
 
-  // ===== D-74: tabla comparativa de carga por operario =====
+  // ===== D-74/D-185: carga por operario — SIEMPRE por EMAIL (unico).
+  // Los nombres de pila se repiten (Antonio Calderon encargado vs Antonio
+  // Ballester operario): agrupar por nombre mezclaba personas.
   function calcularCargaPorOperario(orders) {
     const carga = {};
+    const opsByEmail = {};
     operariosList.forEach(op => {
-      if (!op.activo && !(op.nombre in carga)) {
-        carga[op.nombre] = { nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0 };
-      }
-      if (op.activo !== false) {
-        carga[op.nombre] = carga[op.nombre] || { nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0 };
+      const email = (op.email || '').trim().toLowerCase();
+      if (!email) return;
+      opsByEmail[email] = op;
+      if (op.activo !== false && !(email in carga)) {
+        carga[email] = { email: email, nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0 };
       }
     });
+    const opPorNombre = {};
+    Object.values(carga).forEach(f => { opPorNombre[(f.nombre || '').toLowerCase()] = f; });
     orders.forEach(o => {
       (o.lineas || []).forEach(l => {
         if (esRefControl(l.referencia)) return;
         const detOps = {};
         (l.detalleOperarios || '').split(',').forEach(par => {
-          const [nom, cant] = par.split(':');
-          if (nom && nom.trim()) detOps[nom.trim()] = parseInt(cant) || 0;
+          const [clave, cant] = par.split(':');
+          if (clave && clave.trim()) detOps[clave.trim().toLowerCase()] = parseInt(cant) || 0;
         });
-        Object.entries(detOps).forEach(([nom, cant]) => {
-          if (carga[nom]) carga[nom].recogido += cant;
+        Object.entries(detOps).forEach(([clave, cant]) => {
+          let destino = opsByEmail[clave] ? carga[clave] : null;
+          if (!destino && clave.startsWith('sin-email:')) {
+            destino = opPorNombre[clave.replace('sin-email:', '').toLowerCase()] || null;
+          }
+          if (!destino && !opsByEmail[clave]) {
+            // compatibilidad con registros antiguos agregados por nombre
+            destino = opPorNombre[clave.toLowerCase()] || null;
+          }
+          if (destino) destino.recogido += cant;
         });
-        const opAsig = (l.operarioAsignado || '').trim();
-        if (opAsig && carga[opAsig]) {
-          carga[opAsig].asignado += l.pendientes || 0;
-          carga[opAsig].queda += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
+        const asigEmail = (l.operarioAsignadoEmail || '').trim().toLowerCase();
+        const asigNombre = (l.operarioAsignado || '').trim();
+        let filaAsig = asigEmail ? carga[asigEmail] : null;
+        if (!filaAsig && asigNombre) filaAsig = opPorNombre[asigNombre.toLowerCase()] || null;
+        if (filaAsig) {
+          filaAsig.asignado += l.pendientes || 0;
+          filaAsig.queda += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
         }
         const keyLinea = `${o.serie}_${o.numero}`;
         const cambios = cambiosFaenaPendientes[keyLinea] || {};
-        Object.entries(cambios).forEach(([posicion, nuevoOp]) => {
-          if (String(l.posicion) === String(posicion) && nuevoOp && carga[nuevoOp]) {
-            carga[nuevoOp].preasignado += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
+        Object.entries(cambios).forEach(([posicion, nuevoOpEmail]) => {
+          if (String(l.posicion) === String(posicion) && nuevoOpEmail && carga[nuevoOpEmail.toLowerCase()]) {
+            carga[nuevoOpEmail.toLowerCase()].preasignado += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
           }
         });
       });
@@ -1289,10 +1305,15 @@
 
     let lineasHtml = (o.lineas || []).map((l, idx) => {
       const lineNum = l.posicion || (idx + 1);
-      const isPrio = !!l.prioritario;
-      const prioBadge = isPrio
-        ? '<span class="badge b-yellow blink-prio">⭐ Prioritario</span>'
-        : '<span class="badge badge-noprio">No prioritario</span>';
+      // D-185: 3 estados de PRIORIDAD — "PRIORITARIO" destacado, "NO PRIORITARIO"
+      // neutro, y VACIO sin etiqueta alguna (vacio no significa prioritario).
+      const prioTxt = (l.prioridadTexto || '').toUpperCase();
+      let prioBadge = '';
+      if (prioTxt === 'PRIORITARIO') {
+        prioBadge = '<span class="badge b-yellow blink-prio">⭐ Prioritario</span>';
+      } else if (prioTxt) {
+        prioBadge = '<span class="badge badge-noprio">' + escHtml(prioTxt) + '</span>';
+      }
 
       let marcaInfo = '';
       if (l.marca && l.marca !== o.marcaPedido) {
@@ -1304,7 +1325,7 @@
       let rowStyle = '';
       if (l.marcado) {
         rowStyle = 'border: 2px solid #e0a13c !important; background: rgba(224,161,60,0.08);';
-      } else if (isPrio) {
+      } else if (prioTxt === 'PRIORITARIO') {
         rowStyle = 'background: rgba(224,161,60,0.04);';
       }
 
@@ -1324,8 +1345,9 @@
       let opOptions = '<option value="">-- Sin asignar --</option>';
       operariosList.forEach(op => {
         if (!op.activo) return;
-        const sel = (l.operarioAsignado === op.nombre) ? 'selected' : '';
-        opOptions += `<option value="${escHtml(op.nombre)}" ${sel}>${escHtml(op.nombre)}</option>`;
+        // D-185: asignacion SIEMPRE por email (unico); el nombre es solo etiqueta
+        const sel = ((l.operarioAsignadoEmail || '') === op.email) ? 'selected' : '';
+        opOptions += `<option value="${escHtml(op.email)}" ${sel}>${escHtml(op.nombre)}</option>`;
       });
 
       const huella = l.huellaDigital || String(lineNum);
@@ -1471,7 +1493,9 @@
         cambios.push({
           pedido_id: pedidoKey.split('_').pop(),
           linea_huella: huella,
-          operario_nombre: operario || ''
+          // D-185: asignacion por EMAIL (unico); el nombre se resuelve en servidor
+          operario_email: operario || '',
+          operario_nombre: (operariosList.find(op => op.email === operario) || {}).nombre || ''
         });
       });
     });

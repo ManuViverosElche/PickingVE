@@ -162,15 +162,27 @@ class OrderListViewModel(
                     completo = true
                 )
                 try {
-                    val cambiosApi = result.cambiosDetalle.map { c ->
-                        com.vivero.pickingve.data.remote.CambioLineaDetalle(
-                            pedido = c.pedido,
-                            linea = c.linea,
-                            tipo = c.tipo,
-                            descripcion = c.descripcion
+                    // D-184: los pedidos ALBARANEADOS no generan push (no es una
+                    // eliminacion real, son pendientes a 0 por factura).
+                    val albaranSet = result.pedidosAlbaran.toSet()
+                    val cambiosFiltrados = result.cambiosDetalle
+                        .filter { c -> c.pedido !in albaranSet }
+                        .map { c ->
+                            com.vivero.pickingve.data.remote.CambioLineaDetalle(
+                                pedido = c.pedido,
+                                linea = c.linea,
+                                tipo = c.tipo,
+                                descripcion = c.descripcion
+                            )
+                        }
+                    val modificadosSinAlbaran = result.pedidosModificados.filter { it !in albaranSet }
+                    api.notificarCambios(modificadosSinAlbaran, cambiosFiltrados)
+                    if (result.pedidosAlbaran.isNotEmpty()) {
+                        _syncState.value = _syncState.value.copy(
+                            lastResult = (_syncState.value.lastResult ?: "") +
+                                " · Albarán: ${result.pedidosAlbaran.joinToString(", ")}"
                         )
                     }
-                    api.notificarCambios(result.pedidosModificados, cambiosApi)
                 } catch (e: Exception) {
                     Log.e("PickingVE", "notificar cambios fallo", e)
                 }

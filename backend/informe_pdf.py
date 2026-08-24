@@ -469,7 +469,9 @@ def build_punteo_pdf(
     c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle(f"Punteo - Pedido {numero_pedido}")
 
-    limite_inferior = MARG + FOOTER_H + 4 * mm
+    # D-178/D-184: el pie (GGN + Observaciones + Verificado/Peso) alcanza ~18mm
+    # por encima de su banda; el limite evita que la ultima fila lo pise.
+    limite_inferior = MARG + FOOTER_H + 14 * mm
 
     # ---- D-178: PLANIFICACION de paginas ANTES de dibujar ----
     # Cada bloque = fila de linea + sus subfilas de sustitucion. La primera

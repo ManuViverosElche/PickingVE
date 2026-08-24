@@ -50,7 +50,9 @@ data class SyncResult(
     val pedidos: Int,
     val lineas: Int,
     val pedidosModificados: List<String> = emptyList(),
-    val cambiosDetalle: List<CambioLineaDetalle> = emptyList()
+    val cambiosDetalle: List<CambioLineaDetalle> = emptyList(),
+    /** D-184: pedidos albaraneados (pendientes a 0 por factura). Sin push de lineas. */
+    val pedidosAlbaran: List<String> = emptyList()
 )
 
 class PickingRepository(
@@ -1040,6 +1042,7 @@ class PickingRepository(
             modificadoDesde = if (needFull) null else utcDateTime(lastPedidosSyncAt)
         )
         val modifiedOrderIds = mutableSetOf<String>()
+        val pedidosAlbaran = mutableSetOf<String>()
         val cambiosDetalle = mutableListOf<CambioLineaDetalle>()
         val orders = pedidos.map { p ->
             val prevOrder = orderDao.getOrder(p.numero)
@@ -1132,16 +1135,27 @@ class PickingRepository(
                     cierrePendiente = prev?.cierrePendiente ?: false,
                     vigente = true
                 )
-            }.also { _ ->
+            }            .also { _ ->
                 val removedIds = existing.keys - serverLineIds
                 if (removedIds.isNotEmpty()) {
                     orderDao.markLinesNotVigente(removedIds.toList())
-                    modifiedOrderIds += p.numero
-                    removedIds.forEach { removedId ->
-                        val removedLine = existing[removedId]
-                        if (removedLine != null) {
-                            val desc = "Se ha eliminado la línea ${removedLine.posicion}: ${removedLine.productId} - ${removedLine.productName}"
-                            cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = removedId, tipo = "borrada", descripcion = desc)
+                    // D-184: distinguir ALBARAN (pendientes a 0 por factura) de
+                    // borrado real. En albaran: sin push de lineas y pedido se
+                    // cierra como servido.
+                    val esAlbaran = runCatching {
+                        api.estadoPedido(p.numero).albaran
+                    }.getOrDefault(false)
+                    if (esAlbaran) {
+                        pedidosAlbaran += p.numero
+                        orderDao.clearOrderModificado(p.numero)
+                    } else {
+                        modifiedOrderIds += p.numero
+                        removedIds.forEach { removedId ->
+                            val removedLine = existing[removedId]
+                            if (removedLine != null) {
+                                val desc = "Se ha eliminado la línea ${removedLine.posicion}: ${removedLine.productId} - ${removedLine.productName}"
+                                cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = removedId, tipo = "borrada", descripcion = desc)
+                            }
                         }
                     }
                 }
@@ -1161,7 +1175,8 @@ class PickingRepository(
             pedidos = orders.size,
             lineas = lines.size,
             pedidosModificados = modifiedOrderIds.toList(),
-            cambiosDetalle = cambiosDetalle
+            cambiosDetalle = cambiosDetalle,
+            pedidosAlbaran = pedidosAlbaran.toList()
         )
     }
 
@@ -1306,7 +1321,9 @@ class PickingRepository(
                     cantidadPartida = qty,
                     fechaHora = Instant.ofEpochMilli(r.timestamp).toString(),
                     empleadoEmail = r.empleadoEmail,
-                    empleadoNombre = r.empleadoNombre
+                    empleadoNombre = r.empleadoNombre,
+                    needsLabel = r.needsLabel,
+                    labelReason = r.labelReason.orEmpty()
                 ))
             }
         }

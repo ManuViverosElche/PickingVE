@@ -1,4 +1,4 @@
-import hashlib
+﻿import hashlib
 import io
 import json
 import os
@@ -1067,7 +1067,7 @@ def _check_rate_limit(ip: str, limit: int) -> None:
 
 def _verify_key(x_api_key: Optional[str] = Header(default=None)) -> None:
     if not API_KEY or x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="API key inválida o ausente")
+        raise HTTPException(status_code=401, detail="API key invÃ¡lida o ausente")
 
 
 def _query(sql: str) -> list[dict[str, Any]]:
@@ -1105,6 +1105,9 @@ def _ensure_picking_table() -> None:
     ).result()
     _ensure_column(PICKING_TABLE, "empleado_email", "empleado_email STRING")
     _ensure_column(PICKING_TABLE, "empleado_nombre", "empleado_nombre STRING")
+    # D-183: senal de etiqueta solicitada sobre planta pistoleada (con EAN)
+    _ensure_column(PICKING_TABLE, "needs_label", "needs_label BOOL")
+    _ensure_column(PICKING_TABLE, "label_reason", "label_reason STRING")
 
 
 def _ensure_compensaciones_view() -> None:
@@ -1166,7 +1169,7 @@ def _ensure_encargados_table() -> None:
 def _migrar_apellidos_encargados() -> None:
     """D-69: separa nombre y apellidos en encargados existentes.
 
-    Solo toca filas con apellidos vacío y nombre con espacios: el primer
+    Solo toca filas con apellidos vacÃ­o y nombre con espacios: el primer
     token queda como nombre y el resto como apellidos. Idempotente.
     """
     rows = _query(
@@ -1243,7 +1246,7 @@ def _ensure_maquinarias_table() -> None:
 
 
 def _ensure_maquinaria_familias_table() -> None:
-    """D-76: familias de maquinaria (catálogo configurable en el panel)."""
+    """D-76: familias de maquinaria (catÃ¡logo configurable en el panel)."""
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
         client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
@@ -1264,7 +1267,7 @@ def _ensure_maquinaria_familias_table() -> None:
 
 
 def _ensure_reparto_table() -> None:
-    """D-72: reparto de faena por línea (pedido + huella) para la app futura."""
+    """D-72: reparto de faena por lÃ­nea (pedido + huella) para la app futura."""
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
         client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
@@ -1452,6 +1455,27 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/pedido-estado")
+def pedido_estado(
+    request: Request,
+    numero: str = Query(..., description="Numero de pedido"),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """D-184: estado actual del pedido para distinguir ALBARAN (pendientes a 0
+    por facturacion, NO eliminacion) de borrados reales. Evita la tormenta de
+    push 'linea eliminada' cuando solo se ha hecho el albaran."""
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    rows = _query(
+        f"SELECT ESTADO_PEDIDO FROM `{PROJECT}.{DATASET}.PEDIDOS` "
+        f"WHERE NUMERO_PEDIDO = {_esc(numero)} LIMIT 1"
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    estado = int(rows[0].get("ESTADO_PEDIDO") or 0)
+    return {"numero": numero, "estado": estado, "albaran": estado == 2}
+
+
 @app.get("/debug-app")
 def debug_app() -> dict[str, Any]:
     """TEMPORAL (diagnostico empaquetado)."""
@@ -1484,7 +1508,7 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
     if not API_KEY or x_telegram_bot_api_secret_token != API_KEY:
-        raise HTTPException(status_code=401, detail="Secret token inválido o ausente")
+        raise HTTPException(status_code=401, detail="Secret token invÃ¡lido o ausente")
     update = await request.json()
     if update.get("callback_query"):
         return await run_in_threadpool(_telegram_callback, bot_token, update)
@@ -1517,7 +1541,7 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
 
     if data.startswith("check_"):
         try:
-            responder("✅ Marcado como comprobado")
+            responder("âœ… Marcado como comprobado")
             if message_id:
                 _telegram_request(
                     bot_token,
@@ -1526,7 +1550,7 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
                         "chat_id": chat_id,
                         "message_id": message_id,
                         "reply_markup": {
-                            "inline_keyboard": [[{"text": "✅ Comprobado", "callback_data": data}]]
+                            "inline_keyboard": [[{"text": "âœ… Comprobado", "callback_data": data}]]
                         },
                     },
                 )
@@ -1540,8 +1564,8 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
 
     if data == "cancelar":
         _flujo_clear(bot_token, chat_id)
-        responder("✖️ Cancelado")
-        enviar("✖️ Operación cancelada.")
+        responder("âœ–ï¸ Cancelado")
+        enviar("âœ–ï¸ OperaciÃ³n cancelada.")
         return {"ok": True}
 
     if data in {"menu_pedido", "menu_linea"}:
@@ -1563,7 +1587,7 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
             _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido})
             responder(f"Pedido {pedido} seleccionado")
             enviar(
-                f"✍️ Escribe el mensaje para el pedido **{pedido}**:",
+                f"âœï¸ Escribe el mensaje para el pedido **{pedido}**:",
                 _teclado_cancelar(),
             )
         return {"ok": True}
@@ -1577,9 +1601,9 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
         _, pedido, huella = data.split(":", 2)
         pos = _posicion_linea(pedido, huella)
         _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido, "linea": huella})
-        responder(f"Línea {pos} seleccionada")
+        responder(f"LÃ­nea {pos} seleccionada")
         enviar(
-            f"✍️ Escribe el mensaje para el pedido **{pedido}**, línea **{pos}**:",
+            f"âœï¸ Escribe el mensaje para el pedido **{pedido}**, lÃ­nea **{pos}**:",
             _teclado_cancelar(),
         )
         return {"ok": True}
@@ -1602,10 +1626,10 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
         autor = str(c.get("autor_nombre") or "encargado")
         _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido, "linea": linea})
         pos = _posicion_linea(pedido, linea) if linea else None
-        destino = f"pedido **{pedido}**" + (f", línea **{pos}**" if pos else "")
-        responder("Respondiendo…")
+        destino = f"pedido **{pedido}**" + (f", lÃ­nea **{pos}**" if pos else "")
+        responder("Respondiendoâ€¦")
         enviar(
-            f"✍️ Responde a **{autor}** ({destino}):",
+            f"âœï¸ Responde a **{autor}** ({destino}):",
             _teclado_cancelar(),
         )
         return {"ok": True}
@@ -1615,7 +1639,7 @@ def _telegram_callback(bot_token: str, update: dict[str, Any]) -> dict[str, Any]
 
 
 def _teclado_cancelar() -> list[list[dict[str, Any]]]:
-    return [[{"text": "✖️ Cancelar", "callback_data": "cancelar"}]]
+    return [[{"text": "âœ–ï¸ Cancelar", "callback_data": "cancelar"}]]
 
 
 def _flujo_get(bot_token: str, chat_id: str) -> dict[str, Any]:
@@ -1691,12 +1715,12 @@ def _formato_pedido(r: dict[str, Any]) -> str:
     fecha_txt = ""
     if fecha is not None:
         try:
-            fecha_txt = " · " + fecha.strftime("%d/%m")
+            fecha_txt = " Â· " + fecha.strftime("%d/%m")
         except Exception:
             fecha_txt = ""
     cliente = str(r.get("N_COMERCIAL") or "").strip()
     finca = str(r.get("FINCA_CARGA") or "").strip()
-    return f"{r.get('NUMERO_PEDIDO')} · {cliente or 's/cliente'} · {finca or 's/finca'}{fecha_txt}"
+    return f"{r.get('NUMERO_PEDIDO')} Â· {cliente or 's/cliente'} Â· {finca or 's/finca'}{fecha_txt}"
 
 
 def _formato_linea(r: dict[str, Any]) -> str:
@@ -1706,7 +1730,7 @@ def _formato_linea(r: dict[str, Any]) -> str:
     litraje = str(r.get("CODIGO_LITRAJE") or "").strip()
     sector = str(r.get("CODIGO_SECTOR") or "").strip()
     partes = [p for p in [f"L{pos}", ref, desc, litraje, sector] if p]
-    return " · ".join(partes)
+    return " Â· ".join(partes)
 
 
 def _enviar_lista_pedidos(bot_token: str, chat_id: str, modo: str, offset: int) -> None:
@@ -1729,14 +1753,14 @@ def _enviar_lista_pedidos(bot_token: str, chat_id: str, modo: str, offset: int) 
     total_paginas = (len(pedidos) + 9) // 10
     nav: list[dict[str, Any]] = []
     if offset > 0:
-        nav.append({"text": "◀️", "callback_data": f"pedidos:{modo}:{max(0, offset - 10)}"})
+        nav.append({"text": "â—€ï¸", "callback_data": f"pedidos:{modo}:{max(0, offset - 10)}"})
     nav.append({"text": f"{offset // 10 + 1}/{total_paginas}", "callback_data": "sinop"})
     if offset + 10 < len(pedidos):
-        nav.append({"text": "▶️", "callback_data": f"pedidos:{modo}:{offset + 10}"})
+        nav.append({"text": "â–¶ï¸", "callback_data": f"pedidos:{modo}:{offset + 10}"})
     teclado.append(nav)
-    teclado.append([{"text": "✖️ Cancelar", "callback_data": "cancelar"}])
-    titulo = "📦 Mensaje al pedido: elige un pedido activo:" if modo == "pedido" \
-        else "📋 Mensaje a línea: elige primero el pedido:"
+    teclado.append([{"text": "âœ–ï¸ Cancelar", "callback_data": "cancelar"}])
+    titulo = "ðŸ“¦ Mensaje al pedido: elige un pedido activo:" if modo == "pedido" \
+        else "ðŸ“‹ Mensaje a lÃ­nea: elige primero el pedido:"
     _telegram_request(
         bot_token, "sendMessage",
         {"chat_id": chat_id, "text": titulo, "reply_markup": {"inline_keyboard": teclado}},
@@ -1749,7 +1773,7 @@ def _enviar_lista_lineas(bot_token: str, chat_id: str, pedido: str, offset: int)
     if not pagina:
         _telegram_request(
             bot_token, "sendMessage",
-            {"chat_id": chat_id, "text": f"El pedido {pedido} no tiene líneas activas."},
+            {"chat_id": chat_id, "text": f"El pedido {pedido} no tiene lÃ­neas activas."},
         )
         return
     teclado: list[list[dict[str, Any]]] = []
@@ -1763,17 +1787,17 @@ def _enviar_lista_lineas(bot_token: str, chat_id: str, pedido: str, offset: int)
     total_paginas = (len(lineas) + 11) // 12
     nav: list[dict[str, Any]] = []
     if offset > 0:
-        nav.append({"text": "◀️", "callback_data": f"lineas:{pedido}:{max(0, offset - 12)}"})
+        nav.append({"text": "â—€ï¸", "callback_data": f"lineas:{pedido}:{max(0, offset - 12)}"})
     nav.append({"text": f"{offset // 12 + 1}/{total_paginas}", "callback_data": "sinop"})
     if offset + 12 < len(lineas):
-        nav.append({"text": "▶️", "callback_data": f"lineas:{pedido}:{offset + 12}"})
+        nav.append({"text": "â–¶ï¸", "callback_data": f"lineas:{pedido}:{offset + 12}"})
     teclado.append(nav)
-    teclado.append([{"text": "✖️ Cancelar", "callback_data": "cancelar"}])
+    teclado.append([{"text": "âœ–ï¸ Cancelar", "callback_data": "cancelar"}])
     _telegram_request(
         bot_token, "sendMessage",
         {
             "chat_id": chat_id,
-            "text": f"📋 Líneas del pedido {pedido} (elige una):",
+            "text": f"ðŸ“‹ LÃ­neas del pedido {pedido} (elige una):",
             "reply_markup": {"inline_keyboard": teclado},
         },
     )
@@ -1970,10 +1994,10 @@ def _registrar_comandos_bot(bot_token: str) -> None:
         return
     try:
         comandos = [
-            {"command": "start", "description": "Menú principal de pedidos"},
+            {"command": "start", "description": "MenÃº principal de pedidos"},
             {"command": "pedido", "description": "Escribir a un pedido (/pedido 260766)"},
-            {"command": "linea", "description": "Escribir a una línea (/linea 260766 1)"},
-            {"command": "cancelar", "description": "Cancelar selección actual"},
+            {"command": "linea", "description": "Escribir a una lÃ­nea (/linea 260766 1)"},
+            {"command": "cancelar", "description": "Cancelar selecciÃ³n actual"},
         ]
         _telegram_request(bot_token, "setMyCommands", {"commands": comandos})
     except Exception:
@@ -2012,7 +2036,7 @@ def _posicion_linea(pedido: str, huella: Optional[str]) -> Optional[int]:
     return int(pos) if pos is not None else None
 
 
-_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_DIAS_ES = ["lunes", "martes", "miÃ©rcoles", "jueves", "viernes", "sÃ¡bado", "domingo"]
 
 
 def _muelle_pedido(pedido: str) -> str:
@@ -2029,7 +2053,7 @@ def _muelle_pedido(pedido: str) -> str:
 
 def _contexto_pedido(pedido: str) -> str:
     """Bloque de contexto del pedido para los avisos a la oficina: fecha de carga
-    con día de la semana, finca/sector/muelle, cliente (y fiscal si difiere) y comercial."""
+    con dÃ­a de la semana, finca/sector/muelle, cliente (y fiscal si difiere) y comercial."""
     if not pedido:
         return ""
     rows = _query(
@@ -2049,23 +2073,23 @@ def _contexto_pedido(pedido: str) -> str:
     fecha = r.get("FECHA_CARGA")
     if fecha is not None:
         dia = _DIAS_ES[fecha.weekday()]
-        lineas.append(f"📅 {fecha.strftime('%d/%m/%Y')} · {dia}")
+        lineas.append(f"ðŸ“… {fecha.strftime('%d/%m/%Y')} Â· {dia}")
     partes = [p for p in [
         (r.get("FINCA_CARGA") or "").strip(),
         (r.get("SECTOR_CARGA") or "").strip(),
         _muelle_pedido(pedido),
     ] if p]
     if partes:
-        lineas.append("📍 " + " · ".join(partes))
+        lineas.append("ðŸ“ " + " Â· ".join(partes))
     n_comercial = (r.get("N_COMERCIAL") or "").strip()
     n_fiscal = (r.get("N_FISCAL") or "").strip()
     if n_comercial:
-        lineas.append(f"👤 Cliente: {n_comercial}")
+        lineas.append(f"ðŸ‘¤ Cliente: {n_comercial}")
         if n_fiscal and n_fiscal.upper() != n_comercial.upper():
-            lineas.append(f"🏢 Fiscal: {n_fiscal}")
+            lineas.append(f"ðŸ¢ Fiscal: {n_fiscal}")
     comercial = (r.get("NOMBRE_AGENTE") or "").strip()
     if comercial:
-        lineas.append(f"🤝 Comercial: {comercial}")
+        lineas.append(f"ðŸ¤ Comercial: {comercial}")
     return "\n".join(lineas)
 
 
@@ -2144,7 +2168,7 @@ def crear_comentario(
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     texto = req.texto.strip()
     if not texto:
-        raise HTTPException(status_code=400, detail="El comentario no puede estar vacío")
+        raise HTTPException(status_code=400, detail="El comentario no puede estar vacÃ­o")
     _insertar_comentario(
         req.pedido_id, req.linea_huella, req.autor_email,
         req.autor_nombre or req.autor_email, req.rol, req.canal, texto,
@@ -2193,11 +2217,11 @@ def comentarios_recientes(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-73: actividad de chat por pedido/línea para marcar "sin leer" en el panel.
+    """D-73: actividad de chat por pedido/lÃ­nea para marcar "sin leer" en el panel.
 
-    Devuelve el último mensaje ajeno a oficina (rol APP/ENCARGADO) por
-    pedido+línea en los últimos N días. El panel compara con su marca local
-    de última lectura (localStorage) para hacer parpadear el botón Mensajes.
+    Devuelve el Ãºltimo mensaje ajeno a oficina (rol APP/ENCARGADO) por
+    pedido+lÃ­nea en los Ãºltimos N dÃ­as. El panel compara con su marca local
+    de Ãºltima lectura (localStorage) para hacer parpadear el botÃ³n Mensajes.
     """
     _verify_manager_key(k, x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
@@ -2246,7 +2270,7 @@ def guardar_matricula(
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     if tipo not in {"CAMION", "REMOLQUE_A", "REMOLQUE_B"}:
-        raise HTTPException(status_code=422, detail="Tipo no válido")
+        raise HTTPException(status_code=422, detail="Tipo no vÃ¡lido")
     foto_url = ""
     if archivo is not None:
         datos = archivo.file.read()
@@ -2280,7 +2304,7 @@ def guardar_matricula(
         """
     ).result()
 
-    # D-15X: primera matrícula de CAMIÓN registrada = camión en muelle.
+    # D-15X: primera matrÃ­cula de CAMIÃ“N registrada = camiÃ³n en muelle.
     # Aviso ultra prioritario a los encargados de la finca del pedido.
     if tipo == "CAMION" and matricula_limpia:
         try:
@@ -2294,13 +2318,13 @@ def guardar_matricula(
                 finca = _finca_pedido(pedido_id)
                 muelle_txt = f" en {muelle_limpio}" if muelle_limpio else ""
                 cuerpo = (
-                    f"🚚 El camión {matricula_limpia}{muelle_txt} está en el cargadero "
-                    f"del pedido {pedido_id}: prioridad máxima para las líneas pendientes."
+                    f"ðŸšš El camiÃ³n {matricula_limpia}{muelle_txt} estÃ¡ en el cargadero "
+                    f"del pedido {pedido_id}: prioridad mÃ¡xima para las lÃ­neas pendientes."
                 )
                 for email in _encargados_finca(finca):
                     _enviar_fcm(
                         email,
-                        f"Camión en muelle · Pedido {pedido_id}",
+                        f"CamiÃ³n en muelle Â· Pedido {pedido_id}",
                         cuerpo[:300],
                         {"tipo": "camion_llegado", "pedido": pedido_id},
                     )
@@ -2339,7 +2363,7 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
         except Exception:
             pass
 
-    # --- Comandos del menú ---
+    # --- Comandos del menÃº ---
     if text.startswith("/"):
         cmd = text.split()[0].lower()
         resto = text[len(cmd):].strip()
@@ -2349,7 +2373,7 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
             return {"ok": True}
         if cmd == "/cancelar":
             _flujo_clear(bot_token, chat_id)
-            responder_chat("✖️ Selección cancelada.")
+            responder_chat("âœ–ï¸ SelecciÃ³n cancelada.")
             return {"ok": True}
         if cmd == "/pedido":
             if resto:
@@ -2359,7 +2383,7 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
                     return {"ok": True}
                 _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido})
                 responder_chat(
-                    f"✍️ Escribe el mensaje para el pedido **{pedido}**:",
+                    f"âœï¸ Escribe el mensaje para el pedido **{pedido}**:",
                     _teclado_cancelar(),
                 )
             else:
@@ -2379,11 +2403,11 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
                         f"AND LINEA_ACTIVA = TRUE LIMIT 1"
                     )
                     if not rows:
-                        responder_chat(f"No existe la línea {partes[1]} del pedido {pedido}.")
+                        responder_chat(f"No existe la lÃ­nea {partes[1]} del pedido {pedido}.")
                         return {"ok": True}
                     _flujo_set(bot_token, chat_id, {"paso": "texto", "pedido": pedido, "linea": rows[0]["HUELLA_DIGITAL"]})
                     responder_chat(
-                        f"✍️ Escribe el mensaje para el pedido **{pedido}**, línea **{partes[1]}**:",
+                        f"âœï¸ Escribe el mensaje para el pedido **{pedido}**, lÃ­nea **{partes[1]}**:",
                         _teclado_cancelar(),
                     )
                 else:
@@ -2394,10 +2418,10 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
             return {"ok": True}
         responder_chat(
             "Comandos disponibles:\n"
-            "/start — menú de pedidos\n"
-            "/pedido 260766 — escribir al pedido\n"
-            "/linea 260766 1 — escribir a una línea\n"
-            "/cancelar — cancelar la selección"
+            "/start â€” menÃº de pedidos\n"
+            "/pedido 260766 â€” escribir al pedido\n"
+            "/linea 260766 1 â€” escribir a una lÃ­nea\n"
+            "/cancelar â€” cancelar la selecciÃ³n"
         )
         return {"ok": True}
 
@@ -2415,7 +2439,7 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
             try:
                 _enviar_fcm(
                     email,
-                    f"Mensaje de la oficina · Pedido {pedido}" if pedido else "Aviso de la oficina",
+                    f"Mensaje de la oficina Â· Pedido {pedido}" if pedido else "Aviso de la oficina",
                     cuerpo,
                     {"tipo": "comentario", "pedido": pedido, "linea": linea or "", "canal": "telegram"},
                 )
@@ -2430,7 +2454,7 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
         flujo = _flujo_get(bot_token, chat_id)
         if flujo.get("paso") != "texto":
             pedido_reply = pm.group(1)
-            lm = re.search(r"Línea\s+(\d+)", reply_text)
+            lm = re.search(r"LÃ­nea\s+(\d+)", reply_text)
             huella = None
             if lm:
                 rows = _query(
@@ -2442,11 +2466,11 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
                     huella = rows[0]["HUELLA_DIGITAL"]
             publicar(pedido_reply, huella, text)
             pos = _posicion_linea(pedido_reply, huella) if huella else None
-            destino = f"pedido {pedido_reply}" + (f", línea {pos}" if pos else "")
-            responder_chat(f"✅ Mensaje enviado a los encargados del {destino}.")
+            destino = f"pedido {pedido_reply}" + (f", lÃ­nea {pos}" if pos else "")
+            responder_chat(f"âœ… Mensaje enviado a los encargados del {destino}.")
             return {"ok": True}
 
-    # --- Flujo de menú pendiente (esperando texto) ---
+    # --- Flujo de menÃº pendiente (esperando texto) ---
     flujo = _flujo_get(bot_token, chat_id)
     if flujo.get("paso") == "texto":
         pedido = str(flujo.get("pedido") or "")
@@ -2455,10 +2479,10 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
         publicar(pedido, linea, text)
         if pedido:
             pos = _posicion_linea(pedido, linea) if linea else None
-            destino = f"pedido {pedido}" + (f", línea {pos}" if pos else "")
-            responder_chat(f"✅ Mensaje enviado a los encargados del {destino}.")
+            destino = f"pedido {pedido}" + (f", lÃ­nea {pos}" if pos else "")
+            responder_chat(f"âœ… Mensaje enviado a los encargados del {destino}.")
         else:
-            responder_chat("✅ Mensaje enviado a todos los encargados.")
+            responder_chat("âœ… Mensaje enviado a todos los encargados.")
         return {"ok": True}
 
     # --- Atajo directo: #pedido texto ---
@@ -2468,17 +2492,17 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
         cuerpo = (m.group(2) or "").strip() or "(sin texto)"
         if not _pedido_existe(pedido):
             responder_chat(
-                f"⚠️ El pedido **#{pedido}** no existe. Revisa el número.",
+                f"âš ï¸ El pedido **#{pedido}** no existe. Revisa el nÃºmero.",
                 _teclado_principal(),
             )
             return {"ok": True}
         publicar(pedido, None, f"#{pedido} {cuerpo}")
-        responder_chat(f"✅ Mensaje registrado y enviado a los encargados del pedido {pedido}.")
+        responder_chat(f"âœ… Mensaje registrado y enviado a los encargados del pedido {pedido}.")
         return {"ok": True}
 
-    # --- Sin # ni flujo: menú principal ---
+    # --- Sin # ni flujo: menÃº principal ---
     responder_chat(
-        "¿Qué quieres enviar a los encargados?",
+        "Â¿QuÃ© quieres enviar a los encargados?",
         _teclado_principal(),
     )
     return {"ok": True}
@@ -2487,7 +2511,7 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
 def _teclado_principal() -> list[list[dict[str, Any]]]:
     return [
         [{"text": "?? Mensaje al pedido", "callback_data": "menu_pedido"}],
-        [{"text": "?? Mensaje a línea de pedido", "callback_data": "menu_linea"}],
+        [{"text": "?? Mensaje a lÃ­nea de pedido", "callback_data": "menu_linea"}],
         [{"text": "?? Cancelar", "callback_data": "cancelar"}],
     ]
 
@@ -2532,7 +2556,7 @@ def notificar_cambios(
             if _enviar_fcm(
                 email,
                 f"Pedido {pedido} modificado",
-                cambio.descripcion or "Revisa las líneas en la app",
+                cambio.descripcion or "Revisa las lÃ­neas en la app",
                 {"tipo": "pedido_modificado", "pedido": pedido, "linea": cambio.linea, "cambio_tipo": cambio.tipo},
             ):
                 enviadas += 1
@@ -2547,13 +2571,13 @@ def notificar_cambios(
             if _enviar_fcm(
                 email,
                 f"Pedido {pedido} modificado",
-                "Revisa las líneas en la app",
+                "Revisa las lÃ­neas en la app",
                 {"tipo": "pedido_modificado", "pedido": pedido, "linea": ""},
             ):
                 enviadas += 1
         pedidos_notificados.add(pedido)
 
-    # 3) Pedidos modificados en BigQuery desde el último chequeo (compatibilidad)
+    # 3) Pedidos modificados en BigQuery desde el Ãºltimo chequeo (compatibilidad)
     pedidos_bq = _query(
         f"SELECT NUMERO_PEDIDO, FINCA_CARGA FROM `{PROJECT}.{DATASET}.PEDIDOS` "
         f"WHERE FECHA_MODIFICACION > DATETIME({_esc(wm_str)}) AND ESTADO_PEDIDO IN (1, 3) "
@@ -2568,7 +2592,7 @@ def notificar_cambios(
             if _enviar_fcm(
                 email,
                 f"Pedido {pedido} modificado",
-                "Revisa las líneas en la app",
+                "Revisa las lÃ­neas en la app",
                 {"tipo": "pedido_modificado", "pedido": pedido, "linea": ""},
             ):
                 enviadas += 1
@@ -2591,7 +2615,7 @@ def notificar_cambios(
             for email in destinos:
                 if _enviar_fcm(
                     email,
-                    f"Mensaje de la oficina · Pedido {pedido}" if pedido else "Aviso de la oficina",
+                    f"Mensaje de la oficina Â· Pedido {pedido}" if pedido else "Aviso de la oficina",
                     texto[:200],
                     {"tipo": "comentario", "pedido": pedido, "linea": str(c.get("linea_huella") or ""), "canal": "telegram"},
                 ):
@@ -2608,7 +2632,7 @@ def notificar_cambios(
                     continue
                 if _enviar_fcm(
                     ofi["email"],
-                    f"{nombre} · Pedido {pedido}" if pedido else f"{nombre}",
+                    f"{nombre} Â· Pedido {pedido}" if pedido else f"{nombre}",
                     texto[:200],
                     {"tipo": "comentario", "pedido": pedido, "linea": str(c.get("linea_huella") or ""), "canal": "app"},
                 ):
@@ -2617,12 +2641,12 @@ def notificar_cambios(
             chat_id = _oficina_chat_id(bot_token) if bot_token else None
             if chat_id and bot_token:
                 pos = _posicion_linea(pedido, c.get("linea_huella"))
-                ref = f"Pedido {pedido}" + (f" · Línea {pos}" if pos else "")
+                ref = f"Pedido {pedido}" + (f" Â· LÃ­nea {pos}" if pos else "")
                 adjunto = c.get("adjunto_url") or ""
                 contexto = _contexto_pedido(pedido)
-                cuerpo = f"💬 {nombre} ({ref}): {texto}"
+                cuerpo = f"ðŸ’¬ {nombre} ({ref}): {texto}"
                 if contexto:
-                    cuerpo = f"💬 {nombre} ({ref})\n{contexto}\n———\n{texto}"
+                    cuerpo = f"ðŸ’¬ {nombre} ({ref})\n{contexto}\nâ€”â€”â€”\n{texto}"
                 try:
                     if adjunto:
                         _telegram_request(
@@ -2636,7 +2660,7 @@ def notificar_cambios(
                             "sendMessage",
                             {"chat_id": chat_id, "text": cuerpo,
                              "reply_markup": {"inline_keyboard": [[
-                                 {"text": "↩️ Responder", "callback_data": f"responder:{c.get('comentario_id')}"}
+                                 {"text": "â†©ï¸ Responder", "callback_data": f"responder:{c.get('comentario_id')}"}
                              ]]}},
                         )
                     else:
@@ -2645,7 +2669,7 @@ def notificar_cambios(
                             "sendMessage",
                             {"chat_id": chat_id, "text": cuerpo,
                              "reply_markup": {"inline_keyboard": [[
-                                 {"text": "↩️ Responder", "callback_data": f"responder:{c.get('comentario_id')}"}
+                                 {"text": "â†©ï¸ Responder", "callback_data": f"responder:{c.get('comentario_id')}"}
                              ]]}},
                         )
                 except Exception:
@@ -2971,7 +2995,7 @@ def guardar_maquinaria(
     _ensure_maquinarias_table()
     mq_id = body.id or ""
     if not mq_id:
-        # D-77: alta idempotente — si ya existe una maquinaria con el mismo
+        # D-77: alta idempotente â€” si ya existe una maquinaria con el mismo
         # nombre (doble clic incluido), se actualiza esa fila en vez de duplicar.
         existentes = _query(
             f"""
@@ -3034,7 +3058,7 @@ def guardar_maquinaria_familia(
     _ensure_maquinaria_familias_table()
     fam_id = body.id or ""
     if not fam_id:
-        # D-77: alta idempotente — si ya existe una familia con el mismo
+        # D-77: alta idempotente â€” si ya existe una familia con el mismo
         # nombre (doble clic incluido), se actualiza esa fila en vez de duplicar.
         existentes = _query(
             f"""
@@ -3146,40 +3170,49 @@ def guardar_reparto(
 ) -> dict[str, Any]:
     """D-72: guarda el reparto de faena.
 
-    La app Android (cuando exista el módulo de faena) leerá esta tabla con
+    La app Android (cuando exista el mÃ³dulo de faena) leerÃ¡ esta tabla con
     GET /api/manager/reparto?fecha=... o un endpoint dedicado por encargado.
-    Clave lógica: (pedido_id, linea_huella). Operario vacío = desasignar.
+    Clave lÃ³gica: (pedido_id, linea_huella). Operario vacÃ­o = desasignar.
     """
     _verify_manager_key(k, x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     _ensure_reparto_table()
-    emails = {
-        r["nombre"]: r["email"]
-        for r in _query(
-            f"SELECT nombre, email FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`"
-        )
-    }
+    # D-185: asignacion SIEMPRE por EMAIL (unico). Los nombres de pila se
+    # repiten (Antonio Calderon vs Antonio Ballester) y mezclan personas.
+    ops = _query(f"SELECT nombre, email FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`")
+    email_por_nombre = {}
+    nombre_por_email = {}
+    for o in ops:
+        em = (o.get("email") or "").strip()
+        no = (o.get("nombre") or "").strip()
+        if em:
+            nombre_por_email[em.lower()] = no
+            if no:
+                email_por_nombre.setdefault(no.lower(), em)
     guardadas, borradas = 0, 0
     for a in body.asignaciones:
         huella = (a.linea_huella or "").strip()
         pedido = (a.pedido_id or "").strip()
         if not pedido or not huella:
             continue
-        op_nombre = (a.operario_nombre or "").strip()
-        if not op_nombre:
+        op_email = (getattr(a, "operario_email", "") or "").strip().lower()
+        op_nombre_enviado = (a.operario_nombre or "").strip()
+        if not op_email and op_nombre_enviado:
+            op_email = email_por_nombre.get(op_nombre_enviado.lower(), "")
+        op_nombre_final = nombre_por_email.get(op_email, op_nombre_enviado) if op_email else op_nombre_enviado
+        if not op_email:
             client.query(
                 f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` "
                 f"WHERE pedido_id = {_esc(pedido)} AND linea_huella = {_esc(huella)}"
             ).result()
             borradas += 1
             continue
-        op_email = a.operario_email or emails.get(op_nombre, "")
         client.query(
             f"""
             MERGE `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` T
             USING (
                 SELECT {_esc(pedido)} AS pedido_id, {_esc(huella)} AS linea_huella,
-                       {_esc(op_email)} AS operario_email, {_esc(op_nombre)} AS operario_nombre,
+                       {_esc(op_email)} AS operario_email, {_esc(op_nombre_final)} AS operario_nombre,
                        CURRENT_TIMESTAMP() AS actualizado_en
             ) S
             ON T.pedido_id = S.pedido_id AND T.linea_huella = S.linea_huella
@@ -3192,16 +3225,16 @@ def guardar_reparto(
     return {"ok": True, "guardadas": guardadas, "borradas": borradas}
 
 
-# ---------------- D-15X Logística: cierre de línea, discrepancias y perfil operario ----------------
+# ---------------- D-15X LogÃ­stica: cierre de lÃ­nea, discrepancias y perfil operario ----------------
 
 CIERRES_TABLE = "cierres_linea"
 
 MOTIVOS_CIERRE_ETIQUETAS = {
     "SIN_STOCK": "No hay planta suficiente en campo",
-    "PLANTA_DANADA": "Planta dañada o en mal estado",
-    "CALIBRE_NO_COMERCIAL": "Calibre/tamaño no comercial",
+    "PLANTA_DANADA": "Planta daÃ±ada o en mal estado",
+    "CALIBRE_NO_COMERCIAL": "Calibre/tamaÃ±o no comercial",
     "NO_ENCONTRADA": "No se ha encontrado la referencia",
-    "CLIMATOLOGIA": "Daños por climatología",
+    "CLIMATOLOGIA": "DaÃ±os por climatologÃ­a",
     "OTRO": "Otro motivo",
 }
 
@@ -3240,11 +3273,11 @@ def cerrar_linea(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """El operario cierra una línea sin completarla; la oficina recibe el motivo."""
+    """El operario cierra una lÃ­nea sin completarla; la oficina recibe el motivo."""
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     if req.motivo not in MOTIVOS_CIERRE_ETIQUETAS:
-        raise HTTPException(status_code=422, detail="Motivo no válido")
+        raise HTTPException(status_code=422, detail="Motivo no vÃ¡lido")
     _ensure_cierres_table()
     client.query(
         f"INSERT INTO `{PROJECT}.{PICKING_DATASET}.{CIERRES_TABLE}` "
@@ -3256,10 +3289,10 @@ def cerrar_linea(
     etiqueta = MOTIVOS_CIERRE_ETIQUETAS[req.motivo]
     detalle = req.motivo_texto.strip()
     pos = _posicion_linea(req.pedido_id, req.linea_huella)
-    ref = f"Pedido {req.pedido_id}" + (f" · Línea {pos}" if pos else "")
+    ref = f"Pedido {req.pedido_id}" + (f" Â· LÃ­nea {pos}" if pos else "")
     cuerpo = (
-        f"✖️ Línea cerrada por {req.operario_nombre or 'un operario'} ({ref}): "
-        f"faltan {req.cantidad_faltante} uds — {etiqueta}"
+        f"âœ–ï¸ LÃ­nea cerrada por {req.operario_nombre or 'un operario'} ({ref}): "
+        f"faltan {req.cantidad_faltante} uds â€” {etiqueta}"
         + (f": {detalle}" if detalle else "")
     )
     try:
@@ -3269,7 +3302,7 @@ def cerrar_linea(
         for ofi in ofis:
             _enviar_fcm(
                 ofi["email"],
-                "Línea cerrada en campo",
+                "LÃ­nea cerrada en campo",
                 cuerpo[:300],
                 {"tipo": "cierre_linea", "pedido": req.pedido_id, "linea": req.linea_huella},
             )
@@ -3280,7 +3313,7 @@ def cerrar_linea(
     if bot_token and chat_id:
         try:
             contexto = _contexto_pedido(req.pedido_id)
-            texto = f"{cuerpo}\n———\n{contexto}" if contexto else cuerpo
+            texto = f"{cuerpo}\nâ€”â€”â€”\n{contexto}" if contexto else cuerpo
             _telegram_request(
                 bot_token,
                 "sendMessage",
@@ -3306,7 +3339,7 @@ def notificar_discrepancia(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """El encargado punta menos unidades de las que declaró el operario: se le pide justificación."""
+    """El encargado punta menos unidades de las que declarÃ³ el operario: se le pide justificaciÃ³n."""
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     if not req.operario_email:
@@ -3314,7 +3347,7 @@ def notificar_discrepancia(
     pos = _posicion_linea(req.pedido_id, req.linea_huella)
     cuerpo = (
         f"Falta planta en {req.pedido_id}" +
-        (f" línea {pos}" if pos else "") +
+        (f" lÃ­nea {pos}" if pos else "") +
         f": declaraste {req.declarado} uds y se han puntuado {req.puntado} uds."
     )
     if req.mensaje.strip():
@@ -3340,7 +3373,7 @@ def perfil_operario(
     email: str = Query(..., description="Email del operario"),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """Perfil ligero para la app de logística (maquinaria y fincas)."""
+    """Perfil ligero para la app de logÃ­stica (maquinaria y fincas)."""
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
     try:
@@ -3381,8 +3414,8 @@ def login_operario(
 ) -> dict[str, Any]:
     """D-166: login del operario de acopio (tabla operarios, salt = email).
 
-    Devuelve password_provisional=True cuando aún no ha cambiado la
-    contraseña inicial; la app exige el cambio en el primer login.
+    Devuelve password_provisional=True cuando aÃºn no ha cambiado la
+    contraseÃ±a inicial; la app exige el cambio en el primer login.
     """
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
@@ -3402,7 +3435,7 @@ def login_operario(
         raise HTTPException(status_code=404, detail="Operario no encontrado")
     o = rows[0]
     if (o.get("password_hash") or "") != _hash_password(req.email, req.password):
-        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+        raise HTTPException(status_code=401, detail="ContraseÃ±a incorrecta")
     if o.get("activo") is False:
         raise HTTPException(status_code=403, detail="Usuario dado de baja")
     return {
@@ -3428,7 +3461,7 @@ def cambiar_password_operario(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-168: cambio de contraseña del operario (obligatorio en el primer login)."""
+    """D-168: cambio de contraseÃ±a del operario (obligatorio en el primer login)."""
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     _ensure_password_provisional_column()
@@ -3442,7 +3475,7 @@ def cambiar_password_operario(
     if not rows:
         raise HTTPException(status_code=404, detail="Operario no encontrado")
     if (rows[0].get("password_hash") or "") != _hash_password(req.email, req.password_actual):
-        raise HTTPException(status_code=401, detail="Contraseña actual incorrecta")
+        raise HTTPException(status_code=401, detail="ContraseÃ±a actual incorrecta")
     nuevo_hash = _hash_password(req.email, req.password_nueva)
     client.query(
         f"UPDATE `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}` "
@@ -3488,7 +3521,7 @@ def lista_operarios_app(
     }
 
 
-# ---- D-169 Modo ayuda por línea: el compañero concede permiso concreto ----
+# ---- D-169 Modo ayuda por lÃ­nea: el compaÃ±ero concede permiso concreto ----
 
 AYUDA_PERMISOS_TABLE = "ayuda_permisos"
 
@@ -3526,9 +3559,9 @@ def conceder_ayuda(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """Concede ayuda por líneas concretas (nunca la faena completa).
+    """Concede ayuda por lÃ­neas concretas (nunca la faena completa).
 
-    Idempotente: si ya existía un permiso activo para esa terna se mantiene.
+    Idempotente: si ya existÃ­a un permiso activo para esa terna se mantiene.
     Avisa al ayudante por FCM para que entre en modo ayuda y las vea.
     """
     _verify_key(x_api_key)
@@ -3552,7 +3585,7 @@ def conceder_ayuda(
         _enviar_fcm(
             req.ayudante_email,
             "Te han pedido ayuda",
-            f"Se te han asignado {len(req.lineas)} línea(s) para ayudar. Entra en Modo ayuda.",
+            f"Se te han asignado {len(req.lineas)} lÃ­nea(s) para ayudar. Entra en Modo ayuda.",
             {"tipo": "ayuda_concedida"},
         )
     except Exception:
@@ -3611,7 +3644,7 @@ def reabrir_linea(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """Reabre una línea cerrada en campo: deja trazabilidad (nueva fila
+    """Reabre una lÃ­nea cerrada en campo: deja trazabilidad (nueva fila
     REABIERTA en cierres_linea) y avisa a la oficina."""
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
@@ -3624,8 +3657,8 @@ def reabrir_linea(
     ).result()
     pos = _posicion_linea(req.pedido_id, req.linea_huella)
     cuerpo = (
-        f"↩️ Línea reabierta ({req.pedido_id}" +
-        (f" · línea {pos}" if pos else "") + ")"
+        f"â†©ï¸ LÃ­nea reabierta ({req.pedido_id}" +
+        (f" Â· lÃ­nea {pos}" if pos else "") + ")"
     )
     try:
         ofis = _query(
@@ -3633,7 +3666,7 @@ def reabrir_linea(
         )
         for ofi in ofis:
             _enviar_fcm(
-                ofi["email"], "Línea reabierta", cuerpo[:300],
+                ofi["email"], "LÃ­nea reabierta", cuerpo[:300],
                 {"tipo": "cierre_linea", "pedido": req.pedido_id, "linea": req.linea_huella},
             )
     except Exception:
@@ -3733,7 +3766,7 @@ def crear_encargado(
         ).result()
     ]
     if not exists and not body.password:
-        raise HTTPException(status_code=400, detail="La contraseña es obligatoria para nuevos usuarios")
+        raise HTTPException(status_code=400, detail="La contraseÃ±a es obligatoria para nuevos usuarios")
     client.query(
         f"""
         MERGE `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}` T
@@ -3800,7 +3833,7 @@ def login_encargado(
         raise HTTPException(status_code=404, detail="Encargado no encontrado")
     e = dict(enc[0])
     if e["password_hash"] != _hash_password(body.usuario, body.password):
-        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+        raise HTTPException(status_code=401, detail="ContraseÃ±a incorrecta")
     if e.get("activo") is False:
         raise HTTPException(status_code=403, detail="Usuario dado de baja")
     return {
@@ -3886,7 +3919,7 @@ def cambiar_password(
     if not enc:
         raise HTTPException(status_code=404, detail="Encargado no encontrado")
     if enc[0]["password_hash"] != _hash_password(body.usuario, body.password_actual):
-        raise HTTPException(status_code=401, detail="Contraseña actual incorrecta")
+        raise HTTPException(status_code=401, detail="ContraseÃ±a actual incorrecta")
     client.query(
         f"""
         UPDATE `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`
@@ -4049,7 +4082,7 @@ def pedidos(
                 }
             )
     # D-15X: reparto de faena (D-72) adjuntado por lotes para no romper la
-    # consulta principal si la tabla aún no existe.
+    # consulta principal si la tabla aÃºn no existe.
     try:
         _ensure_reparto_table()
         claves = list(pedidos.keys())
@@ -4091,7 +4124,7 @@ def pedidos(
 TRUFFAUT_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "truffaut")
 TRUFFAUT_WEB_TOKEN = "truffaut-otono-2026"
 TRUFFAUT_STORES = {
-    "001CHE": "Chennevières-sur-Marne",
+    "001CHE": "ChenneviÃ¨res-sur-Marne",
     "004NAN": "Truffaut - Nantes",
     "008BAI": "Truffaut - Baillet",
     "009VIL": "Truffaut - Villeparisis",
@@ -4102,22 +4135,22 @@ TRUFFAUT_STORES = {
     "014LVB": "Truffaut - La Ville du Bois",
     "019AMI": "Truffaut - Amiens",
     "020TOB": "Truffaut - Balma (Toulouse)",
-    "024ORL": "Truffaut - Orléans",
+    "024ORL": "Truffaut - OrlÃ©ans",
     "031PAU": "Truffaut - Pau-Lons",
-    "033CHM": "Truffaut - Châtenay-Malabry",
+    "033CHM": "Truffaut - ChÃ¢tenay-Malabry",
     "035PGS": "Truffaut - Paris Grand Stade",
-    "036NIM": "Truffaut - Nîmes",
+    "036NIM": "Truffaut - NÃ®mes",
     "040IVR": "Truffaut - Ivry",
-    "045CAB": "Truffaut - Cabriès",
+    "045CAB": "Truffaut - CabriÃ¨s",
     "047MON": "Truffaut - Montpellier",
     "050AUB": "Truffaut - Aubagne",
-    "051MER": "Truffaut - Mérignac",
+    "051MER": "Truffaut - MÃ©rignac",
     "052ROS": "Truffaut - Rosny",
     "053GRI": "Truffaut - Grigny",
     "073FQX": "Truffaut - Fourqueux",
     "075TPM": "Truffaut - Tours Madelaine",
     "076BRS-BOULOGNE": "Truffaut - Boulogne (Mitry-Mory)",
-    "085MTL": "Truffaut - Montélimar",
+    "085MTL": "Truffaut - MontÃ©limar",
     "086ADP": "Truffaut - Althen-des-Paluds",
     "1026NIC": "Nicot Jardinage-Truffaut (Lorient)",
 }
@@ -4138,42 +4171,42 @@ TRUFFAUT_BASE = {
 TRUFFAUT_ROUTES_A = [
     {
         "num": 1,
-        "title": "Camión 1 · Mediterráneo (Montpellier, Montélimar & Provenza)",
-        "corridor": "Hérault / Valle del Ródano / Provenza",
+        "title": "CamiÃ³n 1 Â· MediterrÃ¡neo (Montpellier, MontÃ©limar & Provenza)",
+        "corridor": "HÃ©rault / Valle del RÃ³dano / Provenza",
         "highway": "AP-7 / A9 / A7 / A54 / A50",
         "totalPal": 35,
         "stops": [
-            {"pedido": "260857", "store": "Truffaut - Montpellier", "addr": "77 Rue Hélène Boucher - ZAC Fréjorgues Ouest", "cp": "34130", "city": "Mauguio (Montpellier)", "pal": 2, "legKm": 861, "cumKm": 861, "lat": 43.583, "lng": 4.003},
-            {"pedido": "260866", "store": "Truffaut - Montélimar", "addr": "Rue Louis Charpenne", "cp": "26200", "city": "Montélimar", "pal": 7, "legKm": 152, "cumKm": 1013, "lat": 44.5582, "lng": 4.7509},
+            {"pedido": "260857", "store": "Truffaut - Montpellier", "addr": "77 Rue HÃ©lÃ¨ne Boucher - ZAC FrÃ©jorgues Ouest", "cp": "34130", "city": "Mauguio (Montpellier)", "pal": 2, "legKm": 861, "cumKm": 861, "lat": 43.583, "lng": 4.003},
+            {"pedido": "260866", "store": "Truffaut - MontÃ©limar", "addr": "Rue Louis Charpenne", "cp": "26200", "city": "MontÃ©limar", "pal": 7, "legKm": 152, "cumKm": 1013, "lat": 44.5582, "lng": 4.7509},
             {"pedido": "260867", "store": "Truffaut - Althen-des-Paluds", "addr": "Route de la Roque", "cp": "84210", "city": "Althen-des-Paluds (Avignon)", "pal": 8, "legKm": 83, "cumKm": 1096, "lat": 44.0049, "lng": 4.9585},
-            {"pedido": "260856", "store": "Truffaut - Cabriès", "addr": "ZAC Grande Campagne - Plan de Campagne", "cp": "13480", "city": "Cabriès (Marsella Norte)", "pal": 8, "legKm": 100, "cumKm": 1196, "lat": 43.4414, "lng": 5.3796},
-            {"pedido": "260859", "store": "Truffaut - Aubagne", "addr": "CD2 Route de Gémenos", "cp": "13400", "city": "Aubagne (Marsella Este)", "pal": 10, "legKm": 36, "cumKm": 1232, "lat": 43.2927, "lng": 5.5683}
+            {"pedido": "260856", "store": "Truffaut - CabriÃ¨s", "addr": "ZAC Grande Campagne - Plan de Campagne", "cp": "13480", "city": "CabriÃ¨s (Marsella Norte)", "pal": 8, "legKm": 100, "cumKm": 1196, "lat": 43.4414, "lng": 5.3796},
+            {"pedido": "260859", "store": "Truffaut - Aubagne", "addr": "CD2 Route de GÃ©menos", "cp": "13400", "city": "Aubagne (Marsella Este)", "pal": 10, "legKm": 36, "cumKm": 1232, "lat": 43.2927, "lng": 5.5683}
         ],
         "totalKm": 1232,
     },
     {
         "num": 2,
-        "title": "Camión 2 · Nîmes & Montpellier",
+        "title": "CamiÃ³n 2 Â· NÃ®mes & Montpellier",
         "corridor": "Languedoc",
         "highway": "AP-7 / A9",
         "totalPal": 34,
         "stops": [
-            {"pedido": "260854", "store": "Truffaut - Nîmes", "addr": "ZAC Mas des Abeilles, Rue Michel Debré", "cp": "30000", "city": "Nîmes", "pal": 24, "legKm": 900, "cumKm": 900, "lat": 43.8374, "lng": 4.3601},
-            {"pedido": "260857", "store": "Truffaut - Montpellier", "addr": "77 Rue Hélène Boucher - ZAC Fréjorgues Ouest", "cp": "34130", "city": "Mauguio (Montpellier)", "pal": 10, "legKm": 50, "cumKm": 950, "lat": 43.583, "lng": 4.003}
+            {"pedido": "260854", "store": "Truffaut - NÃ®mes", "addr": "ZAC Mas des Abeilles, Rue Michel DebrÃ©", "cp": "30000", "city": "NÃ®mes", "pal": 24, "legKm": 900, "cumKm": 900, "lat": 43.8374, "lng": 4.3601},
+            {"pedido": "260857", "store": "Truffaut - Montpellier", "addr": "77 Rue HÃ©lÃ¨ne Boucher - ZAC FrÃ©jorgues Ouest", "cp": "34130", "city": "Mauguio (Montpellier)", "pal": 10, "legKm": 50, "cumKm": 950, "lat": 43.583, "lng": 4.003}
         ],
         "totalKm": 950,
     },
     {
         "num": 3,
-        "title": "Camión 3 · ESPECIAL URBANO París (Hayon / Plataforma)",
-        "corridor": "Île-de-France (tiendas urbanas sin muelle)",
-        "highway": "A10 / Périphérique / A86 / A3 / N3",
+        "title": "CamiÃ³n 3 Â· ESPECIAL URBANO ParÃ­s (Hayon / Plataforma)",
+        "corridor": "ÃŽle-de-France (tiendas urbanas sin muelle)",
+        "highway": "A10 / PÃ©riphÃ©rique / A86 / A3 / N3",
         "totalPal": 33,
-        "special": "Camión imprescindible con plataforma elevadora (Hayon)",
+        "special": "CamiÃ³n imprescindible con plataforma elevadora (Hayon)",
         "stops": [
             {"pedido": "260845", "store": "Truffaut - Plaisir", "addr": "RN12 Z.A. Sainte-Apolline", "cp": "78380", "city": "Plaisir", "pal": 5, "legKm": 1528, "cumKm": 1528, "lat": 48.8114, "lng": 1.9465},
             {"pedido": "260848", "store": "Truffaut - La Ville du Bois", "addr": "RN20", "cp": "91620", "city": "La Ville du Bois", "pal": 7, "legKm": 41, "cumKm": 1569, "lat": 48.6608, "lng": 2.2701},
-            {"pedido": "260855", "store": "Truffaut - Ivry", "addr": "5 Rue François Mitterrand", "cp": "94200", "city": "Ivry-sur-Seine", "pal": 4, "legKm": 23, "cumKm": 1592, "lat": 48.8137, "lng": 2.385},
+            {"pedido": "260855", "store": "Truffaut - Ivry", "addr": "5 Rue FranÃ§ois Mitterrand", "cp": "94200", "city": "Ivry-sur-Seine", "pal": 4, "legKm": 23, "cumKm": 1592, "lat": 48.8137, "lng": 2.385},
             {"pedido": "260861", "store": "Truffaut - Rosny", "addr": "CC Domus - 16, Rue de Lisbonne", "cp": "93110", "city": "Rosny-sous-Bois", "pal": 4, "legKm": 14, "cumKm": 1606, "lat": 48.8727, "lng": 2.485},
             {"pedido": "260853", "store": "Truffaut - Paris Grand Stade", "addr": "2 Rue Jesse Owens", "cp": "93200", "city": "Saint-Denis (Paris)", "pal": 4, "legKm": 14, "cumKm": 1620, "lat": 48.9245, "lng": 2.3601},
             {"pedido": "260843", "store": "Truffaut - Villeparisis", "addr": "RN 3 Route de Villevaude", "cp": "77270", "city": "Villeparisis", "pal": 5, "legKm": 23, "cumKm": 1643, "lat": 48.9428, "lng": 2.6133},
@@ -4183,15 +4216,15 @@ TRUFFAUT_ROUTES_A = [
     },
     {
         "num": 4,
-        "title": "Camión 4 · Corona París & Picardía",
-        "corridor": "Loire / Île-de-France Oeste, Sur & Norte / Picardía",
+        "title": "CamiÃ³n 4 Â· Corona ParÃ­s & PicardÃ­a",
+        "corridor": "Loire / ÃŽle-de-France Oeste, Sur & Norte / PicardÃ­a",
         "highway": "A10 / N104 / A13 / A115 / A16",
         "totalPal": 33,
         "stops": [
-            {"pedido": "260864", "store": "Truffaut - Tours Madelaine", "addr": "CC Ma Petite Madelaine - 213-215 Av du Grand Sud", "cp": "37170", "city": "Chambray-lès-Tours (Tours)", "pal": 4, "legKm": 1262, "cumKm": 1262, "lat": 47.3375, "lng": 0.7025},
-            {"pedido": "260882", "store": "Truffaut - Orléans", "addr": "Route de Saint Cyr en Val", "cp": "45650", "city": "Saint-Jean-le-Blanc (Orléans)", "pal": 4, "legKm": 122, "cumKm": 1384, "lat": 47.8923, "lng": 1.914},
+            {"pedido": "260864", "store": "Truffaut - Tours Madelaine", "addr": "CC Ma Petite Madelaine - 213-215 Av du Grand Sud", "cp": "37170", "city": "Chambray-lÃ¨s-Tours (Tours)", "pal": 4, "legKm": 1262, "cumKm": 1262, "lat": 47.3375, "lng": 0.7025},
+            {"pedido": "260882", "store": "Truffaut - OrlÃ©ans", "addr": "Route de Saint Cyr en Val", "cp": "45650", "city": "Saint-Jean-le-Blanc (OrlÃ©ans)", "pal": 4, "legKm": 122, "cumKm": 1384, "lat": 47.8923, "lng": 1.914},
             {"pedido": "260863", "store": "Truffaut - Fourqueux", "addr": "ZA du Pince-Loup", "cp": "78112", "city": "Saint-Germain-en-Laye (Fourqueux)", "pal": 4, "legKm": 134, "cumKm": 1518, "lat": 48.8863, "lng": 2.0649},
-            {"pedido": "260852", "store": "Truffaut - Châtenay-Malabry", "addr": "72 Avenue Roger Salengro", "cp": "92290", "city": "Châtenay-Malabry", "pal": 4, "legKm": 34, "cumKm": 1552, "lat": 48.7651, "lng": 2.2783},
+            {"pedido": "260852", "store": "Truffaut - ChÃ¢tenay-Malabry", "addr": "72 Avenue Roger Salengro", "cp": "92290", "city": "ChÃ¢tenay-Malabry", "pal": 4, "legKm": 34, "cumKm": 1552, "lat": 48.7651, "lng": 2.2783},
             {"pedido": "260862", "store": "Truffaut - Grigny", "addr": "RN 7 ZI La Plaine Basse - Rue Ferdinand de Lesseps", "cp": "91350", "city": "Grigny", "pal": 3, "legKm": 20, "cumKm": 1572, "lat": 48.6539, "lng": 2.3852},
             {"pedido": "260847", "store": "Truffaut - Servon", "addr": "3, Rue Georges - RN 19", "cp": "77170", "city": "Servon", "pal": 3, "legKm": 33, "cumKm": 1605, "lat": 48.7178, "lng": 2.5875},
             {"pedido": "260846", "store": "Truffaut - Herblay", "addr": "La Patte d'Oie 270 Bd du Havre", "cp": "95220", "city": "Pierrelaye (Herblay)", "pal": 4, "legKm": 62, "cumKm": 1667, "lat": 49.012, "lng": 2.154},
@@ -4202,14 +4235,14 @@ TRUFFAUT_ROUTES_A = [
     },
     {
         "num": 5,
-        "title": "Camión 5 · Suroeste & Bretaña",
-        "corridor": "Aquitania / Pirineos / Atlántico / Bretaña",
+        "title": "CamiÃ³n 5 Â· Suroeste & BretaÃ±a",
+        "corridor": "Aquitania / Pirineos / AtlÃ¡ntico / BretaÃ±a",
         "highway": "A-23 / AP-8 / A64 / A62 / A10 / N165",
         "totalPal": 33,
         "stops": [
             {"pedido": "260851", "store": "Truffaut - Pau-Lons", "addr": "ZAC du Mail 1-7, Rue Robert Schuman", "cp": "64140", "city": "Lons (Pau)", "pal": 4, "legKm": 691, "cumKm": 691, "lat": 43.3206, "lng": -0.4109},
             {"pedido": "260850", "store": "Truffaut - Balma (Toulouse)", "addr": "Route de Lavaur", "cp": "31130", "city": "Balma (Toulouse)", "pal": 9, "legKm": 207, "cumKm": 898, "lat": 43.6108, "lng": 1.4991},
-            {"pedido": "260860", "store": "Truffaut - Mérignac", "addr": "7, Rue Hipparque - Domaine de Pelus", "cp": "33700", "city": "Mérignac (Burdeos)", "pal": 7, "legKm": 252, "cumKm": 1150, "lat": 44.835, "lng": -0.6331},
+            {"pedido": "260860", "store": "Truffaut - MÃ©rignac", "addr": "7, Rue Hipparque - Domaine de Pelus", "cp": "33700", "city": "MÃ©rignac (Burdeos)", "pal": 7, "legKm": 252, "cumKm": 1150, "lat": 44.835, "lng": -0.6331},
             {"pedido": "260841", "store": "Truffaut - Nantes", "addr": "258 Route de Vannes", "cp": "44700", "city": "Orvault (Nantes)", "pal": 7, "legKm": 365, "cumKm": 1515, "lat": 47.2709, "lng": -1.6239},
             {"pedido": "260844", "store": "Nicot Jardinage-Truffaut (Lorient)", "addr": "ZAC Kerulve-Rue du Verger", "cp": "56100", "city": "Lorient", "pal": 6, "legKm": 162, "cumKm": 1677, "lat": 47.7483, "lng": -3.3701}
         ],
@@ -4295,7 +4328,7 @@ def get_truffaut_reporte(
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
     if not API_KEY or (x_api_key != API_KEY and k != TRUFFAUT_WEB_TOKEN):
-        raise HTTPException(status_code=401, detail="API key inválida o ausente")
+        raise HTTPException(status_code=401, detail="API key invÃ¡lida o ausente")
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
     cached = _cache_get("truffaut_reporte")
     if cached is not None:
@@ -4306,7 +4339,7 @@ def get_truffaut_reporte(
                p.MODO_PORTES AS mp, CAST(p.TOTAL_PEDIDO AS FLOAT64) AS tot
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
-        WHERE (p.REFERENCIA_PEDIDO LIKE 'TRUFFAUT OTOÑO' OR p.REFERENCIA_PEDIDO LIKE '%/D30')
+        WHERE (p.REFERENCIA_PEDIDO LIKE 'TRUFFAUT OTOÃ‘O' OR p.REFERENCIA_PEDIDO LIKE '%/D30')
           AND p.NUMERO_CLIENTE != '34999'
           AND CAST(p.TOTAL_PEDIDO AS FLOAT64) > 0
           AND CAST(p.ESTADO_PEDIDO AS INT64) IN (0, 3)
@@ -4411,8 +4444,8 @@ def get_truffaut_reporte(
     payload = {
         "generated": date.today().isoformat(),
         "origin": {
-            "name": "Viveros Elche - La Fábrica",
-            "addr": "CV-845, km 3.5, 03680 Aspe, Alicante, España",
+            "name": "Viveros Elche - La FÃ¡brica",
+            "addr": "CV-845, km 3.5, 03680 Aspe, Alicante, EspaÃ±a",
             "lat": 38.3453,
             "lng": -0.7681
         },
@@ -4520,6 +4553,11 @@ class RegistroPicking(BaseModel):
     fecha_hora: str = Field(min_length=1, max_length=64)
     empleado_email: str = Field(default="", max_length=128)
     empleado_nombre: str = Field(default="", max_length=128)
+    # D-183: etiqueta solicitada sobre planta PISTOLEADA (con EAN). Sin este
+    # flag el panel las excluye al filtrar "sin EAN" y el CSV del operario no
+    # cuadra con la web.
+    needs_label: bool = False
+    label_reason: str = Field(default="", max_length=32)
 
 
 class UploadBody(BaseModel):
@@ -4558,7 +4596,7 @@ def upload(
         )
         if errors:
             raise HTTPException(status_code=500, detail=str(errors[:5]))
-    # Los duplicados también se confirman: ya están (o estarán) en la tabla y
+    # Los duplicados tambiÃ©n se confirman: ya estÃ¡n (o estarÃ¡n) en la tabla y
     # el cliente debe marcarlos como sincronizados para no reenviarlos siempre.
     return {
         "ok": len(nuevos),
@@ -4583,7 +4621,7 @@ def compensar(
     body: CompensaBody,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """Registra borrados lógicos de registros ya subidos (desacopio posterior
+    """Registra borrados lÃ³gicos de registros ya subidos (desacopio posterior
     a la subida). Idempotente por record_id; las lecturas usan la vista
     `picking_registros_v`, que excluye estos record_id."""
     _verify_key(x_api_key)
@@ -4625,7 +4663,7 @@ def _verify_manager_key(
     x_api_key: Optional[str] = Header(default=None),
 ) -> None:
     if k != MANAGER_WEB_TOKEN and x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="API key inválida o ausente")
+        raise HTTPException(status_code=401, detail="API key invÃ¡lida o ausente")
 
 
 @app.get("/api/manager/orders")
@@ -4646,7 +4684,7 @@ def manager_orders(
     
     st_filter = (estado or "").strip().lower()
     if not st_filter:
-        # D-70: por defecto se muestran TODOS los estados del día: un pedido
+        # D-70: por defecto se muestran TODOS los estados del dÃ­a: un pedido
         # acopiado al completo o cargado no desaparece del listado.
         st_filter = "todos"
 
@@ -4677,13 +4715,14 @@ def manager_orders(
                 l.PRIORIDAD, l.ACCION_LOGISTICA, l.NOTA_LINEA_PEDIDO,
                 COALESCE(lt.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '') AS LITRAJE_DESC,
                 COALESCE(st.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '') AS SECTOR_DESC,
-                COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
-                COALESCE(pr.OPERARIOS, '') AS OPERARIOS,
-                COALESCE(pr.DETALLE_OPS, '') AS DETALLE_OPS,
-                CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
-                CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
-                COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO,
-                COALESCE(rf.operario_nombre, '') AS OPERARIO_ASIGNADO
+                 COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
+                 COALESCE(pr.OPERARIOS, '') AS OPERARIOS,
+                 COALESCE(pr.DETALLE_OPS, '') AS DETALLE_OPS,
+                 CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
+                 CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
+                 COALESCE(tot.TOTAL_ACOPIADO, 0) AS TOTAL_ACOPIADO,
+                 COALESCE(rf.operario_nombre, '') AS OPERARIO_ASIGNADO,
+                 COALESCE(rf.operario_email, '') AS OPERARIO_ASIGNADO_EMAIL
          FROM `{PROJECT}.{DATASET}.PEDIDOS` p
          LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
          LEFT JOIN `{PROJECT}.{DATASET}.AGENTE` ag ON ag.ID_AGENTE = p.CODIGO_AGENTE
@@ -4701,10 +4740,14 @@ def manager_orders(
             FROM (
                 SELECT order_id, order_line_id,
                        COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido') AS empleado,
-                       CONCAT(COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido'), ':', CAST(SUM(cantidad_partida) AS INT64)) AS detalle,
+                       COALESCE(NULLIF(TRIM(LOWER(empleado_email)), ''),
+                                'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')) AS empleado_email,
+                       CONCAT(COALESCE(NULLIF(TRIM(LOWER(empleado_email)), ''),
+                                'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')),
+                               ':', CAST(SUM(cantidad_partida) AS INT64)) AS detalle,
                        SUM(cantidad_partida) AS cantidad
                 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
-                GROUP BY order_id, order_line_id, empleado_nombre
+                GROUP BY order_id, order_line_id, empleado_nombre, empleado_email
             )
             GROUP BY order_id, order_line_id
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
@@ -4738,7 +4781,7 @@ def manager_orders(
             # 4 Estados:
             # 1. sin_acopiar: total_acopiado == 0 y not cargado y not tiene_final
             # 2. en_proceso: total_acopiado > 0 y not cargado y not tiene_final
-            # 3. camion_asignado: cargado (camión registrado) y not tiene_final
+            # 3. camion_asignado: cargado (camiÃ³n registrado) y not tiene_final
             # 4. enviado / cargado final: tiene_final
             if tiene_final:
                 estado_calc = "enviado"
@@ -4781,6 +4824,7 @@ def manager_orders(
                     "ubicacionExtra": r.get("UBICACION_EXTRA") or "",
                     "fincaLinea": r.get("FINCA_RELEVADA") or p["finca"],
                     "prioritario": str(r.get("PRIORIDAD") or "").upper() == "PRIORITARIO",
+                    "prioridadTexto": str(r.get("PRIORIDAD") or "").strip(),
                     "marcado": bool(r.get("MARCADO")),
                     "marca": r.get("MARCA") or "",
                     "observaciones": r.get("NOTA_LINEA_PEDIDO") or r.get("ACCION_LOGISTICA") or "",
@@ -4789,6 +4833,7 @@ def manager_orders(
                     "operarios": r.get("OPERARIOS") or "",
                     "detalleOperarios": r.get("DETALLE_OPS") or "",
                     "operarioAsignado": r.get("OPERARIO_ASIGNADO") or "",
+                    "operarioAsignadoEmail": r.get("OPERARIO_ASIGNADO_EMAIL") or "",
                 }
             )
     return {"fecha": target_date.isoformat(), "pedidos": list(pedidos.values())}
@@ -4985,7 +5030,7 @@ def manager_informe_detalle(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Informe HTML del Detalle del Pistoleo (A4 horizontal, un evento por línea)."""
+    """Informe HTML del Detalle del Pistoleo (A4 horizontal, un evento por lÃ­nea)."""
     _verify_manager_key(k, x_api_key)
     try:
         html = informe_html.build_detalle_html(
@@ -5052,13 +5097,15 @@ def manager_etiquetas_dia(
                    ANY_VALUE(a.DESCRIPCION_ARTICULO) AS descripcion,
                    ANY_VALUE(r.order_line_id) AS order_line_id,
                    SUM(r.cantidad_partida) AS cantidad,
-                   LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente
+                   LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente,
+                   LOGICAL_OR(IFNULL(r.needs_label, FALSE)) AS etiqueta_pedida,
+                   MAX(IFNULL(r.label_reason, '')) AS label_reason
             FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}` r
             LEFT JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l ON l.HUELLA_DIGITAL = r.order_line_id
             LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
             LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
             LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = r.ref_servida
-            WHERE (r.ean_escaneado IS NULL OR r.ean_escaneado = '')
+            WHERE (r.ean_escaneado IS NULL OR r.ean_escaneado = '' OR IFNULL(r.needs_label, FALSE))
             GROUP BY r.order_id, r.ref_servida,
                      COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, ''),
                      COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')
@@ -5066,7 +5113,7 @@ def manager_etiquetas_dia(
         )
         SELECT p.NUMERO_PEDIDO, COALESCE(c.N_COMERCIAL, '') AS CLIENTE, p.FINCA_CARGA, p.ESTADO_PEDIDO,
                lbl.referencia, lbl.litraje, lbl.sector, lbl.descripcion, lbl.cantidad,
-               lbl.ocr_presente, lbl.order_line_id
+               lbl.ocr_presente, lbl.etiqueta_pedida, lbl.label_reason, lbl.order_line_id
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
         INNER JOIN lbl ON lbl.order_id = p.NUMERO_PEDIDO
@@ -5095,11 +5142,18 @@ def manager_etiquetas_dia(
             "sector": sector,
             "descripcion": l.get("descripcion") or "",
             "cantidad": float(l.get("cantidad") or 0),
-            "motivo": "Venta directa - etiqueta del vendedor" if ref.startswith("9") else (
-                "Etiqueta ilegible (OCR)" if l.get("ocr_presente") else "Planta sin etiqueta"
-            ),
-            "order_line_id": l.get("order_line_id") or "",
         })
+        _lr = str(l.get("label_reason") or "")
+        _motivo_base = {
+            "MACETA_ROTA": "Rotura de maceta",
+            "CAMBIO_FORMATO": "Cambio de formato",
+            "PASAPORTE_MAL_ESTADO": "Pasaporte en mal estado",
+        }.get(_lr)
+        et = p["etiquetas"][-1]
+        et["motivo"] = "Venta directa - etiqueta del vendedor" if ref.startswith("9") else (
+            _motivo_base or ("Etiqueta ilegible (OCR)" if l.get("ocr_presente") else "Planta sin etiqueta")
+        )
+        et["order_line_id"] = l.get("order_line_id") or ""
 
     if pedidos_map:
         estados_sql = f"""
@@ -5152,14 +5206,16 @@ def manager_etiquetas(
                ANY_VALUE(COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')) AS sector,
                ANY_VALUE(r.order_line_id) AS order_line_id,
                SUM(r.cantidad_partida) AS cantidad,
-               LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente
+               LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente,
+               LOGICAL_OR(IFNULL(r.needs_label, FALSE)) AS etiqueta_pedida,
+               MAX(IFNULL(r.label_reason, '')) AS label_reason
         FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}` r
         LEFT JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l ON l.HUELLA_DIGITAL = r.order_line_id
         LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = r.ref_servida
         WHERE r.order_id = @pedido
-          AND (r.ean_escaneado IS NULL OR r.ean_escaneado = '')
+          AND (r.ean_escaneado IS NULL OR r.ean_escaneado = '' OR IFNULL(r.needs_label, FALSE))
         GROUP BY r.ref_servida,
                  COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, ''),
                  COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')
@@ -5185,8 +5241,14 @@ def manager_etiquetas(
         key = (ref, litraje, sector)
         st = estados_map.get(key)
         estado = st["estado"] if st else "pendiente"
+        _lr = str(l.get("label_reason") or "")
+        _motivo_base = {
+            "MACETA_ROTA": "Rotura de maceta",
+            "CAMBIO_FORMATO": "Cambio de formato",
+            "PASAPORTE_MAL_ESTADO": "Pasaporte en mal estado",
+        }.get(_lr)
         motivo = "Venta directa - etiqueta del vendedor" if ref.startswith("9") else (
-            "Etiqueta ilegible (OCR)" if l.get("ocr_presente") else "Planta sin etiqueta"
+            _motivo_base or ("Etiqueta ilegible (OCR)" if l.get("ocr_presente") else "Planta sin etiqueta")
         )
         resumen[estado] = resumen.get(estado, 0) + 1
         etiquetas.append({
@@ -5220,7 +5282,7 @@ async def manager_etiquetas_estado(
     por = str(body.get("por") or "")
     linea = str(body.get("order_line_id") or "")
     if estado not in ("pendiente", "impresa", "encolada"):
-        raise HTTPException(status_code=400, detail="Estado inválido")
+        raise HTTPException(status_code=400, detail="Estado invÃ¡lido")
 
     sql = f"""
         MERGE `{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_TABLE}` T
@@ -5258,7 +5320,7 @@ def manager_etiquetas_dia_informe(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Informe HTML imprimible de etiquetas a sacar del día (D-158)."""
+    """Informe HTML imprimible de etiquetas a sacar del dÃ­a (D-158)."""
     _verify_manager_key(k, x_api_key)
     data = manager_etiquetas_dia(
         fecha=fecha,
@@ -5273,11 +5335,11 @@ def manager_etiquetas_dia_informe(
 
 @app.get("/api/manager/historico")
 def manager_historico(
-    fecha: Optional[date] = Query(None, description="Filtrar por fecha específica"),
+    fecha: Optional[date] = Query(None, description="Filtrar por fecha especÃ­fica"),
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Pestaña Histórico: pedidos cargados y enviados de todas las fechas (D-160)."""
+    """PestaÃ±a HistÃ³rico: pedidos cargados y enviados de todas las fechas (D-160)."""
     _verify_manager_key(k, x_api_key)
     if fecha is None:
         sql = f"""
@@ -5359,12 +5421,12 @@ def manager_historico_detalle(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Detalle completo del pedido en histórico: matrículas, eventos de pistoleo y etiquetas (D-160)."""
+    """Detalle completo del pedido en histÃ³rico: matrÃ­culas, eventos de pistoleo y etiquetas (D-160)."""
     _verify_manager_key(k, x_api_key)
     params = [bigquery.ScalarQueryParameter("pedido", "STRING", numero_pedido)]
     jc = bigquery.QueryJobConfig(query_parameters=params)
 
-    # 1. Matrículas
+    # 1. MatrÃ­culas
     mat_sql = f"""
         SELECT tipo, matricula, muelle, foto_url, creado_en
         FROM `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}`
