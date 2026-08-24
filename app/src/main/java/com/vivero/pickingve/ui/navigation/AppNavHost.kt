@@ -2,6 +2,7 @@ package com.vivero.pickingve.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,7 @@ import com.vivero.pickingve.ui.picking.PickingScreen
 import com.vivero.pickingve.ui.picking.PickingViewModel
 import com.vivero.pickingve.ui.settings.SettingsScreen
 import com.vivero.pickingve.ui.settings.SettingsViewModel
+import com.vivero.pickingve.ui.welcome.WelcomeScreen
 
 @Composable
 fun AppNavHost(
@@ -57,7 +59,7 @@ fun AppNavHost(
 
     var loggedIn by remember { mutableStateOf(repository.tipoSesion().isNotBlank()) }
     var screen by remember {
-        mutableStateOf(initialScreen(repository))
+        mutableStateOf(if (repository.tipoSesion().isNotBlank()) AppScreen.WELCOME else AppScreen.ORDERS)
     }
     val deepPedido = deepLinkPedido?.takeIf { it.isNotBlank() }
     val deepLinea = deepLinkLinea?.takeIf { it.isNotBlank() }
@@ -79,13 +81,31 @@ fun AppNavHost(
             viewModel = loginViewModel,
             onLoginSuccess = {
                 loggedIn = true
-                screen = initialScreen(repository)
+                screen = AppScreen.WELCOME
             }
         )
         return
     }
 
+    val faenaState by faenaViewModel.uiState.collectAsState()
+    val resumenFaena = if (faenaState.dias.isEmpty()) null
+    else {
+        val fincasHoy = faenaState.dias.firstOrNull()?.fincas?.size ?: 0
+        "${faenaState.totalPlantas} plantas · $fincasHoy finca(s)"
+    }
+
     when (screen) {
+        AppScreen.WELCOME -> WelcomeScreen(
+            repository = repository,
+            orderListViewModel = orderListViewModel,
+            resumenFaena = resumenFaena,
+            onEmpezar = {
+                screen = when {
+                    repository.tipoSesion() == PickingRepository.TIPO_OPERARIO -> AppScreen.FAENA
+                    else -> initialScreen(repository).let { if (it == AppScreen.ORDERS && repository.currentEncargado()?.modo == "AMBAS") AppScreen.MODE else it }
+                }
+            }
+        )
         AppScreen.ORDERS -> OrderListScreen(
             viewModel = orderListViewModel,
             onOrderSelected = { orderId ->
@@ -194,4 +214,4 @@ private fun initialScreen(repository: PickingRepository): AppScreen {
     }
 }
 
-private enum class AppScreen { ORDERS, FAENA, GESTION_FAENA, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }
+private enum class AppScreen { WELCOME, ORDERS, FAENA, GESTION_FAENA, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }

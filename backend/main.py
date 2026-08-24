@@ -1564,7 +1564,7 @@ def lista_camiones_fecha(
         LEFT JOIN `{PROJECT}.{PICKING_DATASET}.camiones_pedidos` cp ON cp.camion_id = c.id
         WHERE c.fecha_carga = DATE({_esc(fecha)})
         GROUP BY c.id, fecha, mc, mr, por
-        ORDER BY c.creado_en DESC
+        ORDER BY MAX(c.creado_en) DESC
         """
     )
     return {"camiones": rows}
@@ -4895,7 +4895,7 @@ def manager_orders(
                                ':', CAST(SUM(cantidad_partida) AS INT64)) AS detalle,
                        SUM(cantidad_partida) AS cantidad
                 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
-                GROUP BY order_id, order_line_id, empleado_nombre, empleado_email
+                GROUP BY 1, 2, 3, 4
             )
             GROUP BY order_id, order_line_id
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL

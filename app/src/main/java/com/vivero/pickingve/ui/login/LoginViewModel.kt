@@ -68,51 +68,38 @@ class LoginViewModel(
         }
     }
 
-    /** `seleccion` viene con prefijo "E:<usuario>" o "O:<email>". */
+    /**
+     * D-192: login unificado — el usuario escribe SU USUARIO (encargado) o su
+     * EMAIL (operario) y la app detecta el tipo probando ambas tablas.
+     */
     fun login(seleccion: String, password: String) {
         if (password.isBlank()) {
             _state.value = _state.value.copy(error = "Introduce la contraseña")
             return
         }
         viewModelScope.launch {
-            when {
-                seleccion.startsWith(PREFIJO_OPERARIO) -> {
-                    val email = seleccion.removePrefix(PREFIJO_OPERARIO)
-                    val local = repository.loginOperarioLocal(email, password)
-                    if (local != null) {
-                        registrarTokenPush()
-                        _state.value = LoginUiState(success = true)
-                    } else {
-                        val remoto = repository.loginOperarioRemoto(api, email, password)
-                        if (remoto != null) {
-                            registrarTokenPush()
-                            _state.value = LoginUiState(success = true)
-                        } else {
-                            _state.value = _state.value.copy(
-                                error = "Usuario o contraseña incorrectos"
-                            )
-                        }
-                    }
-                }
-                else -> {
-                    val usuario = seleccion.removePrefix(PREFIJO_ENCARGADO)
-                    val local = repository.loginEncargadoLocal(usuario, password)
-                    if (local != null) {
-                        registrarTokenPush()
-                        _state.value = LoginUiState(success = true)
-                    } else {
-                        val remoto = repository.loginEncargadoRemoto(api, usuario, password)
-                        if (remoto) {
-                            registrarTokenPush()
-                            _state.value = LoginUiState(success = true)
-                        } else {
-                            _state.value = _state.value.copy(
-                                error = "Usuario o contraseña incorrectos"
-                            )
-                        }
-                    }
+            val esOperario = seleccion.startsWith(PREFIJO_OPERARIO)
+            val clave = when {
+                seleccion.startsWith(PREFIJO_OPERARIO) -> seleccion.removePrefix(PREFIJO_OPERARIO)
+                seleccion.startsWith(PREFIJO_ENCARGADO) -> seleccion.removePrefix(PREFIJO_ENCARGADO)
+                else -> seleccion
+            }
+            // D-192: si el texto parece email, probar primero como operario
+            val orden: List<Int> = if (esOperario || clave.contains("@")) listOf(1, 0) else listOf(0, 1)
+            for (tipo in orden) {
+                if (tipo == 1) {
+                    val local = repository.loginOperarioLocal(clave, password)
+                    if (local != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
+                    val remoto = runCatching { repository.loginOperarioRemoto(api, clave, password) }.getOrNull()
+                    if (remoto != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
+                } else {
+                    val local = repository.loginEncargadoLocal(clave, password)
+                    if (local != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
+                    val remoto = repository.loginEncargadoRemoto(api, clave, password)
+                    if (remoto) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
                 }
             }
+            _state.value = _state.value.copy(error = "Usuario o contraseña incorrectos")
         }
     }
 

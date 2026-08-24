@@ -1241,8 +1241,9 @@ private fun OrderLineCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                // D-188: el REVELADO (sectorAcopio) prioriza sobre el teorico
-                if (line.sectorAcopio.isNotBlank()) {
+                // D-191: el REVELADO solo lo ve el OPERARIO de acopio (donde está
+                // fisicamente la planta). Encargado/informes: articulo/teorico.
+                if (esOperarioAcopio && line.sectorAcopio.isNotBlank()) {
                     Text(
                         "· ${line.sectorAcopio} (relevado)",
                         style = MaterialTheme.typography.bodySmall,
@@ -1422,12 +1423,11 @@ private fun OrderLineCard(
                         text = "Marca: $marcaEfectiva (pedido)"
                     )
                 }
-                // D-186: ubicacion RELEVADA siempre visible cuando exista
-                // (finca y/o sector, cada uno independiente del teorico).
-                val partesRecogida = listOfNotNull(
+                // D-191: ubicacion relevada solo para operario de acopio
+                val partesRecogida = if (esOperarioAcopio) listOfNotNull(
                     line.fincaAcopio.takeIf { it.isNotBlank() }?.let { "Finca $it" },
                     line.sectorAcopio.takeIf { it.isNotBlank() }?.let { "Sector $it" }
-                )
+                ) else emptyList()
                 if (partesRecogida.isNotEmpty()) {
                     LineBadge(
                         container = MaterialTheme.colorScheme.tertiaryContainer,
