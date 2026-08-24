@@ -174,7 +174,7 @@ class FaenaDashboardViewModel(
                 sesPrefsCambioHecho()
                 onResultado(true, "Contraseña actualizada")
             } catch (e: Exception) {
-                onResultado(false, "No se pudo cambiar: ${e.message}")
+                onResultado(false, "No se pudo cambiar: ${Errores.traducir(e)}")
             }
         }
     }

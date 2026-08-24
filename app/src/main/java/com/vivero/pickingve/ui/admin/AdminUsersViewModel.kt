@@ -43,7 +43,7 @@ class AdminUsersViewModel(
                 Log.e("PickingVE", "admin load failed", e)
                 _state.value = AdminUiState(
                     loading = false,
-                    error = "No se pudo cargar el listado: ${e.message}"
+                    error = "No se pudo cargar el listado: ${Errores.traducir(e)}"
                 )
             }
         }

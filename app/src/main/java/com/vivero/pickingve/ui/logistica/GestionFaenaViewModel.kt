@@ -191,7 +191,7 @@ class GestionFaenaViewModel(
                 mensaje.value = "Faena guardada (${r.guardadas + r.borradas} líneas)"
                 onHecho()
             } catch (e: Exception) {
-                mensaje.value = "Error al guardar: ${e.message}"
+                mensaje.value = "Error al guardar: ${Errores.traducir(e)}"
             } finally {
                 guardando.value = false
             }
@@ -255,7 +255,7 @@ class GestionFaenaViewModel(
                 mensaje.value = "Camión compartido creado (${pedidos.size} pedidos)"
                 onHecho()
             } catch (e: Exception) {
-                mensaje.value = "Error al crear el camión: ${e.message}"
+                mensaje.value = "Error al crear el camión: ${Errores.traducir(e)}"
             } finally {
                 guardando.value = false
             }

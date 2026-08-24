@@ -7,6 +7,7 @@ import com.vivero.pickingve.data.local.entities.EncargadoEntity
 import com.vivero.pickingve.data.local.entities.OperarioEntity
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.repository.PickingRepository
+import com.vivero.pickingve.util.Errores
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -86,20 +87,33 @@ class LoginViewModel(
             }
             // D-192: si el texto parece email, probar primero como operario
             val orden: List<Int> = if (esOperario || clave.contains("@")) listOf(1, 0) else listOf(0, 1)
+            var errorRed: String? = null
             for (tipo in orden) {
                 if (tipo == 1) {
                     val local = repository.loginOperarioLocal(clave, password)
                     if (local != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
-                    val remoto = runCatching { repository.loginOperarioRemoto(api, clave, password) }.getOrNull()
+                    val remoto = try {
+                        repository.loginOperarioRemoto(api, clave, password)
+                    } catch (e: Exception) {
+                        Log.e("PickingVE", "loginOperarioRemoto excepcion: ${e.javaClass.name}: ${e.message}", e)
+                        errorRed = Errores.traducir(e)
+                        null
+                    }
                     if (remoto != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
                 } else {
                     val local = repository.loginEncargadoLocal(clave, password)
                     if (local != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
-                    val remoto = repository.loginEncargadoRemoto(api, clave, password)
+                    val remoto = try {
+                        repository.loginEncargadoRemoto(api, clave, password)
+                    } catch (e: Exception) {
+                        Log.e("PickingVE", "loginEncargadoRemoto excepcion: ${e.javaClass.name}: ${e.message}", e)
+                        errorRed = Errores.traducir(e)
+                        false
+                    }
                     if (remoto) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
                 }
             }
-            _state.value = _state.value.copy(error = "Usuario o contraseña incorrectos")
+            _state.value = _state.value.copy(error = errorRed ?: "Usuario o contraseña incorrectos")
         }
     }
 

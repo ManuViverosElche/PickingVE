@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.vivero.pickingve.BuildConfig
+import com.vivero.pickingve.util.Errores
 import com.vivero.pickingve.data.local.dao.ChatEstadoDao
 import com.vivero.pickingve.data.local.dao.EncargadoDao
 import com.vivero.pickingve.data.local.dao.LitrajeDao
@@ -224,6 +225,7 @@ class PickingRepository(
             setCurrentOperario(op)
             op
         } catch (e: Exception) {
+            if (Errores.esErrorDeRed(e)) throw e
             null
         }
     }
@@ -331,6 +333,7 @@ class PickingRepository(
             )
             true
         } catch (e: Exception) {
+            if (Errores.esErrorDeRed(e)) throw e
             false
         }
     }
