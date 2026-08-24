@@ -1,0 +1,7 @@
+# Empaquetado explícito: todo lo necesario para la imagen (ver Dockerfile)
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+connector/
+docs/

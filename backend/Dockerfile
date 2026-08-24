@@ -1,15 +1,19 @@
-FROM python:3.12-slim
+﻿FROM python:3.12-slim
+# cache-buster v5: 2026-08-24T11:20Z
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
-COPY punteo_report.py .
-COPY punteo_pdf.py .
-COPY punteo_html.py .
-COPY web/ web/
+COPY . .
+
+# Verificacion dura: los tres modulos del informe deben estar fisicamente
+RUN ls -la /app \
+    && test -s /app/informe_datos.py \
+    && test -s /app/informe_pdf.py \
+    && test -s /app/informe_html.py \
+    && echo "FICHEROS-INFORME OK"
 
 ENV PORT=8080
 EXPOSE 8080
