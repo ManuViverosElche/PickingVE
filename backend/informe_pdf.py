@@ -16,8 +16,6 @@ import reportlab
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from informe_datos import (
@@ -91,10 +89,8 @@ from informe_datos import (
     _set,
 )
 
-pdfmetrics.registerFont(TTFont("Vera", os.path.join(os.path.dirname(reportlab.__file__), "fonts", "Vera.ttf")))
-pdfmetrics.registerFont(TTFont("Vera-Bold", os.path.join(os.path.dirname(reportlab.__file__), "fonts", "VeraBd.ttf")))
-F = "Vera"
-FB = "Vera-Bold"
+F = "Helvetica"
+FB = "Helvetica-Bold"
 
 _LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "manager", "viveros_logo.png")
 
@@ -294,6 +290,10 @@ def _draw_fila(c, y, num, g, susts):
         7: (_cortar(_set(g.get("FINCA_ARTICULO")), 22 * mm), "C", F),
         8: (f"{_num(g['CANT']):,.0f}".replace(",", "."), "C", FB),
     }
+    # D-178: reportlab exige str; normaliza cualquier int/float (POSICION, CANT...)
+    for _k in list(vals):
+        _v, _a, _f = vals[_k]
+        vals[_k] = ("" if _v is None else str(_v), _a, _f)
     x = MARG
     for idx, (_, w) in enumerate(_COLS):
         v, align, font = vals[idx]
