@@ -83,6 +83,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -169,7 +170,7 @@ fun PickingScreen(
     var manualMarkLine by remember { mutableStateOf<OrderLineEntity?>(null) }
     var unpickLine by remember { mutableStateOf<OrderLineEntity?>(null) }
     var cerrarLineaDialog by remember { mutableStateOf<OrderLineEntity?>(null) }
-    var nextPickingNumber by remember { mutableStateOf(1) }
+    var nextPickingNumber by remember { mutableIntStateOf(1) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -744,9 +745,9 @@ private fun ClienteNombreTexto(
     fiscal: String,
     comercial: String,
     style: androidx.compose.ui.text.TextStyle,
+    modifier: Modifier = Modifier,
     fontWeight: FontWeight? = null,
-    maxLines: Int = 2,
-    modifier: Modifier = Modifier
+    maxLines: Int = 2
 ) {
     val distintos = fiscal.isNotBlank() && comercial.isNotBlank() &&
         !fiscal.equals(comercial, ignoreCase = true)
@@ -2311,7 +2312,7 @@ private fun ManualMarkDialog(
     onConfirm: (referencia: String, litrajeDesc: String?, sectorDesc: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var paso by remember(line.orderLineId) { mutableStateOf(0) }
+    var paso by remember(line.orderLineId) { mutableIntStateOf(0) }
     var referencia by remember(line.orderLineId) { mutableStateOf("") }
     var litrajeVariant by remember(line.orderLineId) { mutableStateOf(line.litrajeDesc) }
     var sectorVariant by remember(line.orderLineId) { mutableStateOf(line.sectorDesc) }

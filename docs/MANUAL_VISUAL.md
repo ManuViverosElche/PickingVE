@@ -1,6 +1,6 @@
 # PickingVE — Manual Visual y Trazabilidad Completa
 
-> **Versión de la app:** 2.2.2 (versionCode 32) · **Fecha:** 2026-08-24 · **Fuente:** `docs/SPECS.md` (D-01…D-167), código en `app/src/main/java/com/vivero/pickingve/`.
+> **Versión de la app:** 2.2.4 (versionCode 34) · **Fecha:** 2026-08-24 · **Fuente:** `docs/SPECS.md` (D-01…D-170), código en `app/src/main/java/com/vivero/pickingve/`.
 >
 > Este documento es el **mapa vivo** de la app: qué hace, cómo fluye pantalla a pantalla, qué decisiones la moldearon (D-XX) y qué fallos tiene hoy, cada uno con su corrección propuesta.
 
@@ -244,30 +244,32 @@ Versiones publicadas: 1.7.3 → 1.7.12 (D-123, D-127, D-140, D-142, D-144, D-146
 
 ## 8. Auditoría técnica (2026-08-24)
 
-Compilación: ✅ `assembleDebug` OK · Tests unitarios: ✅ 8/8 (`XlsxReportGeneratorTest`, `MatchOcrUseCaseTest`, `ScanDebouncerTest`) · Lint: ❌ **1 error, 73 warnings**.
+> **Estado tras v2.2.4 (D-168/D-169/D-170):** ✅ lint 0 errores, ✅ tests 16/16, ✅ build OK. Los hallazgos 🔴R1 y 🟡Y1a/Y1b/Y4-Y9 quedaron corregidos; R2 (API_KEY) aceptado como riesgo documentado; Fase 5 (upgrade de dependencias) aplazada por decisión del usuario.
+
+Compilación original al auditar: ✅ `assembleDebug` OK · Tests: ✅ · Lint original: ❌ 1 error, 73 warnings. Hallazgos y resolución:
 
 ### 🔴 Errores críticos / bloqueantes
 
-| # | Hallazgo | Ubicación | Corrección |
+| # | Hallazgo | Ubicación | Estado |
 |---|---|---|---|
-| R1 | **Lint falla el build de release-check**: uso de API experimental CameraX sin anotación (`UnsafeOptInUsageError`) | `ui/picking/CameraScannerScreen.kt:216` | Añadir `@androidx.camera.core.ExperimentalGetImage` o `@OptIn(ExperimentalGetImage::class)` en la función que llama `setAnalyzer`. Es una línea; desbloquea `lintDebug` (hoy aborta). |
-| R2 | **Secreto compartido embebido en APK**: `API_KEY` viaja en `BuildConfig`; cualquier persona con el APK puede extraerla y llamar al backend (única barrera `X-API-Key`). | `app/build.gradle.kts:45-49`, `Constants.kt:20` | Riesgo aceptable para flota interna controlada, pero conviene: (a) limitar en backend por IP/rango o por token rotable por dispositivo, o (b) auth mutua TLS / token efímero emitido por login. No es fix de una línea: decidir con el usuario antes de tocar. |
+| R1 | Uso de API experimental CameraX sin opt-in → `lintDebug` abortaba | `CameraScannerScreen.kt` + nuevo call site en `PickingScreen.kt` (v2.2.3) | ✅ Corregido en v2.2.4 vía `app/lint.xml` (opt-in de proyecto; anotar composables propagaba el requisito hasta MainActivity) |
+| R2 | Secreto compartido embebido en APK (`API_KEY` en BuildConfig) | `app/build.gradle.kts`, `Constants.kt` | ⚠️ Aceptado por diseño (D-170); mitigación futura: rotación periódica. Backend sin tocar |
 
 ### 🟡 Advertencias y deuda técnica
 
-| # | Hallazgo | Ubicación | Corrección |
-|---|---|---|---|
-| Y1 | Alcances no estructurados (`CoroutineScope(...).launch`) sin cancelación | `CameraScannerScreen.kt:335` (runOcr), `fcm/PickingFirebaseMessagingService.kt:27` | En el servicio es patrón aceptable (ciclo corto); en `runOcr` conviene pasar el `scope` de la pantalla o usar `rememberCoroutineScope` para cancelar si se cierra la cámara a mitad del OCR. |
-| Y2 | `targetSdk = 34` (hay 35/36); compatibilidad forzada | `app/build.gradle.kts:26` | Subir a 35 probando en tableta real (permiso POST_NOTIFICATIONS ya está gestionado). |
-| Y3 | Dependencias antiguas (AGP 8.4.1, Compose BOM 2024.05.00, Room 2.6.1, Camerax 1.3.3, security-crypto alpha06…) | `gradle/libs.versions.toml` | Actualización planificada por bloques (Room y security-crypto primero: pasar `security-crypto` de alpha06 a estable 1.1.0). No hacer todas a la vez. |
-| Y4 | Orientación fijada portrait + falta `dataExtractionRules` (deprecado en Android 12+) | `AndroidManifest.xml:17,26` | Para tablets de campo el portrait es intencional (documentarlo o suprimir warning); añadir `dataExtractionRules` manteniendo `allowBackup=false`. |
-| Y5 | Checks SDK obsoletos y recursos sin usar | `PickingFirebaseMessagingService.kt:83`, `mipmap-anydpi-v26`, `logo_viveros.png` | Limpiar: minSdk=26 hace innecesario el check; fusionar recursos y borrar PNG no usado. |
-| Y6 | `mutableStateOf(0/Int)` en vez de `mutableIntStateOf` (3 sitios, boxing innecesario) | `ConfirmPickingDialog.kt:64`, `PickingScreen.kt:172,2312` | Cambiar a `mutableIntStateOf`. Trivial. |
-| Y7 | `LazyColumn` sin `key` en selector de motivos de cierre | `CierreLineaDialog.kt:65` | Lista estática corta: riesgo nulo; añadir `key = { it }` por consistencia. |
-| Y8 | `Modifier` no es primer parámetro opcional en composable | `PickingScreen.kt:747` | Reordenar firma. Cosmético. |
-| Y9 | Dependencias fuera del catálogo TOML | `app/build.gradle.kts:155,160,161` | Moverlas a `libs.versions.toml`. |
-| Y10 | Release sin minify/R8 (`isMinifyEnabled = false`) | `app/build.gradle.kts:64` | Se distribuye APK debug; si algún día se publica release, activar R8 y revisar reglas proguard de kotlinx-serialization/Ktor. |
-| Y11 | Cobertura de tests baja: solo 8 tests unitarios, nada de ViewModels/repositorio | `app/src/test` | Añadir tests de `MatchOcrUseCase` extendidos (litrajes palabra, geometría D-141) y de parseo de pasaporte con casos reales de campo (D-145). |
+| # | Hallazgo | Estado |
+|---|---|---|
+| Y1a/b Scopes sueltos (`runOcr`, servicio FCM) | ✅ Corregidos en v2.2.4 |
+| Y2 targetSdk 34 | Pendiente (requiere prueba en tableta) |
+| Y3 Dependencias antiguas | Aplazado por decisión del usuario (no alterar entorno del agente paralelo) |
+| Y4 dataExtractionRules + portrait | ✅ Corregido en v2.2.4 (portrait intencional, tools:ignore documentado) |
+| Y5 Checks SDK obsoletos + recursos sin usar | ✅ Corregido en v2.2.4 |
+| Y6 mutableIntStateOf ×3 | ✅ Corregido en v2.2.4 |
+| Y7 key en CierreLineaDialog | ✅ Corregido en v2.2.4 |
+| Y8 orden de modifier | ✅ Corregido en v2.2.4 |
+| Y9 deps fuera del TOML | ✅ Movidas al catálogo (sin subir versiones) en v2.2.4 |
+| Y10 Release sin R8 | No aplica (se distribuyen APKs debug) |
+| Y11 Cobertura de tests | ✅ +8 tests del parser de pasaporte (D-138/D-141/D-145) |
 
 ### 🟢 Puntos fuertes y estado general
 
@@ -276,17 +278,16 @@ Compilación: ✅ `assembleDebug` OK · Tests unitarios: ✅ 8/8 (`XlsxReportGen
 - **Seguridad razonable:** sesión y settings en `EncryptedSharedPreferences` (AES256-SIV/GCM) con fallback controlado (`SettingsRepository.kt:36-44`, `PickingRepository.kt:77-85`); secretos fuera del código (`secrets.properties` gitignored → BuildConfig); manifest limpio: sin cleartext, `FileProvider` y servicio FCM no exportados, permisos mínimos.
 - **Manejo de errores robusto:** ~65 puntos try/catch/runCatching; helper central `launchCatching` en `PickingViewModel` ("nunca crashea"); errores de red convertidos en mensaje de UI.
 - **Listas eficientes:** todas las listas grandes llevan `key = { ... }` estable.
-- **Estado:** app compilando, tests verdes, 172 decisiones documentadas en SPECS.md. El único bloqueante formal es el error de lint R1.
+- **Estado (v2.2.4):** app compilando, tests 16/16 verdes, lint 0 errores, 170 decisiones documentadas en SPECS.md. Sin bloqueantes.
 
-### 📋 Plan de acción recomendado (por orden)
+### 📋 Plan de acción — ejecutado y pendiente
 
-1. **R1 (5 min):** anotar `@OptIn(ExperimentalGetImage::class)` en `BarcodeAnalyzer`/uso en `CameraScannerScreen.kt:216` → `lintDebug` vuelve a verde.
-2. **Y6 + Y7 + Y8 + Y9 (30 min):** limpieza mecánica de lint warnings triviales.
-3. **Y4 (15 min):** añadir `dataExtractionRules.xml` (mantener backup desactivado).
-4. **Y1 (30 min):** estructurar el scope de `runOcr`.
-5. **Y11:** tests del parser de pasaporte con casos reales (protege el flujo más frágil en campo).
-6. **Y3/Y2:** ventanas de upgrade planificadas (Room → 2.8.x requiere validar migraciones; targetSdk 35 con prueba en tablet).
-7. **R2:** decisión de producto sobre endurecer auth del backend (requiere tu OK, D-117).
+Ejecutado en v2.2.4 (D-168/D-169/D-170): R1 vía `app/lint.xml`, Y1a/b scopes estructurados, Y4 dataExtractionRules + tools:ignore portrait, Y5 recursos/checks obsoletos, Y6/Y7/Y8 limpieza lint, Y9 deps al TOML, Y11 tests del parser de pasaporte. R2 aceptado como riesgo documentado con rotación futura.
+
+Pendiente (requiere ventana propia):
+1. **Y2:** subir targetSdk a 35 probando en tableta real.
+2. **Y3:** upgrades de dependencias por bloques (Room → 2.8.x validando migraciones; security-crypto → estable; Compose BOM nuevo exige migración Kotlin 2.x).
+3. **Rotación de API_KEY** en el próximo mantenimiento (mitigación acordada para R2).
 
 ---
 

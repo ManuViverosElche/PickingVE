@@ -62,7 +62,7 @@ fun CierreLineaDialog(
                     modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
                 )
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(MOTIVOS_CIERRE) { m ->
+                    items(MOTIVOS_CIERRE, key = { it.codigo }) { m ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)

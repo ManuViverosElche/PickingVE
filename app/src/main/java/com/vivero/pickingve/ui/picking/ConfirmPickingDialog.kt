@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,7 +62,7 @@ fun ConfirmPickingDialog(
     ).joinToString(" · ")
     var measure by remember { mutableStateOf(product.defaultMeasure.orEmpty()) }
     var caliber by remember { mutableStateOf(product.defaultCaliber.orEmpty()) }
-    var labelOption by remember { mutableStateOf(0) }
+    var labelOption by remember { mutableIntStateOf(0) }
     var labelFormat by remember { mutableStateOf("") }
     val ventaDirecta = product.reference.startsWith("9") && !pending.isEanScan
     val shownPicked = remember(line, compensaciones) {

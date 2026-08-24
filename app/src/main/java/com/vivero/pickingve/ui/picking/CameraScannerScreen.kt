@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +70,7 @@ fun CameraScannerScreen(
     val lifecycleOwner = context as? LifecycleOwner
     val debouncer = remember { ScanDebouncer() }
     val executor = remember { Executors.newSingleThreadExecutor() }
+    val ocrScope = rememberCoroutineScope()
     DisposableEffect(executor) {
         onDispose {
             executor.shutdown()
@@ -178,7 +180,7 @@ fun CameraScannerScreen(
             return
         }
         ocrLoading = true
-        runOcr(context, capture, executor, viewModel) { ocrLoading = false }
+        runOcr(ocrScope, context, capture, executor, viewModel) { ocrLoading = false }
     }
 
     fun onCodigoLeido(codigo: String) {
@@ -326,13 +328,14 @@ fun CameraScannerScreen(
 }
 
 private fun runOcr(
+    scope: CoroutineScope,
     context: android.content.Context,
     imageCapture: ImageCapture,
     executor: Executor,
     viewModel: PickingViewModel,
     onDone: () -> Unit
 ) {
-    CoroutineScope(Dispatchers.Main).launch {
+    scope.launch {
         try {
             val file = java.io.File(context.cacheDir, "ocr_${System.currentTimeMillis()}.jpg")
             val ok = imageCapture.takePictureToFile(file, executor)
