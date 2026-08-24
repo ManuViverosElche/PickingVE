@@ -1476,6 +1476,134 @@ def pedido_estado(
     return {"numero": numero, "estado": estado, "albaran": estado == 2}
 
 
+# ---------------- D-190: CAMION COMPARTIDO entre varios pedidos ----------------
+
+CAMIONES_TABLE = "camiones_compartidos"
+
+
+def _ensure_camiones_table() -> None:
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{CAMIONES_TABLE}` (
+            id STRING NOT NULL,
+            fecha_carga DATE NOT NULL,
+            matricula_camion STRING,
+            matricula_remolque STRING,
+            creado_por STRING,
+            creado_en TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.camiones_pedidos` (
+            camion_id STRING NOT NULL,
+            pedido_id STRING NOT NULL
+        );
+        """
+    ).result()
+
+
+class CamionCompartidoBody(BaseModel):
+    fecha: str = Field(min_length=8, max_length=10)
+    matricula_camion: str = Field(default="", max_length=16)
+    matricula_remolque: str = Field(default="", max_length=16)
+    pedidos: list[str] = Field(min_length=1)
+    creado_por: str = Field(default="", max_length=128)
+
+
+@app.post("/api/logistica/camion-compartido")
+def crear_camion_compartido(
+    req: CamionCompartidoBody,
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """D-190: crea un camion compartido con N pedidos y matriculas opcionales
+    preasignadas (el encargado solo tendra que confirmarlas con la foto)."""
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    _ensure_camiones_table()
+    try:
+        fecha = date.fromisoformat(req.fecha.strip())
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha invalida (YYYY-MM-DD)")
+    camion_id = uuid.uuid4().hex
+    client.query(
+        f"INSERT INTO `{PROJECT}.{PICKING_DATASET}.{CAMIONES_TABLE}` "
+        f"(id, fecha_carga, matricula_camion, matricula_remolque, creado_por, creado_en) "
+        f"VALUES ({_esc(camion_id)}, {_esc(fecha.isoformat())}, {_esc(req.matricula_camion)}, "
+        f"{_esc(req.matricula_remolque)}, {_esc(req.creado_por)}, CURRENT_TIMESTAMP())"
+    ).result()
+    values = ", ".join(
+        f"({_esc(camion_id)}, {_esc(p)})" for p in dict.fromkeys(p.strip() for p in req.pedidos if p.strip())
+    )
+    if values:
+        # Un pedido pertenece a un unico camion compartido: se limpia asignacion previa
+        client.query(
+            f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.camiones_pedidos` "
+            f"WHERE pedido_id IN ({','.join(_esc(p.strip()) for p in req.pedidos if p.strip())})"
+        ).result()
+        client.query(
+            f"INSERT INTO `{PROJECT}.{PICKING_DATASET}.camiones_pedidos` (camion_id, pedido_id) VALUES {values}"
+        ).result()
+    return {"ok": True, "camion_id": camion_id, "pedidos": len(set(p.strip() for p in req.pedidos if p.strip()))}
+
+
+@app.get("/api/logistica/camiones")
+def lista_camiones_fecha(
+    request: Request,
+    fecha: str = Query(..., description="YYYY-MM-DD"),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    _ensure_camiones_table()
+    rows = _query(
+        f"""
+        SELECT c.id, FORMAT_DATE('%Y-%m-%d', c.fecha_carga) AS fecha,
+               IFNULL(c.matricula_camion,'') mc, IFNULL(c.matricula_remolque,'') mr,
+               IFNULL(c.creado_por,'') por,
+               STRING_AGG(cp.pedido_id, ',') AS pedidos
+        FROM `{PROJECT}.{PICKING_DATASET}.{CAMIONES_TABLE}` c
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.camiones_pedidos` cp ON cp.camion_id = c.id
+        WHERE c.fecha_carga = DATE({_esc(fecha)})
+        GROUP BY c.id, fecha, mc, mr, por
+        ORDER BY c.creado_en DESC
+        """
+    )
+    return {"camiones": rows}
+
+
+@app.get("/api/logistica/camion-de-pedido")
+def camion_de_pedido(
+    request: Request,
+    pedido: str = Query(..., description="Numero de pedido"),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """Precarga de matriculas para el encargado: si su pedido pertenece a un
+    camion compartido con matriculas, las recibe preinsertadas."""
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
+    _ensure_camiones_table()
+    rows = _query(
+        f"""
+        SELECT c.matricula_camion, c.matricula_remolque,
+               STRING_AGG(cp2.pedido_id, ',') AS pedidos
+        FROM `{PROJECT}.{PICKING_DATASET}.camiones_pedidos` cp
+        JOIN `{PROJECT}.{PICKING_DATASET}.{CAMIONES_TABLE}` c ON c.id = cp.camion_id
+        JOIN `{PROJECT}.{PICKING_DATASET}.camiones_pedidos` cp2 ON cp2.camion_id = c.id
+        WHERE cp.pedido_id = {_esc(pedido)}
+        GROUP BY c.matricula_camion, c.matricula_remolque
+        LIMIT 1
+        """
+    )
+    if not rows:
+        return {"encontrado": False}
+    r = rows[0]
+    return {
+        "encontrado": True,
+        "matricula_camion": r.get("matricula_camion") or "",
+        "matricula_remolque": r.get("matricula_remolque") or "",
+        "pedidos": [p for p in (r.get("pedidos") or "").split(",") if p],
+    }
+
+
 @app.get("/debug-app")
 def debug_app() -> dict[str, Any]:
     """TEMPORAL (diagnostico empaquetado)."""
@@ -3147,6 +3275,26 @@ def lista_reparto(
             ),
         ).result()
     ]
+    # D-185: backfill de asignaciones historicas guardadas solo con nombre:
+    # se resuelve el email y se persiste, para que la app (que casa por email)
+    # las vea.
+    if any(not (r.get("operario_email") or "").strip() for r in rows):
+        ops = _query(f"SELECT nombre, email FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`")
+        nombre_a_email = {
+            (o.get("nombre") or "").strip().lower(): (o.get("email") or "").strip()
+            for o in ops
+            if (o.get("email") or "").strip()
+        }
+        for r in rows:
+            if not (r.get("operario_email") or "").strip():
+                em = nombre_a_email.get((r.get("operario_nombre") or "").strip().lower(), "")
+                if em:
+                    r["operario_email"] = em
+                    client.query(
+                        f"UPDATE `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` "
+                        f"SET operario_email = {_esc(em)} "
+                        f"WHERE pedido_id = {_esc(r['pedido_id'])} AND linea_huella = {_esc(r['linea_huella'])}"
+                    ).result()
     return {"asignaciones": rows}
 
 

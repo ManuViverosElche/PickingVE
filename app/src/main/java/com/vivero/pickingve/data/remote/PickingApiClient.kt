@@ -287,6 +287,36 @@ class PickingApiClient(
             url.parameters.append("numero", numero)
         }.body<PedidoEstadoResponse>()
 
+    /** D-190: camion compartido que contiene este pedido (precarga matriculas). */
+    suspend fun camionDePedido(pedido: String): CamionDePedidoResponse =
+        client.get("$baseUrl/logistica/camion-de-pedido") {
+            auth()
+            url.parameters.append("pedido", pedido)
+        }.body<CamionDePedidoResponse>()
+
+    /** D-190: crear camion compartido con varios pedidos y matriculas opcionales. */
+    suspend fun crearCamionCompartido(
+        fecha: String,
+        matriculaCamion: String,
+        matriculaRemolque: String,
+        pedidos: List<String>,
+        creadoPor: String
+    ) {
+        client.post("$baseUrl/logistica/camion-compartido") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(
+                CamionCompartidoRequest(
+                    fecha = fecha,
+                    matriculaCamion = matriculaCamion,
+                    matriculaRemolque = matriculaRemolque,
+                    pedidos = pedidos,
+                    creadoPor = creadoPor
+                )
+            )
+        }
+    }
+
     suspend fun notificarDiscrepancia(
         pedidoId: String,
         lineaHuella: String,

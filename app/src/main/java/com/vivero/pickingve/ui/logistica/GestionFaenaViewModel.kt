@@ -232,4 +232,32 @@ class GestionFaenaViewModel(
     fun clearMensaje() {
         mensaje.value = null
     }
+
+    /** D-190: crea un camion compartido con los pedidos marcados del dia activo. */
+    fun crearCamionCompartido(
+        pedidos: List<Pair<String, String>>,
+        mc: String,
+        mr: String,
+        onHecho: () -> Unit
+    ) {
+        if (pedidos.isEmpty()) return
+        viewModelScope.launch {
+            guardando.value = true
+            try {
+                PickingApiClient().crearCamionCompartido(
+                    fecha = (diaSeleccionado.value ?: LocalDate.now()).toString(),
+                    matriculaCamion = mc,
+                    matriculaRemolque = mr,
+                    pedidos = pedidos.map { it.first },
+                    creadoPor = repository.emailFaena()
+                )
+                mensaje.value = "Camión compartido creado (${pedidos.size} pedidos)"
+                onHecho()
+            } catch (e: Exception) {
+                mensaje.value = "Error al crear el camión: ${e.message}"
+            } finally {
+                guardando.value = false
+            }
+        }
+    }
 }

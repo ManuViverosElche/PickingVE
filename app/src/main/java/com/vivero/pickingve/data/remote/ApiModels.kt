@@ -310,6 +310,25 @@ data class PedidoEstadoResponse(
     val albaran: Boolean = false
 )
 
+// ---- D-190: camion compartido entre varios pedidos ----
+
+@Serializable
+data class CamionCompartidoRequest(
+    val fecha: String,
+    @SerialName("matricula_camion") val matriculaCamion: String = "",
+    @SerialName("matricula_remolque") val matriculaRemolque: String = "",
+    val pedidos: List<String>,
+    @SerialName("creado_por") val creadoPor: String = ""
+)
+
+@Serializable
+data class CamionDePedidoResponse(
+    val encontrado: Boolean = false,
+    @SerialName("matricula_camion") val matriculaCamion: String = "",
+    @SerialName("matricula_remolque") val matriculaRemolque: String = "",
+    val pedidos: List<String> = emptyList()
+)
+
 @Serializable
 data class DiscrepanciaRequest(
     @SerialName("pedido_id") val pedidoId: String,

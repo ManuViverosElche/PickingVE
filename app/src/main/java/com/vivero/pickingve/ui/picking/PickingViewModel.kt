@@ -343,6 +343,22 @@ class PickingViewModel(
 
     private var forceEanScanQtyOne = false
 
+    /** D-190: camion compartido que contiene este pedido (precarga matriculas). */
+    val camionCompartido = MutableStateFlow(
+        com.vivero.pickingve.data.remote.CamionDePedidoResponse()
+    )
+
+    fun cargarCamionCompartido(orderId: String?) {
+        if (orderId.isNullOrBlank()) return
+        viewModelScope.launch {
+            camionCompartido.value = try {
+                PickingApiClient().camionDePedido(orderId)
+            } catch (e: Exception) {
+                com.vivero.pickingve.data.remote.CamionDePedidoResponse()
+            }
+        }
+    }
+
     /**
      * D-174: true solo cuando el producto entra por lectura REAL de cÃ³digo de
      * barras. El acopio manual y el OCR dejan ean_escaneado vacÃ­o en BigQuery,

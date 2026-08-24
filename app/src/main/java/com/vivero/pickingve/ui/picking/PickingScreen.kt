@@ -79,6 +79,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -187,6 +188,8 @@ fun PickingScreen(
 
     LaunchedEffect(state.selectedOrderId) {
         nextPickingNumber = viewModel.getNextPickingNumber()
+        // D-190: precarga de matriculas si el pedido va en un camion compartido
+        viewModel.cargarCamionCompartido(state.selectedOrderId)
     }
 
     state.lastMessage?.let { message ->
@@ -512,10 +515,15 @@ fun PickingScreen(
     }
 
     if (showTruckArrival) {
+        // D-190: precarga desde camion compartido cuando el pedido no tiene
+        // matriculas propias; el encargado solo confirma (con foto).
+        val camion = viewModel.camionCompartido.collectAsState().value
         TruckArrivalDialog(
             fincaCarga = state.order?.fincaCarga.orEmpty(),
-            defaultMatriculaCamion = state.order?.matriculaCamion.orEmpty(),
-            defaultMatriculaRemolque = state.order?.matriculaRemolque.orEmpty(),
+            defaultMatriculaCamion = state.order?.matriculaCamion.orEmpty()
+                .ifBlank { camion.matriculaCamion },
+            defaultMatriculaRemolque = state.order?.matriculaRemolque.orEmpty()
+                .ifBlank { camion.matriculaRemolque },
             defaultMatriculaRemolqueB = state.order?.matriculaRemolqueB.orEmpty(),
             defaultMuelle = state.order?.muelleCarga.orEmpty(),
             onConfirm = { matriculaCamion, matriculaRemolque, matriculaRemolqueB, muelle, fotos, fotoCompartir ->
@@ -1233,7 +1241,15 @@ private fun OrderLineCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                if (line.sectorDesc.isNotBlank()) {
+                // D-188: el REVELADO (sectorAcopio) prioriza sobre el teorico
+                if (line.sectorAcopio.isNotBlank()) {
+                    Text(
+                        "· ${line.sectorAcopio} (relevado)",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                } else if (line.sectorDesc.isNotBlank()) {
                     Text(
                         "· ${line.sectorDesc}",
                         style = MaterialTheme.typography.bodySmall,
@@ -1489,8 +1505,7 @@ private fun OrderLineCard(
 private fun PrioBadge(prioridad: String) {
     val p = prioridad.trim().uppercase()
     when {
-        // D-187: 3 estados exactos — vacio/NORMAL = sin etiqueta;
-        // "PRIORITARIO" = destacado; resto de valores = neutro.
+        // D-187: PRIORITARIO = amarillo parpadeante
         p == "PRIORITARIO" -> {
             val transition = rememberInfiniteTransition(label = "prio")
             val alpha by transition.animateFloat(
@@ -1500,29 +1515,37 @@ private fun PrioBadge(prioridad: String) {
                 label = "prioAlpha"
             )
             LineBadge(
-                container = MaterialTheme.colorScheme.errorContainer,
-                content = MaterialTheme.colorScheme.onErrorContainer,
-                border = null,
-                icon = { Icon(Icons.Filled.Warning, null, Modifier.size(14.dp)) },
+                container = Color(0xFFFFE9B8),
+                content = Color(0xFF6B4E00),
+                border = BorderStroke(1.dp, Color(0xFFE0A13C)),
+                icon = null,
                 text = "PRIORITARIO",
                 modifier = Modifier.alpha(alpha)
             )
         }
-        p.isNotBlank() && p != "NORMAL" -> {
+        // D-187: NO PRIORITARIO = rojo corporativo parpadeante
+        p == "NO PRIORITARIO" -> {
+            val transition = rememberInfiniteTransition(label = "noprio")
+            val alpha by transition.animateFloat(
+                initialValue = 0.45f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                label = "noprioAlpha"
+            )
             LineBadge(
-                container = MaterialTheme.colorScheme.surfaceVariant,
-                content = MaterialTheme.colorScheme.onSurfaceVariant,
+                container = Color(0xFF962622),
+                content = Color.White,
                 border = null,
                 icon = null,
-                text = prioridad
+                text = "NO PRIORITARIO",
+                modifier = Modifier.alpha(alpha)
             )
         }
+        // D-187: VACIO = sin etiqueta (no significa prioritario)
     }
 }
 
 private fun esPrioridadDestacada(prioridad: String): Boolean {
-    // D-187: SOLO el valor exacto PRIORITARIO destaca. "NO PRIORITARIO" es un
-    // estado distinto y el VACIO no significa prioritario.
     return prioridad.trim().uppercase() == "PRIORITARIO"
 }
 

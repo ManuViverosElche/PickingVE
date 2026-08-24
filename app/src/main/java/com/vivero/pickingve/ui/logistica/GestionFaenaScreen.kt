@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -16,10 +18,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -60,6 +64,7 @@ fun GestionFaenaScreen(
     val state by viewModel.uiState.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var discrepanciaLinea by remember { mutableStateOf<GestionLinea?>(null) }
+    var mostrarCamion by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.mensaje) {
         state.mensaje?.let {
@@ -75,6 +80,15 @@ fun GestionFaenaScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { mostrarCamion = true }) {
+                        Icon(
+                            Icons.Filled.LocalShipping,
+                            contentDescription = "Camión compartido",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             )
@@ -197,6 +211,96 @@ fun GestionFaenaScreen(
             onDismiss = { discrepanciaLinea = null }
         )
     }
+
+    if (mostrarCamion) {
+        CamionCompartidoDialog(
+            state = state,
+            onCrear = { pedidosConFecha, mc, mr ->
+                viewModel.crearCamionCompartido(pedidosConFecha, mc, mr) { mostrarCamion = false }
+            },
+            onDismiss = { mostrarCamion = false }
+        )
+    }
+}
+
+/** D-190: crear camion compartido con matriculas preasignadas y N pedidos. */
+@Composable
+private fun CamionCompartidoDialog(
+    state: GestionUiState,
+    onCrear: (pedidos: List<Pair<String, String>>, mc: String, mr: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var mc by remember { mutableStateOf("") }
+    var mr by remember { mutableStateOf("") }
+    var seleccionados by remember { mutableStateOf(setOf<String>()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Camión compartido") },
+        text = {
+            Column {
+                Text(
+                    "Agrupa varios pedidos que cargan en el mismo camión. Si conoces las " +
+                        "matrículas, se preinsertarán al encargado para que solo confirme con la foto.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = mc,
+                    onValueChange = { mc = it.uppercase().take(16) },
+                    label = { Text("Matrícula camión (opcional)") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = mr,
+                    onValueChange = { mr = it.uppercase().take(16) },
+                    label = { Text("Matrícula remolque (opcional)") },
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("Pedidos del día:", style = MaterialTheme.typography.labelLarge)
+                val grupos = state.pedidos
+                LazyColumn(modifier = Modifier.height(240.dp)) {
+                    items(grupos, key = { it.orderId }) { pedido ->
+                        val udsPend = pedido.lineas.sumOf { it.pendiente }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(
+                                checked = pedido.orderId in seleccionados,
+                                onCheckedChange = { marcado ->
+                                    seleccionados =
+                                        if (marcado) seleccionados + pedido.orderId
+                                        else seleccionados - pedido.orderId
+                                }
+                            )
+                            Text(
+                                "Pedido ${pedido.orderId} · ${pedido.fincaCarga} · $udsPend uds pend.",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val fecha = state.diaSeleccionado ?: java.time.LocalDate.now()
+                    onCrear(seleccionados.map { it to "$fecha" }, mc.trim(), mr.trim())
+                },
+                enabled = seleccionados.isNotEmpty()
+            ) { Text("Crear (${seleccionados.size})") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

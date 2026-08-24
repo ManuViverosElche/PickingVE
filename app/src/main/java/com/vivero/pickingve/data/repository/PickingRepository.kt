@@ -1138,17 +1138,21 @@ class PickingRepository(
             }            .also { _ ->
                 val removedIds = existing.keys - serverLineIds
                 if (removedIds.isNotEmpty()) {
-                    orderDao.markLinesNotVigente(removedIds.toList())
-                    // D-184: distinguir ALBARAN (pendientes a 0 por factura) de
-                    // borrado real. En albaran: sin push de lineas y pedido se
-                    // cierra como servido.
+                    // D-189 PRIMERO distinguir ALBARAN: si el pedido se facturo
+                    // (pendientes a 0), las lineas NO se tocan ni hay push: el
+                    // encargado conserva acceso a todo el historico.
                     val esAlbaran = runCatching {
                         api.estadoPedido(p.numero).albaran
                     }.getOrDefault(false)
                     if (esAlbaran) {
                         pedidosAlbaran += p.numero
                         orderDao.clearOrderModificado(p.numero)
+                        val prevOrder = orderDao.getOrder(p.numero)
+                        if (prevOrder != null && prevOrder.status != "ALBARAN") {
+                            orderDao.upsertOrders(listOf(prevOrder.copy(status = "ALBARAN")))
+                        }
                     } else {
+                        orderDao.markLinesNotVigente(removedIds.toList())
                         modifiedOrderIds += p.numero
                         removedIds.forEach { removedId ->
                             val removedLine = existing[removedId]
