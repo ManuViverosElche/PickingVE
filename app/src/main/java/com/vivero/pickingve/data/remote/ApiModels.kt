@@ -309,3 +309,109 @@ data class DiscrepanciaRequest(
     val mensaje: String = "",
     @SerialName("operario_email") val operarioEmail: String
 )
+
+// ---- D-166 Login de operarios ----
+
+@Serializable
+data class LoginOperarioRequest(
+    val email: String,
+    val password: String
+)
+
+@Serializable
+data class ApiLoginOperarioResponse(
+    val id: String = "",
+    val nombre: String = "",
+    val apellidos: String = "",
+    val email: String = "",
+    val maquinaria: String = "",
+    @SerialName("fincas_carga") val fincasCarga: String = "",
+    @SerialName("password_provisional") val passwordProvisional: Boolean = true
+)
+
+@Serializable
+data class ApiOperarioApp(
+    val id: String = "",
+    val nombre: String = "",
+    val apellidos: String = "",
+    val email: String = "",
+    @SerialName("password_hash") val passwordHash: String = "",
+    val maquinaria: String = "",
+    @SerialName("fincas_carga") val fincasCarga: String = "",
+    val activo: Boolean = true,
+    @SerialName("password_provisional") val passwordProvisional: Boolean = true
+)
+
+@Serializable
+data class ApiOperariosAppResponse(val operarios: List<ApiOperarioApp> = emptyList())
+
+@Serializable
+data class CambiarPasswordOperarioRequest(
+    val email: String,
+    @SerialName("password_actual") val passwordActual: String,
+    @SerialName("password_nueva") val passwordNueva: String
+)
+
+// ---- D-169 Ayuda por líneas concretas ----
+
+@Serializable
+data class AyudaPermisoLineaApi(
+    @SerialName("pedido_id") val pedidoId: String,
+    @SerialName("linea_huella") val lineaHuella: String
+)
+
+@Serializable
+data class AyudaPermisoConcederRequest(
+    val lineas: List<AyudaPermisoLineaApi>,
+    @SerialName("ayudante_email") val ayudanteEmail: String,
+    @SerialName("concedido_por_email") val concedidoPorEmail: String = ""
+)
+
+@Serializable
+data class AyudaRevocarRequest(
+    val lineas: List<AyudaPermisoLineaApi>,
+    @SerialName("ayudante_email") val ayudanteEmail: String
+)
+
+@Serializable
+data class ApiAyudaPermisosResponse(
+    val permisos: List<ApiAyudaPermiso> = emptyList()
+)
+
+@Serializable
+data class ApiAyudaPermiso(
+    @SerialName("pedido_id") val pedidoId: String = "",
+    @SerialName("linea_huella") val lineaHuella: String = ""
+)
+
+// ---- D-171 Reabrir línea cerrada ----
+
+@Serializable
+data class ReabrirLineaRequest(
+    @SerialName("pedido_id") val pedidoId: String,
+    @SerialName("linea_huella") val lineaHuella: String,
+    @SerialName("reabierta_por_email") val reabiertaPorEmail: String = "",
+    val motivo: String = ""
+)
+
+// ---- D-172 Gestión de faena desde la app (reparto del panel) ----
+
+@Serializable
+data class RepartoAsignacionApi(
+    @SerialName("pedido_id") val pedidoId: String,
+    @SerialName("linea_huella") val lineaHuella: String,
+    @SerialName("operario_nombre") val operarioNombre: String = "",
+    @SerialName("operario_email") val operarioEmail: String = ""
+)
+
+@Serializable
+data class RepartoGuardarRequest(
+    val asignaciones: List<RepartoAsignacionApi> = emptyList()
+)
+
+@Serializable
+data class RepartoGuardarResponse(
+    val ok: Boolean = false,
+    val guardadas: Int = 0,
+    val borradas: Int = 0
+)

@@ -311,4 +311,61 @@ class PickingApiClient(
             setBody(request)
         }
     }
+
+    suspend fun reabrirLinea(request: ReabrirLineaRequest) {
+        client.post("$baseUrl/logistica/reabrir-linea") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+    }
+
+    suspend fun loginOperario(email: String, password: String): ApiLoginOperarioResponse =
+        client.post("$baseUrl/logistica/login-operario") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(LoginOperarioRequest(email, password))
+        }.body<ApiLoginOperarioResponse>()
+
+    suspend fun fetchOperariosApp(): List<ApiOperarioApp> =
+        client.get("$baseUrl/logistica/operarios-app") {
+            auth()
+        }.body<ApiOperariosAppResponse>().operarios
+
+    suspend fun cambiarPasswordOperario(email: String, actual: String, nueva: String) {
+        client.post("$baseUrl/logistica/cambiar-password-operario") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(CambiarPasswordOperarioRequest(email, actual, nueva))
+        }
+    }
+
+    suspend fun concederAyuda(lineas: List<AyudaPermisoLineaApi>, ayudanteEmail: String, concedidoPorEmail: String) {
+        client.post("$baseUrl/logistica/ayuda-permiso") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(AyudaPermisoConcederRequest(lineas, ayudanteEmail, concedidoPorEmail))
+        }
+    }
+
+    suspend fun revocarAyuda(lineas: List<AyudaPermisoLineaApi>, ayudanteEmail: String) {
+        client.post("$baseUrl/logistica/ayuda-permiso/revocar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(AyudaRevocarRequest(lineas, ayudanteEmail))
+        }
+    }
+
+    suspend fun fetchAyudasConcedidas(ayudanteEmail: String): List<ApiAyudaPermiso> =
+        client.get("$baseUrl/logistica/ayuda-permiso") {
+            auth()
+            url.parameters.append("ayudante_email", ayudanteEmail)
+        }.body<ApiAyudaPermisosResponse>().permisos
+
+    suspend fun guardarReparto(asignaciones: List<RepartoAsignacionApi>): RepartoGuardarResponse =
+        client.post("$baseUrl/manager/reparto") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(RepartoGuardarRequest(asignaciones))
+        }.body<RepartoGuardarResponse>()
 }

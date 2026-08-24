@@ -61,7 +61,8 @@ class PickingRepository(
     private val encargadoDao: EncargadoDao,
     private val litrajeDao: LitrajeDao,
     private val sectorDao: SectorDao,
-    private val chatEstadoDao: ChatEstadoDao
+    private val chatEstadoDao: ChatEstadoDao,
+    private val operarioDao: com.vivero.pickingve.data.local.dao.OperarioDao
 ) {
 
     private val prefs = context.getSharedPreferences("pickingve_flags", Context.MODE_PRIVATE)
@@ -164,6 +165,128 @@ class PickingRepository(
             .joinToString("") { "%02x".format(it) }
     }
 
+    // ---- Operarios (D-166) ----
+
+    suspend fun syncOperarios(api: PickingApiClient) {
+        val operarios = api.fetchOperariosApp()
+        operarioDao.clear()
+        operarioDao.upsert(
+            operarios.map {
+                com.vivero.pickingve.data.local.entities.OperarioEntity(
+                    id = it.id,
+                    nombre = it.nombre,
+                    apellidos = it.apellidos,
+                    email = it.email,
+                    passwordHash = it.passwordHash,
+                    maquinaria = it.maquinaria,
+                    fincasCarga = it.fincasCarga,
+                    activo = it.activo,
+                    debeCambiarPassword = it.passwordProvisional
+                )
+            }
+        )
+    }
+
+    suspend fun operariosLocales() = operarioDao.getAllActivos()
+
+    /** Login offline del operario (hash con salt = email, igual que el backend). */
+    suspend fun loginOperarioLocal(email: String, password: String): com.vivero.pickingve.data.local.entities.OperarioEntity? {
+        val op = operarioDao.findByEmail(email.trim()) ?: return null
+        if (!op.activo) return null
+        if (op.passwordHash == hashPassword(email.trim(), password)) {
+            setCurrentOperario(op)
+            return op
+        }
+        return null
+    }
+
+    suspend fun loginOperarioRemoto(
+        api: PickingApiClient,
+        email: String,
+        password: String
+    ): com.vivero.pickingve.data.local.entities.OperarioEntity? {
+        return try {
+            val r = api.loginOperario(email.trim(), password)
+            val op = com.vivero.pickingve.data.local.entities.OperarioEntity(
+                id = r.id,
+                nombre = r.nombre,
+                apellidos = r.apellidos,
+                email = r.email,
+                passwordHash = hashPassword(r.email, password),
+                maquinaria = r.maquinaria,
+                fincasCarga = r.fincasCarga,
+                activo = true,
+                debeCambiarPassword = r.passwordProvisional
+            )
+            operarioDao.upsert(listOf(op))
+            setCurrentOperario(op)
+            op
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun cambiarPasswordOperario(
+        api: PickingApiClient,
+        email: String,
+        actual: String,
+        nueva: String
+    ) {
+        api.cambiarPasswordOperario(email, actual, nueva)
+        operarioDao.updatePasswordHash(email, hashPassword(email, nueva))
+        val fresh = operarioDao.findByEmail(email) ?: return
+        if (tipoSesion() == TIPO_OPERARIO) setCurrentOperario(fresh)
+    }
+
+    fun setCurrentOperario(op: com.vivero.pickingve.data.local.entities.OperarioEntity) {
+        sesPrefs.edit()
+            .putString(KEY_SESION_TIPO, TIPO_OPERARIO)
+            .putString(KEY_OPERARIO_ID, op.id)
+            .putString(KEY_OPERARIO_NOMBRE, "${op.nombre} ${op.apellidos}".trim())
+            .putString(KEY_OPERARIO_EMAIL, op.email)
+            .putString(KEY_MAQUINARIA, op.maquinaria)
+            .putBoolean(KEY_OPERARIO_CAMBIA_PASS, op.debeCambiarPassword)
+            .apply()
+    }
+
+    fun currentOperario(): com.vivero.pickingve.data.local.entities.OperarioEntity? {
+        if (tipoSesion() != TIPO_OPERARIO) return null
+        val id = sesPrefs.getString(KEY_OPERARIO_ID, null) ?: return null
+        return com.vivero.pickingve.data.local.entities.OperarioEntity(
+            id = id,
+            nombre = sesPrefs.getString(KEY_OPERARIO_NOMBRE, "") ?: "",
+            email = sesPrefs.getString(KEY_OPERARIO_EMAIL, "") ?: "",
+            passwordHash = "",
+            maquinaria = sesPrefs.getString(KEY_MAQUINARIA, "") ?: "",
+            debeCambiarPassword = sesPrefs.getBoolean(KEY_OPERARIO_CAMBIA_PASS, false)
+        )
+    }
+
+    /** Tipo de sesión activa: TIPO_ENCARGADO o TIPO_OPERARIO (vacío = sin sesión). */
+    fun tipoSesion(): String = sesPrefs.getString(KEY_SESION_TIPO, "") ?: ""
+
+    /**
+     * D-167 Identidad para la faena: email según el rol de la sesión.
+     * El reparto (reparto_faena.operario_email) es la única fuente de asignación.
+     */
+    fun emailFaena(): String = when (tipoSesion()) {
+        TIPO_OPERARIO -> currentOperario()?.email.orEmpty()
+        else -> currentEncargado()?.email.orEmpty()
+    }
+
+    fun nombreFaena(): String = when (tipoSesion()) {
+        TIPO_OPERARIO -> currentOperario()?.nombre.orEmpty()
+        else -> currentEncargado()?.nombre.orEmpty()
+    }
+
+    /**
+     * D-167: el SUPERUSUARIO ve toda la faena (web y app). El resto de roles
+     * solo ve lo que le está asignado.
+     */
+    fun esSuperusuario(): Boolean =
+        currentEncargado()?.rol == "SUPERUSUARIO" ||
+            sesPrefs.getString(KEY_ENCARGADO_ROL, "") == "SUPERUSUARIO"
+
     suspend fun loginEncargadoLocal(usuario: String, password: String): EncargadoEntity? {
         val enc = encargadoDao.findByUsuario(usuario.trim()) ?: return null
         if (!enc.activo) return null
@@ -220,6 +343,7 @@ class PickingRepository(
             .putString(KEY_ENCARGADO_MODO, enc.modo)
             .putString(KEY_ENCARGADO_EMAIL, enc.email)
             .putBoolean(KEY_ENCARGADO_ACTIVO, enc.activo)
+            .putString(KEY_SESION_TIPO, TIPO_ENCARGADO)
             .apply()
     }
 
@@ -242,7 +366,9 @@ class PickingRepository(
         val claves = listOf(
             KEY_ENCARGADO_ID, KEY_ENCARGADO_NOMBRE, KEY_ENCARGADO_USUARIO,
             KEY_ENCARGADO_ROL, KEY_ENCARGADO_FINCAS, KEY_ENCARGADO_MODO,
-            KEY_ENCARGADO_EMAIL, KEY_ENCARGADO_ACTIVO, KEY_LAST_SYNC_ENCARGADO
+            KEY_ENCARGADO_EMAIL, KEY_ENCARGADO_ACTIVO, KEY_LAST_SYNC_ENCARGADO,
+            KEY_SESION_TIPO, KEY_OPERARIO_ID, KEY_OPERARIO_NOMBRE,
+            KEY_OPERARIO_EMAIL, KEY_OPERARIO_CAMBIA_PASS
         )
         sesPrefs.edit().apply { claves.forEach { remove(it) } }.apply()
     }
@@ -413,11 +539,7 @@ class PickingRepository(
                     if (remaining <= 0) return@forEach
                     val take = minOf(record.batchQty, remaining)
                     remaining -= take
-                    if (record.batchQty - take <= 0) {
-                        pickingDao.deleteRecord(record.recordId)
-                    } else {
-                        pickingDao.decrementBatchQty(record.recordId, take)
-                    }
+                    reducirRegistro(orderId, record, take)
                 }
             orderDao.refreshOrderStatus(orderId)
         }
@@ -778,11 +900,52 @@ class PickingRepository(
             orderId, orderLineId, scannedEan, actualProductId, measure, caliber
         )
         if (existing != null) {
+            // D-175: pedir etiqueta NUNCA marca el registro previo entero: si
+            // el registro fusionable no era de etiqueta, se separa la unidad
+            // (o el bloque) etiquetado en su propio registro, para que el CSV
+            // pida exactamente las unidades marcadas y no toda la línea.
+            if (needsLabel && !existing.needsLabel) {
+                val nuevo = PickingRecordEntity(
+                    recordId = UUID.randomUUID().toString(),
+                    orderId = orderId,
+                    pickingNumber = pickingNumber,
+                    pickingType = pickingType,
+                    orderLineId = orderLineId,
+                    scannedEan = scannedEan,
+                    ocrRawText = ocrRawText,
+                    originalProductId = originalProductId,
+                    actualProductId = actualProductId,
+                    isSubstituted = originalProductId != actualProductId,
+                    liters = liters,
+                    measure = measure,
+                    caliber = caliber,
+                    batchQty = batchQty,
+                    needsLabel = true,
+                    labelReason = labelReason,
+                    labelFormat = labelFormat,
+                    timestamp = System.currentTimeMillis(),
+                    empleadoEmail = currentEncargado()?.email.orEmpty(),
+                    empleadoNombre = currentEncargado()?.nombre.orEmpty()
+                )
+                insertPickingRecord(nuevo)
+                return nuevo
+            }
+            pickingDao.incrementBatchQty(existing.recordId, batchQty)
             if (needsLabel) {
                 pickingDao.markLabelRequested(existing.recordId, labelReason, labelFormat)
             }
-            pickingDao.incrementBatchQty(existing.recordId, batchQty)
             orderDao.addLinePickedQty(existing.orderLineId.orEmpty(), batchQty)
+            if (needsLabel && labelReason != "CAMBIO_FORMATO" && existing.orderLineId != null) {
+                insertPickingRecord(
+                    existing.copy(
+                        recordId = UUID.randomUUID().toString(),
+                        batchQty = -1,
+                        needsLabel = false,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+                orderDao.addLinePickedQty(existing.orderLineId, -1)
+            }
             orderDao.refreshOrderStatus(orderId)
             return existing.copy(
                 batchQty = existing.batchQty + batchQty,
@@ -814,6 +977,18 @@ class PickingRepository(
             empleadoNombre = currentEncargado()?.nombre.orEmpty()
         )
         insertPickingRecord(record)
+        // D-181: pedir etiqueta por planta danada (rota / pasaporte ilegible)
+        // implica RETIRAR esa unidad: se registra un desacopio de 1 para que
+        // web e informes lo resten. CAMBIO_FORMATO no retira planta.
+        if (needsLabel && labelReason != "CAMBIO_FORMATO" && orderLineId != null) {
+            val espejo = record.copy(
+                recordId = UUID.randomUUID().toString(),
+                batchQty = -1,
+                needsLabel = false
+            )
+            insertPickingRecord(espejo)
+            orderDao.addLinePickedQty(orderLineId, -1)
+        }
         return record
     }
 
@@ -831,7 +1006,8 @@ class PickingRepository(
         hasta: String? = null,
         finca: String? = null,
         fincas: List<String>? = null,
-        estados: List<Int> = listOf(1, 3)
+        estados: List<Int> = listOf(1, 3),
+        completo: Boolean = false
     ): SyncResult {
         val hasProducts = productDao.count() > 0
         val serverVersion = try {
@@ -849,7 +1025,12 @@ class PickingRepository(
 
         val now = System.currentTimeMillis()
         val encargadoChanged = currentEncargado()?.id != lastSyncEncargadoId
-        val needFull = lastFullSyncAt == 0L || (now - lastFullSyncAt) > FULL_SYNC_MAX_AGE_MS || encargadoChanged
+        // D-176: el botón manual "Actualizar" fuerza ventana COMPLETA (sin
+        // delta): recupera siempre la verdad del sistema aunque el cambio
+        // (p. ej. sector/finca relevada de una línea) no haya tocado
+        // FECHA_MODIFICACION del pedido.
+        val needFull = completo || lastFullSyncAt == 0L ||
+            (now - lastFullSyncAt) > FULL_SYNC_MAX_AGE_MS || encargadoChanged
         val pedidos = api.fetchPedidos(
             desde = desde,
             hasta = hasta,
@@ -906,6 +1087,18 @@ class PickingRepository(
                         modifiedOrderIds += p.numero
                         val desc = "Referencia cambiada en línea ${l.posicion ?: 0}: ${prev.productId} → ${l.referencia}"
                         cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = lineId, tipo = "cantidad", descripcion = desc)
+                    }
+                    // D-176: cambio de ubicación real de recogida (relevada)
+                    (prev.fincaAcopio != l.fincaRelevada || prev.sectorAcopio != l.sectorRelevado) &&
+                        (l.fincaRelevada.isNotBlank() || l.sectorRelevado.isNotBlank()) -> {
+                        modifiedOrderIds += p.numero
+                        val antes = listOf(prev.fincaAcopio, prev.sectorAcopio)
+                            .filter { it.isNotBlank() }.joinToString(" · ")
+                            .ifBlank { "(sin ubicación relevada)" }
+                        val ahora = listOf(l.fincaRelevada, l.sectorRelevado)
+                            .filter { it.isNotBlank() }.joinToString(" · ")
+                        val desc = "Ubicación de recogida cambiada en línea ${l.posicion ?: 0} (${l.referencia}): $antes → $ahora"
+                        cambiosDetalle += CambioLineaDetalle(pedido = p.numero, linea = lineId, tipo = "ubicacion", descripcion = desc)
                     }
                 }
                 OrderLineEntity(
@@ -1081,6 +1274,7 @@ class PickingRepository(
 
         val toSend = mutableListOf<ApiRegistro>()
         val toCompensar = mutableListOf<CompensaRegistro>()
+        var compensados = 0
 
         pending.forEach { r ->
             if (r.deleted && !r.wasUploaded) {
@@ -1136,30 +1330,62 @@ class PickingRepository(
             }
             pickingDao.markSyncedBigQuery(toCompensar.map { it.recordId })
             toCompensar.forEach { pickingDao.deleteRecordPhysical(it.recordId) }
+            compensados += toCompensar.size
         }
 
-        if (toSend.isEmpty()) return 0
+        if (toSend.isEmpty()) return compensados
 
+        // D-170: subida por LOTES de 100 (antes iba todo el acumulado en una
+        // petición y un lote grande o un registro conflictivo dejaba los
+        // pendientes colgados indefinidamente). Si un lote falla tras los
+        // reintentos, se aísla registro a registro para no bloquear el resto:
+        // los que fallan individualmente quedan pendientes para el siguiente
+        // ciclo y se informan, pero ya no arrastran al conjunto.
+        var subidos = 0
+        val fallidos = mutableListOf<String>()
+        toSend.chunked(UPLOAD_CHUNK_SIZE).forEach { chunk ->
+            val okIds = enviarChunkConReintentos(api, chunk)
+            if (okIds != null) {
+                pickingDao.markSyncedBigQuery(okIds)
+                subidos += okIds.size
+            } else {
+                chunk.forEach { registro ->
+                    val okIndividual = enviarChunkConReintentos(api, listOf(registro))
+                    if (okIndividual != null) {
+                        pickingDao.markSyncedBigQuery(okIndividual)
+                        subidos += okIndividual.size
+                    } else {
+                        fallidos += registro.recordId
+                    }
+                }
+            }
+        }
+        if (fallidos.isNotEmpty()) {
+            android.util.Log.e(
+                "PickingVE",
+                "Registros que siguen pendientes tras la subida: $fallidos"
+            )
+        }
+        return subidos + compensados
+    }
+
+    /** Envía un chunk con reintentos; null si agotó intentos (chunk o registro conflictivo). */
+    private suspend fun enviarChunkConReintentos(
+        api: PickingApiClient,
+        chunk: List<ApiRegistro>
+    ): List<String>? {
         var attempt = 0
-        var response: ApiUploadResponse? = null
-
         while (attempt < UPLOAD_MAX_ATTEMPTS) {
             try {
-                response = api.uploadRegistros(toSend)
-                break
+                val response = api.uploadRegistros(chunk)
+                return response.acceptedIds.ifEmpty { chunk.map { it.recordId } }
             } catch (e: Exception) {
                 attempt++
-                if (attempt >= UPLOAD_MAX_ATTEMPTS) throw e
+                if (attempt >= UPLOAD_MAX_ATTEMPTS) return null
                 kotlinx.coroutines.delay(1000L * (1L shl (attempt - 1)))
             }
         }
-
-        val accepted = response?.acceptedIds.orEmpty()
-        if (accepted.isNotEmpty()) {
-            pickingDao.markSyncedBigQuery(accepted)
-        }
-
-        return response?.ok ?: 0
+        return null
     }
 
     private fun estadoLabel(estado: Int?): String = when (estado) {
@@ -1204,6 +1430,62 @@ class PickingRepository(
 
     suspend fun recordsForLine(lineId: String): List<PickingRecordEntity> =
         pickingDao.getRecordsForLine(lineId)
+
+    /**
+     * D-182: reduce [qty] unidades del registro ELEGIDO por el encargado
+     * (planta normal o sustitucion). Si ya estaba subido, aplica split-
+     * delete-recreate para que la web reciba la resta via compensacion.
+     * Devuelve true si se aplico.
+     */
+    suspend fun reducirRegistroElegido(
+        orderId: String,
+        record: PickingRecordEntity,
+        qty: Int
+    ): Boolean {
+        val qtyFinal = qty.coerceIn(1, record.batchQty)
+        if (qtyFinal <= 0) return false
+        orderDao.updateLinePickedQty(record.orderLineId ?: return false, maxOf(0, (orderDao.getLine(record.orderLineId)?.pickedQty ?: 0) - qtyFinal))
+        reducirRegistro(orderId, record, qtyFinal)
+        orderDao.refreshOrderStatus(orderId)
+        return true
+    }
+
+    /**
+     * D-182: asiento negativo directo cuando no hay registro local (las plantas
+     * las pistoleo otra tablet). Viaja a BigQuery como cantidad_partida negativa:
+     * web, informes y Control lo restan.
+     */
+    suspend fun insertarEspejoNegativo(
+        line: OrderLineEntity,
+        product: com.vivero.pickingve.data.local.entities.ProductEntity?,
+        qty: Int
+    ): Boolean {
+        val pickingNumber = nextPickingNumber(line.orderId)
+        val espejo = PickingRecordEntity(
+            recordId = UUID.randomUUID().toString(),
+            orderId = line.orderId,
+            pickingNumber = pickingNumber,
+            pickingType = "I",
+            orderLineId = line.orderLineId,
+            scannedEan = product?.ean,
+            ocrRawText = null,
+            originalProductId = line.productId,
+            actualProductId = product?.reference ?: line.productId,
+            isSubstituted = product != null && product.reference != line.productId,
+            liters = null,
+            measure = null,
+            caliber = null,
+            batchQty = -qty.coerceAtLeast(1),
+            needsLabel = false,
+            timestamp = System.currentTimeMillis(),
+            empleadoEmail = currentEncargado()?.email.orEmpty(),
+            empleadoNombre = currentEncargado()?.nombre.orEmpty()
+        )
+        pickingDao.insert(espejo)
+        orderDao.updateLinePickedQty(line.orderLineId, maxOf(0, line.pickedQty - qty))
+        orderDao.refreshOrderStatus(line.orderId)
+        return true
+    }
 
     suspend fun markOrderNotCargado(orderId: String) = orderDao.setOrderNotCargado(orderId)
 
@@ -1277,6 +1559,22 @@ class PickingRepository(
         return ok.size
     }
 
+    /** D-171: limpia el cierre de una línea en Room tras reabrirla. */
+    suspend fun reabrirLineaLocal(lineId: String) = orderDao.clearLineCierre(lineId)
+
+    /** D-172: aplica en Room un lote de asignaciones del reparto guardadas. */
+    suspend fun aplicarRepartoLocal(
+        asignaciones: List<com.vivero.pickingve.data.remote.RepartoAsignacionApi>
+    ) {
+        for (a in asignaciones) {
+            orderDao.setLineOperario(
+                lineId = a.lineaHuella,
+                email = a.operarioEmail,
+                nombre = a.operarioNombre
+            )
+        }
+    }
+
     /** Notifica a la oficina un desfase entre lo declarado y lo puntuado. */
     suspend fun notificarDiscrepancia(
         pedidoId: String,
@@ -1340,26 +1638,19 @@ class PickingRepository(
         orderDao.refreshOrderStatus(orderId)
     }
 
-    /**
-     * Desacopio por escaneo: el EAN se escanea contra una línea concreta y se
-     * descuenta 1 unidad del último registro coincidente de esa línea.
-     */
-    suspend fun unpickLineByScan(orderId: String, lineId: String): Boolean {
-        val records = pickingDao.getRecordsForOrder(orderId)
-            .filter { it.orderLineId == lineId && !it.deleted }
-            .sortedByDescending { it.timestamp }
-        val record = records.firstOrNull()
-            ?: return false
-        if (record.batchQty > 1) {
-            pickingDao.decrementBatchQty(record.recordId, 1)
+    /** Reduce [unidades] de [record]; si estaba subido, compensa via split-delete-recreate. */
+    private suspend fun reducirRegistro(orderId: String, record: PickingRecordEntity, unidades: Int) {
+        val restante = record.batchQty - unidades
+        if (record.wasUploaded) {
+            pickingDao.deleteRecord(record.recordId)
+            if (restante > 0) {
+                pickingDao.insert(record.copy(recordId = java.util.UUID.randomUUID().toString(), batchQty = restante))
+            }
+        } else if (restante > 0) {
+            pickingDao.decrementBatchQty(record.recordId, unidades)
         } else {
             pickingDao.deleteRecord(record.recordId)
         }
-        val line = orderDao.getLinesForOrder(orderId).firstOrNull { it.orderLineId == lineId }
-            ?: return false
-        orderDao.updateLinePickedQty(lineId, maxOf(0, line.pickedQty - 1))
-        orderDao.refreshOrderStatus(orderId)
-        return true
     }
 
     private fun demoProducts(): List<String> =
@@ -1439,7 +1730,7 @@ class PickingRepository(
         chatEstadoDao.clearAll()
     }
 
-    private companion object {
+    companion object {
         const val KEY_FIRST_SYNC = "first_sync_done"
         const val KEY_CATALOG_VERSION = "catalog_version"
         const val KEY_CATALOG_APP_VERSION = "catalog_app_version"
@@ -1448,6 +1739,7 @@ class PickingRepository(
         const val KEY_LAST_SYNC_ENCARGADO = "last_sync_encargado"
         const val FULL_SYNC_MAX_AGE_MS = 12L * 60 * 60 * 1000
         const val UPLOAD_MAX_ATTEMPTS = 3
+        const val UPLOAD_CHUNK_SIZE = 100
         const val DEMO_ORDER_ID = "10045"
         const val KEY_ENCARGADO_ID = "encargado_id"
         const val KEY_ENCARGADO_NOMBRE = "encargado_nombre"
@@ -1460,5 +1752,12 @@ class PickingRepository(
         const val KEY_SELECTED_FINCAS = "selected_fincas"
         const val KEY_SELECTED_DAYS = "selected_days"
         const val KEY_MAQUINARIA = "maquinaria_operario"
+        const val TIPO_ENCARGADO = "ENCARGADO"
+        const val TIPO_OPERARIO = "OPERARIO"
+        const val KEY_SESION_TIPO = "sesion_tipo"
+        const val KEY_OPERARIO_ID = "operario_id"
+        const val KEY_OPERARIO_NOMBRE = "operario_nombre"
+        const val KEY_OPERARIO_EMAIL = "operario_email"
+        const val KEY_OPERARIO_CAMBIA_PASS = "operario_cambia_pass"
     }
 }

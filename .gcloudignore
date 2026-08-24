@@ -1,0 +1,8 @@
+# Ignora solo lo que jamas debe subir al builder
+.git/
+.playwright-mcp/
+.engram/
+apks/
+backups/
+build/
+.gradle/

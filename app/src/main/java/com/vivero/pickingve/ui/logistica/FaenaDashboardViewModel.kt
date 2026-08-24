@@ -24,7 +24,8 @@ data class FaenaLinea(
     val clienteDisplay: String,
     val marcaEfectiva: String,
     val line: OrderLineEntity,
-    val pendiente: Int
+    val pendiente: Int,
+    val esAyuda: Boolean = false
 )
 
 data class FaenaSector(
@@ -48,13 +49,24 @@ data class FaenaDia(
     val fincas: List<FaenaFinca>
 )
 
+/** Compañero disponible para modo ayuda (encargado u operario). */
+data class ColegaFaena(
+    val nombre: String,
+    val email: String,
+    val rol: String,
+    val lineasPendientes: Int
+)
+
 data class FaenaUiState(
     val dias: List<FaenaDia> = emptyList(),
     val maquinaria: String = "",
     val capacidadViaje: Int = CAPACIDAD_DEFECTO,
     val miNombre: String = "",
-    val ayudaDe: EncargadoEntity? = null,
-    val encargadosDisponibles: List<Pair<EncargadoEntity, Int>> = emptyList(),
+    val esOperario: Boolean = false,
+    val esSuperusuario: Boolean = false,
+    val debeCambiarPassword: Boolean = false,
+    val ayudaDe: ColegaFaena? = null,
+    val colegasDisponibles: List<ColegaFaena> = emptyList(),
     val totalPlantas: Int = 0
 ) {
     companion object {
@@ -66,9 +78,10 @@ class FaenaDashboardViewModel(
     private val repository: PickingRepository
 ) : ViewModel() {
 
-    private val ayudaDe = MutableStateFlow<EncargadoEntity?>(null)
+    private val ayudaDe = MutableStateFlow<ColegaFaena?>(null)
     private val maquinaria = MutableStateFlow(repository.maquinariaActual())
-    private val encargados = MutableStateFlow<List<EncargadoEntity>>(emptyList())
+    private val colegas = MutableStateFlow<List<ColegaFaena>>(emptyList())
+    private val permisosAyuda = MutableStateFlow<Set<String>>(emptySet())
 
     init {
         refrescarPerfil()
@@ -76,41 +89,146 @@ class FaenaDashboardViewModel(
 
     fun refrescarPerfil() {
         viewModelScope.launch {
-            encargados.value = repository.encargadosLocales().filter { it.activo }
             try {
-                repository.refrescarPerfilOperario(PickingApiClient())
+                repository.syncEncargados(PickingApiClient())
             } catch (e: Exception) {
-                // Sin red se usa la maquinaria cacheada
+                // Offline: se usa la copia local
             }
-            maquinaria.value = repository.maquinariaActual()
+            try {
+                repository.syncOperarios(PickingApiClient())
+            } catch (e: Exception) {
+                // Offline: se usa la copia local
+            }
+            if (repository.tipoSesion() == PickingRepository.TIPO_OPERARIO) {
+                repository.currentOperario()?.let { op ->
+                    maquinaria.value = op.maquinaria
+                }
+            } else {
+                try {
+                    repository.refrescarPerfilOperario(PickingApiClient())
+                } catch (e: Exception) {
+                    // Sin red se usa la cacheada
+                }
+                maquinaria.value = repository.maquinariaActual()
+            }
+            refrescarColegas()
+            recargarPermisosAyuda()
         }
     }
 
-    fun activarAyuda(enc: EncargadoEntity?) {
-        ayudaDe.value = enc
+    private fun refrescarColegas() {
+        val miEmail = repository.emailFaena().trim()
+        viewModelScope.launch {
+            val listaEnc = repository.encargadosLocales().filter { it.activo }
+            val listaOp = repository.operariosLocales()
+            val todos = buildList {
+                listaEnc.forEach { e ->
+                    add(ColegaFaena(nombre = e.nombre, email = e.email, rol = "ENCARGADO", lineasPendientes = 0))
+                }
+                listaOp.forEach { o ->
+                    add(
+                        ColegaFaena(
+                            nombre = "${o.nombre} ${o.apellidos}".trim(),
+                            email = o.email,
+                            rol = "OPERARIO" + if (o.maquinaria.isNotBlank()) " · ${o.maquinaria}" else "",
+                            lineasPendientes = 0
+                        )
+                    )
+                }
+            }
+                .filter { !it.email.equals(miEmail, ignoreCase = true) }
+                .distinctBy { it.email.lowercase() }
+            colegas.value = todos
+        }
+    }
+
+    fun activarAyuda(colega: ColegaFaena?) {
+        ayudaDe.value = colega
+        recargarPermisosAyuda()
+    }
+
+    /** D-169: el ayudante solo ve las líneas que le fueron concedidas. */
+    private fun recargarPermisosAyuda() {
+        viewModelScope.launch {
+            permisosAyuda.value = try {
+                PickingApiClient()
+                    .fetchAyudasConcedidas(repository.emailFaena())
+                    .map { it.lineaHuella }
+                    .toSet()
+            } catch (e: Exception) {
+                emptySet()
+            }
+        }
+    }
+
+    fun cambiarPassword(actual: String, nueva: String, onResultado: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val email = repository.currentOperario()?.email.orEmpty()
+            if (email.isBlank()) {
+                onResultado(false, "Sesión de operario no encontrada")
+                return@launch
+            }
+            try {
+                repository.cambiarPasswordOperario(PickingApiClient(), email, actual, nueva)
+                sesPrefsCambioHecho()
+                onResultado(true, "Contraseña actualizada")
+            } catch (e: Exception) {
+                onResultado(false, "No se pudo cambiar: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun sesPrefsCambioHecho() {
+        // Refresca la sesión para limpiar el aviso de cambio obligatorio
+        repository.refreshCurrentEncargadoFromLocal()
+        val op = repository.operariosLocales().firstOrNull {
+            it.email.equals(repository.emailFaena(), ignoreCase = true)
+        }
+        if (op != null && repository.tipoSesion() == PickingRepository.TIPO_OPERARIO) {
+            repository.setCurrentOperario(op.copy(debeCambiarPassword = false))
+        }
+    }
+
+    /** Concede al colega las líneas seleccionadas de MI faena visible (D-169). */
+    fun concederAyuda(lineas: List<Pair<String, String>>, ayudanteEmail: String, onListo: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                PickingApiClient().concederAyuda(
+                    lineas.map { (pedido, linea) ->
+                        com.vivero.pickingve.data.remote.AyudaPermisoLineaApi(pedidoId = pedido, lineaHuella = linea)
+                    },
+                    ayudanteEmail,
+                    repository.emailFaena()
+                )
+            } catch (e: Exception) {
+                // Sin red: se reintenta desde el panel o más tarde
+            }
+            onListo()
+        }
     }
 
     val uiState: StateFlow<FaenaUiState> = combine(
         repository.observeOrdersConLineas(),
         ayudaDe,
         maquinaria,
-        encargados
-    ) { pedidos, ayuda, mq, colegas ->
-        construirEstado(pedidos, ayuda, mq, colegas)
+        combine(colegas, permisosAyuda) { c, p -> c to p }
+    ) { pedidos, ayuda, mq, extra ->
+        construirEstado(pedidos, ayuda, mq, extra.first, extra.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FaenaUiState())
 
     private fun construirEstado(
         pedidos: List<OrderConLineas>,
-        ayuda: EncargadoEntity?,
+        ayuda: ColegaFaena?,
         mq: String,
-        colegas: List<EncargadoEntity>
+        candidatosColegas: List<ColegaFaena>,
+        permisos: Set<String>
     ): FaenaUiState {
-        val yo = repository.currentEncargado()
         val hoy = LocalDate.now()
         val capacidad = capacidadPara(mq)
-        val miEmail = yo?.email.orEmpty().trim()
+        val miEmail = repository.emailFaena().trim()
+        val esSuper = repository.esSuperusuario()
+        val esOperario = repository.tipoSesion() == PickingRepository.TIPO_OPERARIO
 
-        // Acumulador por (día, finca de acopio)
         data class Acum(
             val nombreFinca: String,
             val lineas: MutableList<FaenaLinea> = mutableListOf()
@@ -120,7 +238,7 @@ class FaenaDashboardViewModel(
         var totalPlantas = 0
 
         val hayReparto = pedidos.any { p ->
-            p.lineas.any { it.operarioEmail.isNotBlank() || it.empleado.isNotBlank() }
+            p.lineas.any { it.operarioEmail.isNotBlank() }
         }
 
         for (p in pedidos) {
@@ -132,18 +250,18 @@ class FaenaDashboardViewModel(
             val marcaPedido = p.order.marcaPedido
 
             for (line in p.lineas.filter { it.vigente && it.motivoCierre.isBlank() }) {
-                val asignada = when {
-                    ayuda != null ->
-                        line.operarioEmail.equals(ayuda.email, ignoreCase = true) ||
-                            (!ayuda.usuario.isBlank() && line.empleado.isNotBlank() &&
-                                line.empleado.equals(ayuda.usuario, ignoreCase = true))
+                val asignadaAMi = line.operarioEmail.isNotBlank() &&
+                    line.operarioEmail.equals(miEmail, ignoreCase = true)
+                // D-167/D-169: cada rol ve SOLO lo asignado. El SUPERUSUARIO ve todo.
+                // En modo ayuda solo entran las líneas con permiso concreto concedido.
+                val visible = when {
+                    ayuda != null -> asignadaAAyuda(line, ayuda) &&
+                        permisos.contains(line.orderLineId)
+                    esSuper -> true
                     !hayReparto -> true
-                    line.operarioEmail.isNotBlank() ->
-                        line.operarioEmail.equals(miEmail, ignoreCase = true)
-                    line.empleado.isNotBlank() -> false
-                    else -> true
+                    else -> asignadaAMi
                 }
-                if (!asignada) continue
+                if (!visible) continue
                 val pendiente =
                     (line.requestedQty - maxOf(line.pickedQty, line.acopiadoServidor))
                         .coerceAtLeast(0)
@@ -164,7 +282,8 @@ class FaenaDashboardViewModel(
                     ).principal,
                     marcaEfectiva = line.marca.ifBlank { marcaPedido },
                     line = line,
-                    pendiente = pendiente
+                    pendiente = pendiente,
+                    esAyuda = ayuda != null
                 )
                 totalPlantas += pendiente
             }
@@ -203,35 +322,24 @@ class FaenaDashboardViewModel(
                 )
             }
 
+        val debeCambiarPass = repository.currentOperario()?.debeCambiarPassword == true
+
         return FaenaUiState(
             dias = dias,
             maquinaria = mq,
             capacidadViaje = capacidad,
-            miNombre = yo?.nombre.orEmpty(),
+            miNombre = repository.nombreFaena(),
+            esOperario = esOperario,
+            esSuperusuario = esSuper,
+            debeCambiarPassword = debeCambiarPass,
             ayudaDe = ayuda,
-            encargadosDisponibles = colegas
-                .filter { !it.id.equals(yo?.id, ignoreCase = true) }
-                .map { it to contarFaenaColega(pedidos, it, hoy) },
+            colegasDisponibles = candidatosColegas,
             totalPlantas = totalPlantas
         )
     }
 
-    private fun contarFaenaColega(
-        pedidos: List<OrderConLineas>,
-        colega: EncargadoEntity,
-        hoy: LocalDate
-    ): Int = pedidos.sumOf { p ->
-        val fecha = p.order.fechaCarga?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
-        }
-        if (p.order.cargado || fecha == null || fecha.isBefore(hoy)) 0
-        else p.lineas.count { l ->
-            l.vigente && l.motivoCierre.isBlank() &&
-                (l.operarioEmail.equals(colega.email, ignoreCase = true) ||
-                    (!colega.usuario.isBlank() && l.empleado.isNotBlank() &&
-                        l.empleado.equals(colega.usuario, ignoreCase = true)))
-        }
-    }
+    private fun asignadaAAyuda(line: OrderLineEntity, ayuda: ColegaFaena): Boolean =
+        line.operarioEmail.isNotBlank() && line.operarioEmail.equals(ayuda.email, ignoreCase = true)
 
     companion object {
         fun capacidadPara(maquinaria: String): Int {

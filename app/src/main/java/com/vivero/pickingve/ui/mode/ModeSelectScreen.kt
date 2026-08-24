@@ -28,6 +28,7 @@ fun ModeSelectScreen(
     encargadoNombre: String,
     onPicking: () -> Unit,
     onInventario: () -> Unit,
+    onLogistica: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     Scaffold(
@@ -51,6 +52,12 @@ fun ModeSelectScreen(
         ) {
             Text("Selecciona el modo de trabajo", style = MaterialTheme.typography.titleMedium)
             Button(
+                onClick = onLogistica,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Mi faena (logística)")
+            }
+            OutlinedButton(
                 onClick = onPicking,
                 modifier = Modifier.fillMaxWidth()
             ) {

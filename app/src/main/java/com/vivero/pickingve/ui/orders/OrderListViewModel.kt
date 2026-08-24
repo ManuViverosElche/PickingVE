@@ -158,7 +158,8 @@ class OrderListViewModel(
                     desde = desde,
                     hasta = hasta,
                     finca = if (selected.size == 1) selected.first() else null,
-                    fincas = if (selected.size > 1) selected.toList() else null
+                    fincas = if (selected.size > 1) selected.toList() else null,
+                    completo = true
                 )
                 try {
                     val cambiosApi = result.cambiosDetalle.map { c ->

@@ -134,6 +134,8 @@ fun PickingScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pendingLabels by viewModel.pendingLabels.collectAsStateWithLifecycle()
     val chatEstados by viewModel.chatEstados.collectAsStateWithLifecycle()
+    // D-175: cerrar línea solo para operarios de acopio
+    val esOperarioAcopio = remember { viewModel.esOperarioAcopio() }
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(false) }
     var scannerModo by remember { mutableStateOf<CameraModo?>(null) }
@@ -349,6 +351,7 @@ fun PickingScreen(
                         labelsRequestedByLine = state.labelsRequestedByLine,
                         chatEstados = chatEstados,
                         compensaciones = state.compensacionesPorLinea,
+                        esOperarioAcopio = esOperarioAcopio,
                         onUnpick = { unpickLine = it },
                         onManualMark = { manualMarkLine = it },
                         onOpenChat = { chatLinea = it.orderLineId },
@@ -386,6 +389,8 @@ fun PickingScreen(
         LinePickDialog(
             pick = pick,
             compensaciones = state.compensacionesPorLinea,
+            litrajes = state.litrajes,
+            sectores = state.sectores,
             onPick = viewModel::assignToLine,
             onAmpliacion = viewModel::confirmAmpliacion,
             onDismiss = viewModel::dismissLinePick
@@ -416,7 +421,11 @@ fun PickingScreen(
         UnpickScanConfirmDialog(
             pending = pending,
             compensaciones = state.compensacionesPorLinea,
-            onConfirm = viewModel::confirmUnpickScan,
+            litrajes = state.litrajes,
+            sectores = state.sectores,
+            onConfirm = { recordId, qty ->
+                viewModel.confirmUnpickScan(recordId, qty)
+            },
             onDismiss = viewModel::cancelUnpickScan
         )
     }
@@ -999,6 +1008,7 @@ private fun OrderLinesList(
     labelsRequestedByLine: Map<String, Int>,
     chatEstados: List<ChatEstadoEntity>,
     compensaciones: Map<String, Int>,
+    esOperarioAcopio: Boolean,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
     onOpenChat: (OrderLineEntity) -> Unit,
@@ -1061,6 +1071,7 @@ private fun OrderLinesList(
                     labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                     chatEstados = chatEstados,
                     compensaciones = compensaciones,
+                    esOperarioAcopio = esOperarioAcopio,
                     shownPickedOverride = null,
                     onUnpick = onUnpick,
                     onManualMark = onManualMark,
@@ -1087,6 +1098,7 @@ private fun OrderLinesList(
                         labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                         chatEstados = chatEstados,
                         compensaciones = compensaciones,
+                        esOperarioAcopio = esOperarioAcopio,
                         shownPickedOverride = null,
                         onUnpick = onUnpick,
                         onManualMark = onManualMark,
@@ -1114,6 +1126,7 @@ private fun OrderLinesList(
                         labelsRequested = labelsRequestedByLine[line.orderLineId] ?: 0,
                         chatEstados = chatEstados,
                         compensaciones = compensaciones,
+                        esOperarioAcopio = esOperarioAcopio,
                         shownPickedOverride = null,
                         onUnpick = onUnpick,
                         onManualMark = onManualMark,
@@ -1136,6 +1149,7 @@ private fun OrderLineCard(
     labelsRequested: Int,
     chatEstados: List<ChatEstadoEntity>,
     compensaciones: Map<String, Int>,
+    esOperarioAcopio: Boolean,
     shownPickedOverride: Int?,
     onUnpick: (OrderLineEntity) -> Unit,
     onManualMark: (OrderLineEntity) -> Unit,
@@ -1436,7 +1450,9 @@ private fun OrderLineCard(
                         modifier = Modifier.padding(end = 4.dp)
                     )
                 }
-                if (!cerrada && line.vigente && !complete && line.requestedQty > shownPicked) {
+                if (esOperarioAcopio && !cerrada && line.vigente && !complete &&
+                    line.requestedQty > shownPicked
+                ) {
                     TextButton(onClick = { onCerrarLinea(line) }) {
                         Text("Cerrar línea")
                     }
@@ -1531,6 +1547,8 @@ private fun LineBadge(
 private fun LinePickDialog(
     pick: PendingLinePick,
     compensaciones: Map<String, Int>,
+    litrajes: List<LitrajeEntity>,
+    sectores: List<SectorEntity>,
     onPick: (OrderLineEntity) -> Unit,
     onAmpliacion: () -> Unit,
     onDismiss: () -> Unit
@@ -1541,9 +1559,14 @@ private fun LinePickDialog(
         "¿A qué línea corresponde?"
     }
     val product = pick.product
+    // D-174: mostrar siempre DESCRIPCIONES de litraje y sector, nunca códigos
+    val litrajeDescLeido = litrajes
+        .firstOrNull { it.id == product.litraje }?.descripcion ?: product.litraje
+    val sectorDescLeido = sectores
+        .firstOrNull { it.id == product.sector }?.descripcion ?: product.sector
     val productAttrs = listOfNotNull(
-        product.litraje.takeIf { it.isNotBlank() }?.let { "Litraje: $it" },
-        product.sector.takeIf { it.isNotBlank() }?.let { "Sector: $it" }
+        litrajeDescLeido.takeIf { it.isNotBlank() }?.let { "Litraje: $it" },
+        sectorDescLeido.takeIf { it.isNotBlank() }?.let { "Sector: $it" }
     ).joinToString(" · ")
 
     AlertDialog(
@@ -2522,13 +2545,14 @@ private fun ReferenciaVariantePicker(
         if (referencia.isBlank()) emptyList()
         else parser.buscarPorReferencia(referencia, productos)
     }
+    // D-174: SIEMPRE solo los litrajes/sectores que tiene esa referencia en el
+    // catálogo (combinaciones de CODIGOS_EAN). Si la referencia no está o no
+    // tiene variantes, no se ofrece ningún valor en lugar de ofrecer todos.
     val litrajes = remember(productosRef, litrajesAll) {
-        if (productosRef.isEmpty()) litrajesAll
-        else litrajeOptionsDe(productosRef, litrajesAll, null)
+        litrajeOptionsDe(productosRef, litrajesAll, null)
     }
     val sectores = remember(productosRef, sectoresAll) {
-        if (productosRef.isEmpty()) sectoresAll
-        else sectorOptionsDe(productosRef, sectoresAll, null)
+        sectorOptionsDe(productosRef, sectoresAll, null)
     }
     val sugerencias = remember(referencia, productos, productosRef) {
         if (referencia.length < 3 || productosRef.isNotEmpty()) emptyList()
@@ -2697,16 +2721,31 @@ private fun OcrMatchDialog(
     )
 }
 
-/** Confirmación de desacopio por escaneo: igual que al acopiar, se verifica antes. */
+/** D-182: confirmacion de desacopio por escaneo con ELECCION de registro. */
 @Composable
 private fun UnpickScanConfirmDialog(
     pending: PendingUnpickScan,
     compensaciones: Map<String, Int>,
-    onConfirm: () -> Unit,
+    litrajes: List<LitrajeEntity>,
+    sectores: List<SectorEntity>,
+    onConfirm: (recordIdElegido: String?, qty: Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     val product = pending.product
     val line = pending.line
+    val litrajeDescLeido = litrajes
+        .firstOrNull { it.id == product.litraje }?.descripcion ?: product.litraje
+    val sectorDescLeido = sectores
+        .firstOrNull { it.id == product.sector }?.descripcion ?: product.sector
+
+    var elegidoId by remember { mutableStateOf(pending.candidatos.firstOrNull()?.recordId) }
+    var qtyText by remember { mutableStateOf(
+        pending.candidatos.firstOrNull()?.batchQty?.coerceAtLeast(1)?.toString() ?: "1"
+    ) }
+    val elegido = pending.candidatos.firstOrNull { it.recordId == elegidoId }
+    val qty = qtyText.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val qtyValida = elegido == null || qty <= elegido.batchQty
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Desacopiar por escaneo") },
@@ -2719,8 +2758,8 @@ private fun UnpickScanConfirmDialog(
                 )
                 Text(
                     product.reference +
-                        (product.litraje.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") +
-                        (product.sector.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                        (litrajeDescLeido.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") +
+                        (sectorDescLeido.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2729,19 +2768,85 @@ private fun UnpickScanConfirmDialog(
                     "Línea ${line.posicion} · ${line.productId}" +
                         (if (line.litrajeDesc.isNotBlank()) " · ${line.litrajeDesc}" else "") +
                         (if (line.sectorDesc.isNotBlank()) " · ${line.sectorDesc}" else "") +
-                        " · Pedido: ${line.requestedQty} · Acopiadas: ${maxOf(line.pickedQty, (line.acopiadoServidor - (compensaciones[line.orderLineId] ?: 0)).coerceAtLeast(0))}",
+                        " · Pedido: ${line.requestedQty}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    "Se desacopiará 1 unidad de la planta escaneada.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                if (pending.sinRegistrosLocales || pending.candidatos.isEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "No hay registros locales de esta línea (pistoleados en otra tablet). " +
+                                "Se registrará un desacopio directo de la cantidad indicada.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                } else {
+                    Text(
+                        "Elige de dónde desacopias:",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
+                        items(pending.candidatos, key = { it.recordId }) { rec ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { elegidoId = rec.recordId }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = elegidoId == rec.recordId,
+                                    onClick = { elegidoId = rec.recordId }
+                                )
+                                Column(modifier = Modifier.padding(start = 6.dp)) {
+                                    Text(
+                                        "${rec.actualProductId}" +
+                                            (rec.isSubstituted.takeIf { it }?.let { "  (sustitución)" } ?: ""),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (elegidoId == rec.recordId) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    Text(
+                                        "${rec.batchQty} uds · ${java.text.DateFormat.getDateTimeInstance(
+                                            java.text.DateFormat.SHORT, java.text.DateFormat.SHORT
+                                        ).format(java.util.Date(rec.timestamp))}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = qtyText,
+                    onValueChange = { qtyText = it.filter(Char::isDigit).take(5) },
+                    label = { Text("Cantidad a desacopiar") },
+                    isError = !qtyValida,
+                    supportingText = {
+                        if (!qtyValida) Text("Máximo ${elegido?.batchQty ?: 1} del registro elegido")
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Desacoplar 1") }
+            Button(
+                onClick = { onConfirm(elegidoId, qty) },
+                enabled = qtyValida && qty >= 1 &&
+                    (pending.candidatos.isEmpty() || elegido != null)
+            ) { Text("Desacopiar $qty") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancelar") }

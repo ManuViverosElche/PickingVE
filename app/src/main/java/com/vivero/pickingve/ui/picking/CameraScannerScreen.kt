@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material3.Button
@@ -261,6 +262,23 @@ fun CameraScannerScreen(
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
+                    }
+                }
+                Button(
+                    onClick = { lanzarOcr() },
+                    enabled = !ocrLoading && imageCapture != null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    if (ocrLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Text("  Leyendo etiqueta…")
+                    } else {
+                        Text("CAPTURAR ETIQUETA SIN EAN (OCR)")
                     }
                 }
                 Text(

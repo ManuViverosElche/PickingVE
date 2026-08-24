@@ -65,7 +65,7 @@ fun LoginScreen(
             modifier = Modifier.padding(bottom = 4.dp)
         )
         Text(
-            text = "Acceso de encargados",
+            text = "Acceso de encargados y operarios",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -75,27 +75,43 @@ fun LoginScreen(
             CircularProgressIndicator(modifier = Modifier.padding(top = 40.dp))
         } else {
             LazyColumn(
-                modifier = Modifier.heightIn(max = 240.dp),
+                modifier = Modifier.heightIn(max = 320.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
                     Text(
-                        text = "Encargado",
+                        text = "Encargados",
                         style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                 }
-                items(state.encargados, key = { it.id }) { enc ->
-                    EncargadoRow(
-                        encargado = enc,
-                        selected = enc.usuario == selectedUsuario,
-                        onSelect = { selectedUsuario = enc.usuario }
+                items(state.encargados, key = { "E-${it.id}" }) { enc ->
+                    UsuarioRow(
+                        titulo = enc.nombre,
+                        subtitulo = if (enc.rol.isBlank()) "ENCARGADO" else enc.rol,
+                        selected = selectedUsuario == LoginViewModel.PREFIJO_ENCARGADO + enc.usuario,
+                        onSelect = { selectedUsuario = LoginViewModel.PREFIJO_ENCARGADO + enc.usuario }
                     )
                 }
-                if (state.encargados.isEmpty()) {
+                item {
+                    Text(
+                        text = "Operarios de acopio",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                    )
+                }
+                items(state.operarios, key = { "O-${it.id}" }) { op ->
+                    UsuarioRow(
+                        titulo = "${op.nombre} ${op.apellidos}".trim(),
+                        subtitulo = "OPERARIO" + if (op.maquinaria.isNotBlank()) " · ${op.maquinaria}" else "",
+                        selected = selectedUsuario == LoginViewModel.PREFIJO_OPERARIO + op.email,
+                        onSelect = { selectedUsuario = LoginViewModel.PREFIJO_OPERARIO + op.email }
+                    )
+                }
+                if (state.encargados.isEmpty() && state.operarios.isEmpty()) {
                     item {
                         Text(
-                            text = state.error ?: "No hay encargados descargados",
+                            text = state.error ?: "No hay usuarios descargados",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -167,8 +183,9 @@ fun LoginScreen(
 }
 
 @Composable
-private fun EncargadoRow(
-    encargado: EncargadoEntity,
+private fun UsuarioRow(
+    titulo: String,
+    subtitulo: String,
     selected: Boolean,
     onSelect: () -> Unit
 ) {
@@ -182,11 +199,11 @@ private fun EncargadoRow(
             RadioButton(selected = selected, onClick = onSelect)
             Column(modifier = Modifier.padding(start = 8.dp)) {
                 Text(
-                    text = encargado.nombre,
+                    text = titulo,
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    text = if (encargado.rol.isBlank()) "ENCARGADO" else encargado.rol,
+                    text = subtitulo,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

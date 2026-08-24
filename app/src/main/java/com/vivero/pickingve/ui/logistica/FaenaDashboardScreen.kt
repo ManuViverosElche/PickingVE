@@ -17,17 +17,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Agriculture
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -35,14 +41,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,9 +57,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.vivero.pickingve.data.local.entities.EncargadoEntity
 import com.vivero.pickingve.ui.theme.MarkedBorderColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,10 +67,13 @@ import com.vivero.pickingve.ui.theme.MarkedBorderColor
 fun FaenaDashboardScreen(
     viewModel: FaenaDashboardViewModel,
     onBack: () -> Unit,
-    onOpenPedido: (String) -> Unit
+    onOpenPedido: (String) -> Unit,
+    onOpenGestion: () -> Unit = {},
+    onLogout: () -> Unit = {}
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsState()
     var mostrarAyuda by remember { mutableStateOf(false) }
+    var mostrarConceder by remember { mutableStateOf(false) }
     var fincaAbierta by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -71,13 +81,27 @@ fun FaenaDashboardScreen(
             TopAppBar(
                 title = { Text("Mi faena") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    if (state.esOperario) {
+                        IconButton(onClick = onLogout) {
+                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Salir")
+                        }
+                    } else {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.refrescarPerfil(); mostrarAyuda = true }) {
-                        Icon(Icons.Filled.Groups, contentDescription = "Modo ayuda")
+                    if (state.esSuperusuario && !state.esOperario) {
+                        IconButton(onClick = onOpenGestion) {
+                            Icon(
+                                Icons.Filled.AdminPanelSettings,
+                                contentDescription = "Gestión de faena"
+                            )
+                        }
+                    }
+                    IconButton(onClick = { viewModel.refrescarPerfil(); mostrarConceder = true }) {
+                        Icon(Icons.Filled.Groups, contentDescription = "Ayuda entre operarios")
                     }
                 }
             )
@@ -103,7 +127,7 @@ fun FaenaDashboardScreen(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            "EstÃ¡s viendo la faena de ${state.ayudaDe?.nombre}",
+                            "Modo ayuda · solo ves las líneas que ${state.ayudaDe?.nombre} te ha concedido",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -131,7 +155,11 @@ fun FaenaDashboardScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "No tienes faena pendiente para los prÃ³ximos dÃ­as",
+                        if (state.esOperario) {
+                            "No tienes líneas asignadas hoy.\nHabla con tu encargado si esperabas faena."
+                        } else {
+                            "No tienes faena pendiente para los próximos días"
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -172,13 +200,35 @@ fun FaenaDashboardScreen(
 
     if (mostrarAyuda) {
         AyudaDialog(
-            candidatos = state.encargadosDisponibles,
+            candidatos = state.colegasDisponibles,
             actual = state.ayudaDe,
             onSeleccion = {
                 viewModel.activarAyuda(it)
                 mostrarAyuda = false
             },
             onDismiss = { mostrarAyuda = false }
+        )
+    }
+
+    if (mostrarConceder) {
+        ConcederAyudaDialog(
+            state = state,
+            onConceder = { lineas, email ->
+                viewModel.concederAyuda(lineas, email) { mostrarConceder = false }
+            },
+            onVerFaenaDe = { colega ->
+                viewModel.activarAyuda(colega)
+                mostrarConceder = false
+            },
+            onDismiss = { mostrarConceder = false }
+        )
+    }
+
+    if (state.debeCambiarPassword) {
+        CambioPasswordObligatorioDialog(
+            onAceptar = { actual, nueva ->
+                viewModel.cambiarPassword(actual, nueva) { _, _ -> }
+            }
         )
     }
 }
@@ -203,10 +253,17 @@ private fun CabeceraPerfil(state: FaenaUiState) {
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = if (state.maquinaria.isBlank()) {
-                        "Maquinaria sin configurar Â· viaje estimado ${state.capacidadViaje} plantas"
-                    } else {
-                        "${state.maquinaria} Â· ~${state.capacidadViaje} plantas por viaje"
+                    text = buildString {
+                        append(if (state.esOperario) "Operario de acopio" else "Encargado")
+                        if (state.esSuperusuario) append(" · SUPERUSUARIO")
+                        append(" · ")
+                        append(
+                            if (state.maquinaria.isBlank()) {
+                                "~${state.capacidadViaje} plantas/viaje"
+                            } else {
+                                "${state.maquinaria} · ~${state.capacidadViaje} plantas/viaje"
+                            }
+                        )
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -255,7 +312,7 @@ private fun FaenaFincaCard(
                     Text(
                         text = buildString {
                             append("${finca.plantasPendientes} plantas pendientes")
-                            append(" Â· ~${finca.viajesEstimados} ${if (finca.viajesEstimados == 1) "viaje" else "viajes"}")
+                            append(" · ~${finca.viajesEstimados} ${if (finca.viajesEstimados == 1) "viaje" else "viajes"}")
                             if (maquinaria.isNotBlank()) append(" ($maquinaria)")
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -282,10 +339,7 @@ private fun FaenaFincaCard(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            if (sector.lineas.any { l ->
-                                    FaenaDashboardViewModel.esUltra(l)
-                                }
-                            ) {
+                            if (sector.lineas.any { l -> FaenaDashboardViewModel.esUltra(l) }) {
                                 Icon(
                                     Icons.Filled.CheckCircle,
                                     contentDescription = null,
@@ -295,7 +349,7 @@ private fun FaenaFincaCard(
                                 Text(" ", style = MaterialTheme.typography.labelMedium)
                             }
                             Text(
-                                "${sector.sector} Â· ${sector.plantasPendientes}",
+                                "${sector.sector} · ${sector.plantasPendientes}",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -310,7 +364,8 @@ private fun FaenaFincaCard(
                     HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
                     finca.sectores.forEach { sector ->
                         Text(
-                            text = "Sector ${sector.sector}",
+                            text = "Sector ${sector.sector}" +
+                                if (sector.lineas.any { it.esAyuda }) " · (ayuda)" else "",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
@@ -376,7 +431,7 @@ private fun FaenaLineaRow(linea: FaenaLinea, onClick: () -> Unit) {
                             linea.line.litrajeDesc.takeIf { it.isNotBlank() },
                             linea.marcaEfectiva.takeIf { it.isNotBlank() }?.let { "Marca $it" },
                             if (linea.line.marcado) "MARCADA" else null
-                        ).joinToString(" Â· "),
+                        ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -403,9 +458,9 @@ private fun FaenaLineaRow(linea: FaenaLinea, onClick: () -> Unit) {
 
 @Composable
 private fun AyudaDialog(
-    candidatos: List<Pair<EncargadoEntity, Int>>,
-    actual: EncargadoEntity?,
-    onSeleccion: (EncargadoEntity?) -> Unit,
+    candidatos: List<ColegaFaena>,
+    actual: ColegaFaena?,
+    onSeleccion: (ColegaFaena?) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -414,7 +469,8 @@ private fun AyudaDialog(
         text = {
             Column {
                 Text(
-                    "Elige a quÃ© compaÃ±ero vas a ayudar. VerÃ¡s su faena y lo que acopies se registrarÃ¡ como ayuda.",
+                    "Solo verás las líneas que el compañero te haya concedido expresamente " +
+                        "(se conceden desde este mismo diálogo, sección \"Dar ayuda\").",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -424,19 +480,19 @@ private fun AyudaDialog(
                         Text("Volver a mi faena")
                     }
                 }
-                candidatos.forEach { (enc, lineas) ->
-                    FilterChip(
-                        selected = actual?.id == enc.id,
-                        onClick = { onSeleccion(enc) },
-                        label = {
-                            Text("${enc.nombre} ($lineas lÃ­neas)")
-                        },
-                        modifier = Modifier.padding(vertical = 2.dp)
-                    )
+                LazyColumn(modifier = Modifier.height(280.dp)) {
+                    items(candidatos, key = { it.email }) { colega ->
+                        FilterChip(
+                            selected = actual?.email == colega.email,
+                            onClick = { onSeleccion(colega) },
+                            label = { Text("${colega.nombre} · ${colega.rol}") },
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
                 }
                 if (candidatos.isEmpty()) {
                     Text(
-                        "No hay otros compaÃ±eros con faena asignada",
+                        "No hay otros usuarios dados de alta",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -444,6 +500,166 @@ private fun AyudaDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Cerrar") }
+        }
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ConcederAyudaDialog(
+    state: FaenaUiState,
+    onConceder: (List<Pair<String, String>>, String) -> Unit,
+    onVerFaenaDe: (ColegaFaena) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var colegaSeleccionado by remember { mutableStateOf<ColegaFaena?>(null) }
+    var seleccionadas by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ayuda entre operarios") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "1) Elige un compañero y márcale líneas de tu faena para que pueda ayudarte. " +
+                        "2) O entra a ver la faena que ya te han concedido.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    state.colegasDisponibles.forEach { colega ->
+                        FilterChip(
+                            selected = colegaSeleccionado?.email == colega.email,
+                            onClick = {
+                                colegaSeleccionado = colega
+                                seleccionadas = emptySet()
+                            },
+                            label = { Text(colega.nombre.substringBefore(' ')) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                if (colegaSeleccionado != null) {
+                    Text(
+                        "Líneas de tu faena:",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    state.dias.forEach { dia ->
+                        dia.fincas.forEach { finca ->
+                            finca.sectores.forEach { sector ->
+                                sector.lineas.forEach { fl ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Checkbox(
+                                            checked = fl.line.orderLineId in seleccionadas,
+                                            onCheckedChange = { marcado ->
+                                                seleccionadas =
+                                                    if (marcado) seleccionadas + fl.line.orderLineId
+                                                    else seleccionadas - fl.line.orderLineId
+                                            }
+                                        )
+                                        Text(
+                                            "${fl.line.productName} (+${fl.pendiente})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            val colega = colegaSeleccionado ?: return@Button
+                            val todas = state.dias
+                                .flatMap { it.fincas }
+                                .flatMap { it.sectores }
+                                .flatMap { it.lineas }
+                            val lineas = seleccionadas.mapNotNull { id ->
+                                todas.firstOrNull { it.line.orderLineId == id }
+                                    ?.let { it.orderId to id }
+                            }
+                            if (lineas.isNotEmpty()) {
+                                onConceder(lineas, colega.email)
+                            }
+                        },
+                        enabled = seleccionadas.isNotEmpty(),
+                        modifier = Modifier.padding(top = 6.dp)
+                    ) {
+                        Text("Conceder ${seleccionadas.size} línea(s)")
+                    }
+                }
+                if (state.ayudaDe != null) {
+                    TextButton(onClick = { onVerFaenaDe(state.ayudaDe!!) }) {
+                        Text("Ya me han concedido ayuda: ver mi modo ayuda activo")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cerrar") }
+        }
+    )
+}
+
+@Composable
+private fun CambioPasswordObligatorioDialog(    onAceptar: (actual: String, nueva: String) -> Unit
+) {
+    var actual by remember { mutableStateOf("") }
+    var nueva by remember { mutableStateOf("") }
+    var repetir by remember { mutableStateOf("") }
+    val valida = nueva.length >= 4 && nueva == repetir
+
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Cambia tu contraseña") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Es tu primer acceso o sigues con la contraseña provisional. " +
+                        "Elige una contraseña personal (mínimo 4 caracteres).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = actual,
+                    onValueChange = { actual = it },
+                    label = { Text("Contraseña actual/provisional") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = nueva,
+                    onValueChange = { nueva = it },
+                    label = { Text("Contraseña nueva") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = repetir,
+                    onValueChange = { repetir = it },
+                    label = { Text("Repite la contraseña nueva") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    isError = repetir.isNotBlank() && repetir != nueva
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onAceptar(actual, nueva) },
+                enabled = valida && actual.isNotBlank()
+            ) {
+                Text("Guardar")
+            }
         }
     )
 }

@@ -159,6 +159,18 @@ interface OrderDao {
     suspend fun markCierresSincronizados(lineIds: List<String>)
 
     @Query(
+        "UPDATE order_lines SET motivoCierre = '', motivoCierreTexto = '', cierrePendiente = 0 " +
+            "WHERE orderLineId = :lineId"
+    )
+    suspend fun clearLineCierre(lineId: String)
+
+    @Query(
+        "UPDATE order_lines SET operarioEmail = :email, operarioNombre = :nombre " +
+            "WHERE orderLineId = :lineId"
+    )
+    suspend fun setLineOperario(lineId: String, email: String, nombre: String)
+
+    @Query(
         "SELECT * FROM order_lines WHERE cierrePendiente = 1 AND motivoCierre != ''"
     )
     suspend fun getCierresPendientes(): List<OrderLineEntity>

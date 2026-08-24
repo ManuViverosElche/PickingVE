@@ -26,7 +26,8 @@ class PickingApplication : Application() {
             encargadoDao = database.encargadoDao(),
             litrajeDao = database.litrajeDao(),
             sectorDao = database.sectorDao(),
-            chatEstadoDao = database.chatEstadoDao()
+            chatEstadoDao = database.chatEstadoDao(),
+            operarioDao = database.operarioDao()
         )
     }
 

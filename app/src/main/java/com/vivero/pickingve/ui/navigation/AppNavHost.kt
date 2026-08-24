@@ -15,6 +15,8 @@ import com.vivero.pickingve.ui.admin.AdminUsersScreen
 import com.vivero.pickingve.ui.admin.AdminUsersViewModel
 import com.vivero.pickingve.ui.logistica.FaenaDashboardScreen
 import com.vivero.pickingve.ui.logistica.FaenaDashboardViewModel
+import com.vivero.pickingve.ui.logistica.GestionFaenaScreen
+import com.vivero.pickingve.ui.logistica.GestionFaenaViewModel
 import com.vivero.pickingve.ui.login.LoginScreen
 import com.vivero.pickingve.ui.login.LoginViewModel
 import com.vivero.pickingve.ui.mode.InventarioScreen
@@ -50,10 +52,12 @@ fun AppNavHost(
         viewModel { AdminFincasViewModel() }
     val faenaViewModel: FaenaDashboardViewModel =
         viewModel { FaenaDashboardViewModel(repository) }
+    val gestionFaenaViewModel: GestionFaenaViewModel =
+        viewModel { GestionFaenaViewModel(repository) }
 
-    var loggedIn by remember { mutableStateOf(repository.currentEncargado() != null) }
+    var loggedIn by remember { mutableStateOf(repository.tipoSesion().isNotBlank()) }
     var screen by remember {
-        mutableStateOf(initialScreen(repository.currentEncargado()?.modo))
+        mutableStateOf(initialScreen(repository))
     }
     val deepPedido = deepLinkPedido?.takeIf { it.isNotBlank() }
     val deepLinea = deepLinkLinea?.takeIf { it.isNotBlank() }
@@ -61,7 +65,10 @@ fun AppNavHost(
     val deepCambioTipo = deepLinkCambioTipo?.takeIf { it.isNotBlank() }
 
     LaunchedEffect(loggedIn, deepPedido, deepTipo, deepCambioTipo) {
-        if (loggedIn && deepPedido != null) {
+        // D-167: los operarios no navegan al pedido por push; solo encargados+
+        if (loggedIn && deepPedido != null &&
+            repository.tipoSesion() != PickingRepository.TIPO_OPERARIO
+        ) {
             pickingViewModel.selectOrder(deepPedido)
             screen = AppScreen.PICKING
         }
@@ -72,7 +79,7 @@ fun AppNavHost(
             viewModel = loginViewModel,
             onLoginSuccess = {
                 loggedIn = true
-                screen = initialScreen(repository.currentEncargado()?.modo)
+                screen = initialScreen(repository)
             }
         )
         return
@@ -99,12 +106,28 @@ fun AppNavHost(
             onOpenPedido = { orderId ->
                 pickingViewModel.selectOrder(orderId)
                 screen = AppScreen.PICKING
+            },
+            onOpenGestion = { screen = AppScreen.GESTION_FAENA },
+            onLogout = {
+                repository.logout()
+                loggedIn = false
             }
+        )
+
+        AppScreen.GESTION_FAENA -> GestionFaenaScreen(
+            viewModel = gestionFaenaViewModel,
+            onBack = { screen = AppScreen.FAENA }
         )
 
         AppScreen.PICKING -> PickingScreen(
             viewModel = pickingViewModel,
-            onBack = { screen = AppScreen.ORDERS },
+            onBack = {
+                screen = if (repository.tipoSesion() == PickingRepository.TIPO_OPERARIO) {
+                    AppScreen.FAENA
+                } else {
+                    AppScreen.ORDERS
+                }
+            },
             deepLinkLinea = if (screen == AppScreen.PICKING && deepPedido != null) deepLinea else null,
             deepLinkTipo = if (screen == AppScreen.PICKING && deepPedido != null) deepTipo else null,
             deepLinkCambioTipo = if (screen == AppScreen.PICKING && deepPedido != null) deepCambioTipo else null,
@@ -135,6 +158,7 @@ fun AppNavHost(
             } ?: "",
             onPicking = { screen = AppScreen.ORDERS },
             onInventario = { screen = AppScreen.INVENTARIO },
+            onLogistica = { screen = AppScreen.FAENA },
             onLogout = {
                 repository.logout()
                 loggedIn = false
@@ -151,10 +175,23 @@ fun AppNavHost(
     }
 }
 
-private fun initialScreen(modo: String?): AppScreen = when (modo) {
-    "AMBAS" -> AppScreen.MODE
-    "INVENTARIO" -> AppScreen.INVENTARIO
-    else -> AppScreen.ORDERS
+/**
+ * Pantalla inicial según el rol de la sesión (D-166/D-167):
+ * - OPERARIO: directo a Mi faena (no ve pedidos ni partes).
+ * - ENCARGADO/SUPERUSUARIO modo AMBAS: selector.
+ * - INVENTARIO: su pantalla.
+ * - Resto: Pedidos.
+ */
+private fun initialScreen(repository: PickingRepository): AppScreen {
+    if (repository.tipoSesion().isBlank()) return AppScreen.ORDERS
+    return when {
+        repository.tipoSesion() == PickingRepository.TIPO_OPERARIO -> AppScreen.FAENA
+        else -> when (repository.currentEncargado()?.modo) {
+            "AMBAS" -> AppScreen.MODE
+            "INVENTARIO" -> AppScreen.INVENTARIO
+            else -> AppScreen.ORDERS
+        }
+    }
 }
 
-private enum class AppScreen { ORDERS, FAENA, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }
+private enum class AppScreen { ORDERS, FAENA, GESTION_FAENA, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }
