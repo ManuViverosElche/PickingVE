@@ -1,17 +1,17 @@
-﻿"""Informes HTML del pistoleo â€” Viveros Elche (diseÃ±o corporativo moderno).
+"""Informes HTML del pistoleo — Viveros Elche (diseño corporativo moderno).
 
 Genera 3 informes independientes a partir de la capa de datos compartida
 (informe_datos._load_datos):
 
-1. build_punteo_html     â€” Documento de Punteo: listado correlativo Ãºnico con
-                            las lÃ­neas del pedido (N.L. = posiciÃ³n Factusol).
-2. build_detalle_html    â€” Detalle del Pistoleo (A4 horizontal): un evento por
-                            lÃ­nea, con referencia/litraje/sector pedidos y servidos.
-3. build_control_html    â€” Control de Acopio (A4 horizontal): pedido vs acopiado
+1. build_punteo_html     — Documento de Punteo: listado correlativo único con
+                            las líneas del pedido (N.L. = posición Factusol).
+2. build_detalle_html    — Detalle del Pistoleo (A4 horizontal): un evento por
+                            línea, con referencia/litraje/sector pedidos y servidos.
+3. build_control_html    — Control de Acopio (A4 horizontal): pedido vs acopiado
                             con trazabilidad completa de sustituciones.
 
 Convenciones transversales:
-- Fechas siempre en formato dd/mm/yyyy (horas en hora local EspaÃ±a).
+- Fechas siempre en formato dd/mm/yyyy (horas en hora local España).
 - Empleados mostrados solo por su nombre de pila.
 - Paleta corporativa verde/teal de Viveros Elche.
 """
@@ -33,8 +33,8 @@ from informe_datos import (
 _LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "manager", "viveros_logo.png")
 
 _DIRECCION = [
-    "PARTIDA DE ALGORÃ“S, POLÃGONO 1-189-A",
-    "03293 ELCHE Â· ALICANTE",
+    "PARTIDA DE ALGORÓS, POLÍGONO 1-189-A",
+    "03293 ELCHE · ALICANTE",
     "Tel. 965483747 / 966635023",
 ]
 
@@ -46,7 +46,7 @@ def _html_esc(v) -> str:
 
 
 def _fecha_es(v) -> str:
-    """Convierte cualquier fecha a formato espaÃ±ol dd/mm/yyyy."""
+    """Convierte cualquier fecha a formato español dd/mm/yyyy."""
     s = str(v or "")[:10]
     try:
         return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -55,7 +55,7 @@ def _fecha_es(v) -> str:
 
 
 def _dt_es(dt) -> str:
-    """Datetime UTC â†’ 'dd/mm/yyyy HH:MM' en hora local de EspaÃ±a."""
+    """Datetime UTC → 'dd/mm/yyyy HH:MM' en hora local de España."""
     if not dt:
         return ""
     if isinstance(dt, str):
@@ -135,7 +135,7 @@ body {
 .tabla-doc td.k { background: var(--corp-bg); color: var(--corp-mid); font-weight: 600; text-transform: uppercase; font-size: 6.5pt; width: 38%; }
 .tabla-doc td.v { font-weight: 700; color: var(--corp-dark); }
 
-/* ---- TÃ­tulo de secciÃ³n ---- */
+/* ---- Título de sección ---- */
 .titulo-informe {
   display: flex; justify-content: space-between; align-items: center;
   background: linear-gradient(90deg, var(--corp-dark), var(--corp-mid));
@@ -206,22 +206,22 @@ def _cabecera(o, documento: str) -> str:
     <div class="cliente">
       <span class="codigo">{_html_esc(str(o.get('NUMERO_CLIENTE') or ''))}</span>
       <span class="nombre"> {_html_esc(_set(o.get('N_COMERCIAL')))}</span>
-      <div style="font-size:7.5pt; color:#3d565a;">{_html_esc(_set(o.get('N_FISCAL')))}{(' Â· ' + cliente_dir) if cliente_dir else ''}</div>
+      <div style="font-size:7.5pt; color:#3d565a;">{_html_esc(_set(o.get('N_FISCAL')))}{(' · ' + cliente_dir) if cliente_dir else ''}</div>
     </div>
   </div>
   <div class="cab-centro">
     <div class="caja-dato"><b>Finca</b><span>{_html_esc(_set(o.get('FINCA_CARGA')))}</span></div>
     <div class="caja-dato"><b>Zona</b><span>{_html_esc(_set(o.get('SECTOR_CARGA')))}</span></div>
-    <div class="caja-dato"><b>Tractora</b><span>{_html_esc(_set(o.get('MATRICULA_CAMION')) or 'â€”')}</span></div>
-    <div class="caja-dato"><b>Remolque</b><span>{_html_esc(_set(o.get('MATRICULA_REMOLQUE')) or 'â€”')}</span></div>
-    <div class="caja-dato" style="grid-column: span 2;"><b>Marca del Pedido</b><span>{_html_esc(_set(o.get('MARCA_PEDIDO')) or 'â€”')}</span></div>
-    <div class="caja-dato" style="grid-column: span 2;"><b>Referencia del Pedido</b><span>{_html_esc(_set(o.get('REFERENCIA_PEDIDO')) or 'â€”')}</span></div>
+    <div class="caja-dato"><b>Tractora</b><span>{_html_esc(_set(o.get('MATRICULA_CAMION')) or '—')}</span></div>
+    <div class="caja-dato"><b>Remolque</b><span>{_html_esc(_set(o.get('MATRICULA_REMOLQUE')) or '—')}</span></div>
+    <div class="caja-dato" style="grid-column: span 2;"><b>Marca del Pedido</b><span>{_html_esc(_set(o.get('MARCA_PEDIDO')) or '—')}</span></div>
+    <div class="caja-dato" style="grid-column: span 2;"><b>Referencia del Pedido</b><span>{_html_esc(_set(o.get('REFERENCIA_PEDIDO')) or '—')}</span></div>
   </div>
   <div class="cab-doc">
     {logo_html}
     <table class="tabla-doc">
       <tr><td class="k">Documento</td><td class="v">{_html_esc(documento)}</td></tr>
-      <tr><td class="k">NÃºmero</td><td class="v">{_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</td></tr>
+      <tr><td class="k">Número</td><td class="v">{_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</td></tr>
       <tr><td class="k">Fecha Carga</td><td class="v">{_html_esc(_fecha_es(o.get('FECHA_CARGA')))}</td></tr>
     </table>
   </div>
@@ -232,8 +232,8 @@ def _cabecera(o, documento: str) -> str:
 def _pie(obs, empleado, peso) -> str:
     return f"""
 <div class="pie">
-  <div class="ggn-line">* Producto certificado GlobalG.A.P. &nbsp;GGN {GGN} &nbsp;Â·&nbsp; GLN {GGN}</div>
-  <div class="obs-box"><b>Observaciones</b><br>{_html_esc(_set(obs)) or 'â€”'}</div>
+  <div class="ggn-line">* Producto certificado GlobalG.A.P. &nbsp;GGN {GGN} &nbsp;·&nbsp; GLN {GGN}</div>
+  <div class="obs-box"><b>Observaciones</b><br>{_html_esc(_set(obs)) or '—'}</div>
   <div class="fila-final">
     <div class="firma-box"><b>Verificado por</b><span class="linea">{_html_esc(_nombre_corto(empleado))}</span></div>
     <div class="peso-box"><b>Peso de la carga (KG)</b><span class="valor">{_num(peso):,.2f}</span></div>
@@ -257,12 +257,12 @@ def _doc_html(title: str, body_paginas: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Informe 1 â€” Documento de Punteo (listado correlativo Ãºnico)
+# Informe 1 — Documento de Punteo (listado correlativo único)
 # ---------------------------------------------------------------------------
 
 def _agrupar_filas_pedido(filas: list) -> list:
     """Agrupa todas las partidas pistoleadas del pedido en un listado correlativo
-    Ãºnico por lÃ­nea original (POSICION) + referencia servida + litraje + sector."""
+    único por línea original (POSICION) + referencia servida + litraje + sector."""
     agrupado: dict[tuple, dict] = {}
     for r in filas:
         key = (
@@ -292,10 +292,10 @@ def _agrupar_filas_pedido(filas: list) -> list:
 
 
 def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido) -> str:
-    """Documento de Punteo: UN solo listado correlativo con todas las lÃ­neas del pedido.
+    """Documento de Punteo: UN solo listado correlativo con todas las líneas del pedido.
 
     Cada fila conserva el N.L. original de Factusol (POSICION_PEDIDO), de modo que si
-    una lÃ­nea se desglosa en varias referencias al pistolear, todas comparten N.L.
+    una línea se desglosa en varias referencias al pistolear, todas comparten N.L.
     """
     datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido)
     o = datos["o"]
@@ -325,8 +325,8 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
             ):
                 continue
             susts.append(
-                f"{d.get('ref_original') or 'â€”'} ({_set(d.get('LITRAJE_PEDIDA'))} Â· {_set(d.get('SECTOR_PEDIDA'))})"
-                f" â†’ {d.get('ref_servida') or 'â€”'} ({_set(g['TALLA'])} Â· {_set(g['SECTOR'])})"
+                f"{d.get('ref_original') or '—'} ({_set(d.get('LITRAJE_PEDIDA'))} · {_set(d.get('SECTOR_PEDIDA'))})"
+                f" → {d.get('ref_servida') or '—'} ({_set(g['TALLA'])} · {_set(g['SECTOR'])})"
             )
         cuerpo += f"""
 <tr class="{clase_ggn}">
@@ -341,25 +341,25 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
   <td class="c" style="font-weight:700;">{_num(g['CANT']):,.0f}</td>
 </tr>"""
         for s in susts:
-            cuerpo += f'<tr class="sust"><td colspan="9"><span class="sust-tag">â†” SustituciÃ³n:</span> {_html_esc(s)}</td></tr>'
+            cuerpo += f'<tr class="sust"><td colspan="9"><span class="sust-tag">↔ Sustitución:</span> {_html_esc(s)}</td></tr>'
 
     if not filas_agrupadas:
-        cuerpo = '<tr><td colspan="9" class="c" style="padding:8mm; color:#5a7578;">Sin pistoleo registrado todavÃ­a para este pedido.</td></tr>'
+        cuerpo = '<tr><td colspan="9" class="c" style="padding:8mm; color:#5a7578;">Sin pistoleo registrado todavía para este pedido.</td></tr>'
 
     pagina = f"""
 <div class="pagina">
   {_cabecera(o, doc_label)}
   <div class="titulo-informe">
     <h2>DOCUMENTO DE PUNTEO</h2>
-    <div class="meta">Pedido {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))} Â· Generado {_dt_es(datetime.now(timezone.utc))}</div>
+    <div class="meta">Pedido {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))} · Generado {_dt_es(datetime.now(timezone.utc))}</div>
   </div>
   <table class="datos">
     <thead><tr>
-      <th style="width:8mm;">N.Âº</th>
+      <th style="width:8mm;">N.º</th>
       <th style="width:12mm;">N.L.</th>
       <th style="width:24mm;">Referencia</th>
       <th style="width:8mm;">*</th>
-      <th style="text-align:left;">DescripciÃ³n</th>
+      <th style="text-align:left;">Descripción</th>
       <th style="width:20mm;">Litraje</th>
       <th style="width:20mm;">Sector</th>
       <th style="width:26mm;">Finca</th>
@@ -374,11 +374,11 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
 
 
 # ---------------------------------------------------------------------------
-# Informe 2 â€” Detalle del Pistoleo (A4 horizontal)
+# Informe 2 — Detalle del Pistoleo (A4 horizontal)
 # ---------------------------------------------------------------------------
 
 def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido) -> str:
-    """Detalle exhaustivo del pistoleo en A4 horizontal: un evento por lÃ­nea."""
+    """Detalle exhaustivo del pistoleo en A4 horizontal: un evento por línea."""
     datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido)
     o = datos["o"]
     detalle = datos["detalle"]
@@ -407,21 +407,21 @@ def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_tab
   <td class="c">{_html_esc(lit_ser)}</td>
   <td class="c">{_html_esc(sec_ser)}</td>
   <td class="c" style="font-weight:700;">{_num(r.get('cantidad_partida')):,.0f}</td>
-  <td class="c">{'SÃ' + marca if cambio else ''}</td>
+  <td class="c">{'SÍ' + marca if cambio else ''}</td>
   <td class="c">{_html_esc(_set(r.get('ean_escaneado')))}</td>
   <td title="{_html_esc(_set(r.get('ocr_texto')))}">{_html_esc((_set(r.get('ocr_texto')) or '')[:28])}</td>
   <td class="c">{_html_esc(_set(r.get('calibre')))}</td>
 </tr>"""
 
     if not detalle:
-        filas = '<tr><td colspan="15" class="c" style="padding:8mm;">Sin eventos de pistoleo registrados todavÃ­a.</td></tr>'
+        filas = '<tr><td colspan="15" class="c" style="padding:8mm;">Sin eventos de pistoleo registrados todavía.</td></tr>'
 
     pagina = f"""
 <div class="pagina apaisada">
   {_cabecera(o, 'Detalle del Pistoleo')}
   <div class="titulo-informe">
-    <h2>DETALLE DEL PISTOLEO â€” PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</h2>
-    <div class="meta">{len(detalle)} eventos Â· Generado {_dt_es(datetime.now(timezone.utc))} (hora EspaÃ±a)</div>
+    <h2>DETALLE DEL PISTOLEO — PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</h2>
+    <div class="meta">{len(detalle)} eventos · Generado {_dt_es(datetime.now(timezone.utc))} (hora España)</div>
   </div>
   <table class="apaisada">
     <colgroup>
@@ -444,19 +444,19 @@ def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_tab
 
 
 # ---------------------------------------------------------------------------
-# Informe 3 â€” Control de Acopio (A4 horizontal)
+# Informe 3 — Control de Acopio (A4 horizontal)
 # ---------------------------------------------------------------------------
 
 def _susts_por_linea(detalle: list) -> dict[int, list[str]]:
-    """Mapa posiciÃ³n de lÃ­nea â†’ descripciones de sustituciÃ³n completas."""
+    """Mapa posición de línea → descripciones de sustitución completas."""
     mapa: dict[int, list[str]] = {}
     for d in detalle:
         if not d.get("sustituido"):
             continue
         pos = int(_num(d.get("POSICION")))
         mapa.setdefault(pos, []).append(
-            f"{d.get('ref_original') or 'â€”'} ({_set(d.get('LITRAJE_PEDIDA'))} Â· {_set(d.get('SECTOR_PEDIDA'))})"
-            f" â†’ {d.get('ref_servida') or 'â€”'} ({_set(d.get('LITRAJE_SERVIDA') or d.get('TALLA'))} Â· {_set(d.get('SECTOR_SERVIDA') or d.get('SECTOR'))})"
+            f"{d.get('ref_original') or '—'} ({_set(d.get('LITRAJE_PEDIDA'))} · {_set(d.get('SECTOR_PEDIDA'))})"
+            f" → {d.get('ref_servida') or '—'} ({_set(d.get('LITRAJE_SERVIDA') or d.get('TALLA'))} · {_set(d.get('SECTOR_SERVIDA') or d.get('SECTOR'))})"
         )
     return mapa
 
@@ -484,7 +484,7 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
         color_estado = "#0e8a80" if dif <= 0 and ped > 0 else ("#e0a13c" if acop > 0 else "#8fb0ac")
         extra_sust = ""
         for s in susts:
-            extra_sust += f'<tr class="sust"><td colspan="12"><span class="sust-tag">â†” Cambio de artÃ­culo:</span> {_html_esc(s)}</td></tr>'
+            extra_sust += f'<tr class="sust"><td colspan="12"><span class="sust-tag">↔ Cambio de artículo:</span> {_html_esc(s)}</td></tr>'
         filas += f"""
 <tr>
   <td class="c" style="font-weight:700; color:#0e8a80;">{pos}</td>
@@ -502,19 +502,19 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
 </tr>{extra_sust}"""
 
     if sin_localizar:
-        filas += ('<tr class="sust"><td colspan="12"><b>REFERENCIAS SERVIDAS NO LOCALIZADAS EN EL CATÃLOGO (revisar)</b></td></tr>')
+        filas += ('<tr class="sust"><td colspan="12"><b>REFERENCIAS SERVIDAS NO LOCALIZADAS EN EL CATÁLOGO (revisar)</b></td></tr>')
         for s in sin_localizar:
             filas += f'<tr class="sust"><td class="c">{_html_esc(s.get("ref_servida"))}</td><td colspan="11">EAN: {_html_esc(s.get("ean_escaneado"))}</td></tr>'
 
     if not control:
-        filas = '<tr><td colspan="12" class="c" style="padding:8mm;">Este pedido no tiene lÃ­neas activas.</td></tr>'
+        filas = '<tr><td colspan="12" class="c" style="padding:8mm;">Este pedido no tiene líneas activas.</td></tr>'
 
     pagina = f"""
 <div class="pagina apaisada">
   {_cabecera(o, 'Control de Acopio')}
   <div class="titulo-informe">
-    <h2>CONTROL DE ACOPIO â€” PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</h2>
-    <div class="meta">Total pedido {total_ped:,.0f} uds Â· Acopiado {total_acop:,.0f} uds Â· Generado {_dt_es(datetime.now(timezone.utc))}</div>
+    <h2>CONTROL DE ACOPIO — PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</h2>
+    <div class="meta">Total pedido {total_ped:,.0f} uds · Acopiado {total_acop:,.0f} uds · Generado {_dt_es(datetime.now(timezone.utc))}</div>
   </div>
   <table class="apaisada">
     <colgroup>
@@ -523,7 +523,7 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
       <col style="width:4%"><col style="width:8%"><col style="width:9%">
     </colgroup>
     <thead><tr>
-      <th>N.L.</th><th>Ref. Pedida</th><th style="text-align:left;">DescripciÃ³n</th><th>Litraje</th><th>Sector</th>
+      <th>N.L.</th><th>Ref. Pedida</th><th style="text-align:left;">Descripción</th><th>Litraje</th><th>Sector</th>
       <th>Pedido</th><th>Pendiente</th><th>Pistoleado</th><th>Difer.</th><th>Sust.</th><th>Estado</th><th>Partes</th>
     </tr></thead>
     <tbody>{filas}</tbody>
@@ -577,7 +577,7 @@ def _pagina_cabecera_etiquetas(fecha: str, page_num: int, total_pages: int) -> s
     <table class="tabla-doc">
       <tr><td class="k">Documento</td><td class="v">Etiquetas a Sacar</td></tr>
       <tr><td class="k">Fecha</td><td class="v">{_html_esc(_fecha_es(fecha))}</td></tr>
-      <tr><td class="k">PÃ¡gina</td><td class="v">{page_num} de {total_pages}</td></tr>
+      <tr><td class="k">Página</td><td class="v">{page_num} de {total_pages}</td></tr>
     </table>
   </div>
 </div>
@@ -585,7 +585,7 @@ def _pagina_cabecera_etiquetas(fecha: str, page_num: int, total_pages: int) -> s
 
 
 def build_etiquetas_html(pedidos: list, fecha: str) -> str:
-    """HTML imprimible del listado de etiquetas a sacar del dÃ­a."""
+    """HTML imprimible del listado de etiquetas a sacar del día."""
     paginas: list[list] = []
     actual: list | None = None
     for p in pedidos:
@@ -602,8 +602,8 @@ def build_etiquetas_html(pedidos: list, fecha: str) -> str:
         html = _pagina_cabecera_etiquetas(fecha, idx, total_pages)
         html += f"""
   <div class="titulo-informe">
-    <h2>ETIQUETAS A SACAR â€” {_html_esc(_fecha_es(fecha))}</h2>
-    <div class="meta">Listado del dÃ­a Â· PÃ¡gina {idx} de {total_pages}</div>
+    <h2>ETIQUETAS A SACAR — {_html_esc(_fecha_es(fecha))}</h2>
+    <div class="meta">Listado del día · Página {idx} de {total_pages}</div>
   </div>"""
         if not pedidos_pag or not any(p.get("etiquetas") for p in pedidos_pag):
             html += '<div style="padding:20px; text-align:center; color:#5a7578;">No hay etiquetas a sacar en esta fecha.</div>'
@@ -615,7 +615,7 @@ def build_etiquetas_html(pedidos: list, fecha: str) -> str:
                 html += f"""
 <table class="datos" style="margin-bottom:4mm;">
   <thead><tr><th colspan="6" style="text-align:left; font-size:8pt;">
-    PEDIDO #{_html_esc(p.get('pedido'))} â€” {_html_esc(p.get('cliente'))} â€” {_html_esc(p.get('finca') or 'SIN FINCA')}
+    PEDIDO #{_html_esc(p.get('pedido'))} — {_html_esc(p.get('cliente'))} — {_html_esc(p.get('finca') or 'SIN FINCA')}
     <span style="float:right;">[{_html_esc(estado)}]</span>
   </th></tr>
   <tr>
@@ -627,8 +627,8 @@ def build_etiquetas_html(pedidos: list, fecha: str) -> str:
                     html += f"""
     <tr>
       <td class="c ref">{_html_esc(e.get('referencia'))}</td>
-      <td class="c">{_html_esc(e.get('litraje') or 'â€”')}</td>
-      <td class="c">{_html_esc(e.get('sector') or 'â€”')}</td>
+      <td class="c">{_html_esc(e.get('litraje') or '—')}</td>
+      <td class="c">{_html_esc(e.get('sector') or '—')}</td>
       <td class="c" style="font-weight:700;">{_num(e.get('cantidad')):.0f}</td>
       <td>{_html_esc(e.get('motivo'))}</td>
       <td class="c">{_html_esc(e.get('estado'))}</td>
@@ -636,4 +636,4 @@ def build_etiquetas_html(pedidos: list, fecha: str) -> str:
                 html += "</tbody></table>"
         pages_html.append(f'<div class="pagina">{html}</div>')
 
-    return _doc_html(f"Etiquetas a Sacar â€” {_fecha_es(fecha)}", "".join(pages_html))
+    return _doc_html(f"Etiquetas a Sacar — {_fecha_es(fecha)}", "".join(pages_html))

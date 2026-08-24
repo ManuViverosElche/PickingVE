@@ -1,6 +1,7 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
+<link rel="icon" type="image/png" href="favicon-32.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>PickingVE — Panel de Control y Operativa de Pedidos</title>
@@ -92,10 +93,8 @@
   .filters-sticky { position: sticky; top: 118px; z-index: 930; box-shadow: 0 6px 14px rgba(0,0,0,0.35); }
   body { padding-top: 8px; }
 
-  /* D-194: pedido desplegado en reparto — cabecera ANCLADA arriba y lineas
-     con scroll propio; el resto de la pagina queda detras. */
-  .reparto-bloque.abierto { position: sticky; top: 8px; z-index: 40; max-height: calc(100vh - 20px); overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
-  .reparto-bloque.abierto .card-header { position: sticky; top: 0; z-index: 7; background: var(--card2, #123); border-radius: 12px 12px 0 0; }
+  /* D-194: pedido desplegado en reparto — su cabecera queda ANCLADA justo debajo de la cabecera general del panel (no scrollea), con flecha rotatoria; las lineas se recorren con el scroll normal de la pagina. */
+  .reparto-bloque.abierto .card-header { position: sticky; top: 122px; z-index: 945; background: var(--card2, #14343a); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); border-bottom: 2px solid var(--lime); }
 
   /* ===== Animaciones de aviso (parpadeo) ===== */
   @keyframes blinkSoft { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
@@ -173,17 +172,17 @@
     <header>
       <h1>🌿 PickingVE — Panel Operativo de Pedidos</h1>
       <div class="controls">
-        <button onclick="refreshCurrentView()">🔄 Actualizar</button>
+        <button onclick="refreshCurrentView()">ðŸ”„ Actualizar</button>
       </div>
     </header>
 
     <div class="nav-tabs-wrap">
       <div class="nav-tabs" style="margin-bottom:0;">
         <button id="tabPedidos" class="nav-tab active" onclick="switchView('pedidos')">📦 Pedidos del Día</button>
-        <button id="tabEtiquetas" class="nav-tab" onclick="switchView('etiquetas')">🏷️ Etiquetas a Sacar</button>
+        <button id="tabEtiquetas" class="nav-tab" onclick="switchView('etiquetas')">ðŸ·ï¸ Etiquetas a Sacar</button>
         <button id="tabHistorico" class="nav-tab" onclick="switchView('historico')">📜 Histórico de Cargas</button>
-        <button id="tabReparto" class="nav-tab" onclick="switchView('reparto')">📋 Reparto de Faena</button>
-        <button id="tabCarga" class="nav-tab" onclick="switchView('carga')">⚖️ Carga por Operario</button>
+        <button id="tabReparto" class="nav-tab" onclick="switchView('reparto')">ðŸ“‹ Reparto de Faena</button>
+        <button id="tabCarga" class="nav-tab" onclick="switchView('carga')">âš–ï¸ Carga por Operario</button>
         <button id="tabConfig" class="nav-tab" onclick="switchView('config')">⚙️ Configuración</button>
       </div>
     </div>
@@ -207,10 +206,10 @@
       <span style="font-size:0.8rem; color:var(--mut); font-weight:700;">Filtrar Estado:</span>
       <button id="stActivos" class="chip" onclick="setFilterEstado('activos')">⭐ Activos</button>
       <button id="stPendientes" class="chip chip-pendiente" onclick="setFilterEstado('pendientes')">⏳ Pendientes</button>
-      <button id="stAcopiados" class="chip" onclick="setFilterEstado('acopiados')" style="background:rgba(66,201,189,0.15); color:var(--lime); border-color:rgba(66,201,189,0.5);">📦 Acopiados</button>
-      <button id="stCargados" class="chip chip-cargado" onclick="setFilterEstado('cargados')">🚛 Cargados</button>
-      <button id="stEnviados" class="chip chip-enviado" onclick="setFilterEstado('enviados')">✅ Enviados</button>
-      <button id="stTodos" class="chip chip-activo" onclick="setFilterEstado('todos')">📋 Todos</button>
+      <button id="stAcopiados" class="chip" onclick="setFilterEstado('acopiados')" style="background:rgba(66,201,189,0.15); color:var(--lime); border-color:rgba(66,201,189,0.5);">ðŸ“¦ Acopiados</button>
+      <button id="stCargados" class="chip chip-cargado" onclick="setFilterEstado('cargados')">ðŸš› Cargados</button>
+      <button id="stEnviados" class="chip chip-enviado" onclick="setFilterEstado('enviados')">âœ… Enviados</button>
+      <button id="stTodos" class="chip chip-activo" onclick="setFilterEstado('todos')">ðŸ“‹ Todos</button>
     </div>
 
     <div id="ordersContainer">
@@ -223,7 +222,7 @@
     <div class="filters filters-sticky">
       <input type="date" id="filterDateEtiquetas" onchange="selectFecha(this.value)">
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-left:auto;">
-        <button onclick="verInformeEtiquetasDia()">👁️ Ver / Imprimir Informe</button>
+        <button onclick="verInformeEtiquetasDia()">ðŸ‘ï¸ Ver / Imprimir Informe</button>
       </div>
     </div>
     <div class="chips" id="dateChipsEtiquetas"></div>
@@ -254,8 +253,8 @@
         <option value="">Todas las Fincas</option>
       </select>
       <input type="text" id="searchReparto" placeholder="Buscar pedido, cliente, ref..." oninput="renderReparto()" style="flex: 1; min-width: 180px;">
-      <button onclick="guardarRepartoFaena()">💾 Guardar Reparto</button>
-      <button class="btn-sec" onclick="loadRepartoData()">🔄 Actualizar Faena</button>
+      <button onclick="guardarRepartoFaena()">ðŸ’¾ Guardar Reparto</button>
+      <button class="btn-sec" onclick="loadRepartoData()">ðŸ”„ Actualizar Faena</button>
     </div>
     <div class="chips" id="dateChipsReparto"></div>
     <div id="repartoContainer">
@@ -267,7 +266,7 @@
   <div id="viewCarga" style="display:none;">
     <div class="filters filters-sticky">
       <input type="date" id="filterDateCarga" onchange="selectFechaCarga(this.value)">
-      <button class="btn-sec" onclick="loadCarga()">🔄 Actualizar</button>
+      <button class="btn-sec" onclick="loadCarga()">ðŸ”„ Actualizar</button>
     </div>
     <div id="cargaContainer">
       <div style="text-align: center; color: var(--mut); padding: 40px;">Cargando carga de operarios...</div>
@@ -279,15 +278,15 @@
     <!-- Encargados -->
     <div class="cfg-section" id="cfgSecEncargados">
       <div class="cfg-section-head" onclick="cfgToggle('cfgSecEncargados')">
-        <h3>👥 Encargados (Pistoleo) <span class="cfg-count" id="cfgCountEncargados"></span></h3>
+        <h3>ðŸ‘¥ Encargados (Pistoleo) <span class="cfg-count" id="cfgCountEncargados"></span></h3>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('encargado')">＋ Nuevo encargado</button>
-          <span class="cfg-chevron">▶</span>
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('encargado')">ï¼‹ Nuevo encargado</button>
+          <span class="cfg-chevron">â–¶</span>
         </div>
       </div>
       <div class="cfg-section-body">
         <div class="cfg-toolbar">
-          <input type="text" id="searchEncargados" class="cfg-search" placeholder="🔍 Buscar por nombre o email..." oninput="renderEncargadosConfigTable()">
+          <input type="text" id="searchEncargados" class="cfg-search" placeholder="ðŸ” Buscar por nombre o email..." oninput="renderEncargadosConfigTable()">
         </div>
         <div id="encargadosListConfig" class="cfg-table-wrap"></div>
       </div>
@@ -296,15 +295,15 @@
     <!-- Operarios -->
     <div class="cfg-section" id="cfgSecOperarios">
       <div class="cfg-section-head" onclick="cfgToggle('cfgSecOperarios')">
-        <h3>👷 Operarios (Faena) <span class="cfg-count" id="cfgCountOperarios"></span></h3>
+        <h3>ðŸ‘· Operarios (Faena) <span class="cfg-count" id="cfgCountOperarios"></span></h3>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('operario')">＋ Nuevo operario</button>
-          <span class="cfg-chevron">▶</span>
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('operario')">ï¼‹ Nuevo operario</button>
+          <span class="cfg-chevron">â–¶</span>
         </div>
       </div>
       <div class="cfg-section-body">
         <div class="cfg-toolbar">
-          <input type="text" id="searchOperarios" class="cfg-search" placeholder="🔍 Buscar por nombre, email o maquinaria..." oninput="renderOperariosConfigTable()">
+          <input type="text" id="searchOperarios" class="cfg-search" placeholder="ðŸ” Buscar por nombre, email o maquinaria..." oninput="renderOperariosConfigTable()">
         </div>
         <div id="operariosListConfig" class="cfg-table-wrap"></div>
       </div>
@@ -313,15 +312,15 @@
     <!-- Fincas -->
     <div class="cfg-section" id="cfgSecFincas">
       <div class="cfg-section-head" onclick="cfgToggle('cfgSecFincas')">
-        <h3>📍 Fincas <span class="cfg-count" id="cfgCountFincas"></span></h3>
+        <h3>ðŸ“ Fincas <span class="cfg-count" id="cfgCountFincas"></span></h3>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn-primary-modern" onclick="event.stopPropagation(); openFincaModal()">＋ Nueva finca</button>
-          <span class="cfg-chevron">▶</span>
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openFincaModal()">ï¼‹ Nueva finca</button>
+          <span class="cfg-chevron">â–¶</span>
         </div>
       </div>
       <div class="cfg-section-body">
         <div class="cfg-toolbar">
-          <input type="text" id="searchFincasCfg" class="cfg-search" placeholder="🔍 Buscar finca..." oninput="renderFincasConfigTable()">
+          <input type="text" id="searchFincasCfg" class="cfg-search" placeholder="ðŸ” Buscar finca..." oninput="renderFincasConfigTable()">
         </div>
         <div id="fincasListConfig" class="cfg-table-wrap"></div>
       </div>
@@ -330,10 +329,10 @@
     <!-- Maquinaria -->
     <div class="cfg-section" id="cfgSecMaquinarias">
       <div class="cfg-section-head" onclick="cfgToggle('cfgSecMaquinarias')">
-        <h3>🚜 Maquinaria <span class="cfg-count" id="cfgCountMaquinarias"></span></h3>
+        <h3>ðŸšœ Maquinaria <span class="cfg-count" id="cfgCountMaquinarias"></span></h3>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn-primary-modern" onclick="event.stopPropagation(); openMaquinariaModal()">＋ Nueva maquinaria</button>
-          <span class="cfg-chevron">▶</span>
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openMaquinariaModal()">ï¼‹ Nueva maquinaria</button>
+          <span class="cfg-chevron">â–¶</span>
         </div>
       </div>
       <div class="cfg-section-body">
@@ -348,16 +347,16 @@
     <!-- Familias de maquinaria -->
     <div class="cfg-section" id="cfgSecFamilias">
       <div class="cfg-section-head" onclick="cfgToggle('cfgSecFamilias')">
-        <h3>🧩 Familias de Maquinaria <span class="cfg-count" id="cfgCountFamilias"></span></h3>
+        <h3>ðŸ§© Familias de Maquinaria <span class="cfg-count" id="cfgCountFamilias"></span></h3>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn-primary-modern" onclick="event.stopPropagation(); openFamiliaModal()">＋ Nueva familia</button>
-          <span class="cfg-chevron">▶</span>
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openFamiliaModal()">ï¼‹ Nueva familia</button>
+          <span class="cfg-chevron">â–¶</span>
         </div>
       </div>
       <div class="cfg-section-body">
         <p style="font-size:0.76rem; color:var(--mut); margin-bottom:10px;">Agrupación de la maquinaria por familia (p. ej.: Tractores, Transpaletas, Remolques). Cada maquinaria pertenece a una familia.</p>
         <div class="cfg-toolbar">
-          <input type="text" id="searchFamilias" class="cfg-search" placeholder="🔍 Buscar familia..." oninput="renderFamiliasConfigTable()">
+          <input type="text" id="searchFamilias" class="cfg-search" placeholder="ðŸ” Buscar familia..." oninput="renderFamiliasConfigTable()">
         </div>
         <div id="familiasListConfig" class="cfg-table-wrap"></div>
       </div>
@@ -370,7 +369,7 @@
   <div class="modal-content modern">
     <div class="mform-head">
       <div><h2 id="personModalTitle">Nuevo</h2><p id="personModalSub"></p></div>
-      <button class="close-btn" onclick="closeModal('personModal')">✕</button>
+      <button class="close-btn" onclick="closeModal('personModal')">âœ•</button>
     </div>
     <div class="mform-body">
       <input type="hidden" id="pmTipo" value="">
@@ -396,7 +395,7 @@
     </div>
     <div class="mform-foot">
       <button class="btn-sec" onclick="closeModal('personModal')">Cancelar</button>
-      <button class="btn-primary-modern" onclick="guardarPersonModal()">💾 Guardar</button>
+      <button class="btn-primary-modern" onclick="guardarPersonModal()">ðŸ’¾ Guardar</button>
     </div>
   </div>
 </div>
@@ -406,7 +405,7 @@
   <div class="modal-content modern" style="max-width:460px;">
     <div class="mform-head">
       <div><h2 id="fincaModalTitle">Nueva finca</h2><p>Las fincas automáticas provienen de PEDIDOS y solo pueden ocultarse.</p></div>
-      <button class="close-btn" onclick="closeModal('fincaModal')">✕</button>
+      <button class="close-btn" onclick="closeModal('fincaModal')">âœ•</button>
     </div>
     <div class="mform-body">
       <input type="hidden" id="fmOriginal" value="">
@@ -418,7 +417,7 @@
     </div>
     <div class="mform-foot">
       <button class="btn-sec" onclick="closeModal('fincaModal')">Cancelar</button>
-      <button class="btn-primary-modern" onclick="guardarFincaModal()">💾 Guardar</button>
+      <button class="btn-primary-modern" onclick="guardarFincaModal()">ðŸ’¾ Guardar</button>
     </div>
   </div>
 </div>
@@ -428,7 +427,7 @@
   <div class="modal-content modern" style="max-width:460px;">
     <div class="mform-head">
       <div><h2 id="maquinariaModalTitle">Nueva maquinaria</h2><p>Tipo de maquinaria de carga del operario.</p></div>
-      <button class="close-btn" onclick="closeModal('maquinariaModal')">✕</button>
+      <button class="close-btn" onclick="closeModal('maquinariaModal')">âœ•</button>
     </div>
     <div class="mform-body">
       <input type="hidden" id="mmId" value="">
@@ -441,7 +440,7 @@
     </div>
     <div class="mform-foot">
       <button class="btn-sec" onclick="closeModal('maquinariaModal')">Cancelar</button>
-      <button class="btn-primary-modern" onclick="guardarMaquinariaModal()">💾 Guardar</button>
+      <button class="btn-primary-modern" onclick="guardarMaquinariaModal()">ðŸ’¾ Guardar</button>
     </div>
   </div>
 </div>
@@ -451,7 +450,7 @@
   <div class="modal-content modern" style="max-width:460px;">
     <div class="mform-head">
       <div><h2 id="familiaModalTitle">Nueva familia</h2><p>Agrupa tipos de maquinaria (p. ej.: Tractores, Transpaletas).</p></div>
-      <button class="close-btn" onclick="closeModal('familiaModal')">✕</button>
+      <button class="close-btn" onclick="closeModal('familiaModal')">âœ•</button>
     </div>
     <div class="mform-body">
       <input type="hidden" id="famId" value="">
@@ -463,7 +462,7 @@
     </div>
     <div class="mform-foot">
       <button class="btn-sec" onclick="closeModal('familiaModal')">Cancelar</button>
-      <button class="btn-primary-modern" onclick="guardarFamiliaModal()">💾 Guardar</button>
+      <button class="btn-primary-modern" onclick="guardarFamiliaModal()">ðŸ’¾ Guardar</button>
     </div>
   </div>
 </div>
@@ -473,15 +472,15 @@
   <div class="modal-content">
     <div class="modal-header">
       <h2 id="modalTitle">Detalle del Pedido</h2>
-      <button class="close-btn" onclick="closeModal('orderModal')">✕</button>
+      <button class="close-btn" onclick="closeModal('orderModal')">âœ•</button>
     </div>
     <div id="modalAlerts"></div>
     <div id="modalBody"></div>
     <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
-      <button id="btnVerPunteoModal" onclick="" style="background:var(--lime); color:#062325;">📄 Punteo</button>
-      <button id="btnVerDetalleModal" onclick="" class="btn-sec">📋 Detalle Pistoleo</button>
-      <button id="btnVerControlModal" onclick="" class="btn-sec">📊 Control Acopio</button>
-      <a id="btnDescargarPdfModal" href="#" target="_blank" class="button" style="text-decoration:none; padding:8px 14px; font-weight:700; border-radius:8px; font-size:0.88rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); display:inline-block;">⬇️ Descargar PDF</a>
+      <button id="btnVerPunteoModal" onclick="" style="background:var(--lime); color:#062325;">ðŸ“„ Punteo</button>
+      <button id="btnVerDetalleModal" onclick="" class="btn-sec">ðŸ“‹ Detalle Pistoleo</button>
+      <button id="btnVerControlModal" onclick="" class="btn-sec">ðŸ“Š Control Acopio</button>
+      <a id="btnDescargarPdfModal" href="#" target="_blank" class="button" style="text-decoration:none; padding:8px 14px; font-weight:700; border-radius:8px; font-size:0.88rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); display:inline-block;">â¬‡ï¸ Descargar PDF</a>
       <button onclick="closeModal('orderModal')" class="btn-sec">Cerrar</button>
     </div>
   </div>
@@ -493,10 +492,10 @@
     <div class="modal-header">
       <h2 id="previewTitle">Vista Previa del Informe</h2>
       <div style="display:flex; gap:8px; align-items:center;">
-        <button onclick="volverADetallePedido()" style="padding:6px 12px; font-size:0.82rem;">← Volver</button>
-        <button onclick="printPreviewFrame()" style="padding:6px 12px; font-size:0.82rem;">🖨️ Imprimir</button>
-        <a id="previewPdfLink" href="#" target="_blank" style="text-decoration:none; padding:6px 12px; font-size:0.82rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); border-radius:8px; font-weight:700; display:inline-block;">⬇️ Descargar PDF</a>
-        <button class="close-btn" onclick="closeModal('previewModal')">✕</button>
+        <button onclick="volverADetallePedido()" style="padding:6px 12px; font-size:0.82rem;">â† Volver</button>
+        <button onclick="printPreviewFrame()" style="padding:6px 12px; font-size:0.82rem;">ðŸ–¨ï¸ Imprimir</button>
+        <a id="previewPdfLink" href="#" target="_blank" style="text-decoration:none; padding:6px 12px; font-size:0.82rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); border-radius:8px; font-weight:700; display:inline-block;">â¬‡ï¸ Descargar PDF</a>
+        <button class="close-btn" onclick="closeModal('previewModal')">âœ•</button>
       </div>
     </div>
     <iframe id="previewFrame" class="preview-frame" src="about:blank"></iframe>
@@ -507,14 +506,14 @@
 <div class="modal" id="chatModal">
   <div class="modal-content" style="max-width: 600px;">
     <div class="modal-header">
-      <h2 id="chatModalTitle">💬 Chat / Mensajes del Pedido</h2>
-      <button class="close-btn" onclick="closeModal('chatModal')">✕</button>
+      <h2 id="chatModalTitle">ðŸ’¬ Chat / Mensajes del Pedido</h2>
+      <button class="close-btn" onclick="closeModal('chatModal')">âœ•</button>
     </div>
     <div id="chatMessagesContainer" style="max-height: 350px; overflow-y: auto; background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
     </div>
     <div style="display: flex; gap: 8px;">
       <input type="text" id="chatInputText" placeholder="Escribe un mensaje para los operarios..." style="flex: 1;" onkeypress="if(event.key==='Enter') sendChatMessage()">
-      <button onclick="sendChatMessage()">Enviar ✉️</button>
+      <button onclick="sendChatMessage()">Enviar âœ‰ï¸</button>
     </div>
   </div>
 </div>
@@ -523,8 +522,8 @@
 <div class="modal" id="obsModal">
   <div class="modal-content" style="max-width: 500px;">
     <div class="modal-header">
-      <h2>ℹ️ Observaciones y Notas del Pedido</h2>
-      <button class="close-btn" onclick="closeModal('obsModal')">✕</button>
+      <h2>â„¹ï¸ Observaciones y Notas del Pedido</h2>
+      <button class="close-btn" onclick="closeModal('obsModal')">âœ•</button>
     </div>
     <div id="obsModalContent" style="font-size: 0.9rem; line-height: 1.6; color: var(--txt); background: var(--card2); padding: 12px; border-radius: 8px; border: 1px solid var(--line);">
     </div>
@@ -589,7 +588,7 @@
     const inp = document.getElementById(inputId);
     if (!inp) return;
     inp.type = inp.type === 'password' ? 'text' : 'password';
-    if (btn) btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
+    if (btn) btn.textContent = inp.type === 'password' ? 'ðŸ‘ï¸' : 'ðŸ™ˆ';
   }
 
   function escHtml(s) {
@@ -688,8 +687,8 @@
         <td style="font-size:0.72rem; max-width:180px;">${escHtml((e.fincas_carga || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
         <td><span class="pill ${e.activo !== false ? 'pill-ok' : 'pill-off'}">${e.activo !== false ? 'Activo' : 'Baja'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick="openPersonModal('encargado', ${i})" title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarEncargado(${i})" title="Dar de baja / eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openPersonModal('encargado', ${i})" title="Editar">âœï¸</button>
+          <button class="icon-btn danger" onclick="eliminarEncargado(${i})" title="Dar de baja / eliminar">ðŸ—‘ï¸</button>
         </td>
       </tr>`;
     });
@@ -716,8 +715,8 @@
         <td style="font-size:0.72rem; max-width:160px;">${escHtml((op.maquinaria || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
         <td><span class="pill ${op.activo !== false ? 'pill-ok' : 'pill-off'}">${op.activo !== false ? 'Activo' : 'Baja'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick="openPersonModal('operario', ${i})" title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarOperario(${i})" title="Eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openPersonModal('operario', ${i})" title="Editar">âœï¸</button>
+          <button class="icon-btn danger" onclick="eliminarOperario(${i})" title="Eliminar">ðŸ—‘ï¸</button>
         </td>
       </tr>`;
     });
@@ -742,8 +741,8 @@
         <td><span class="pill">${f.manual ? 'Manual' : 'Auto (pedidos)'}</span></td>
         <td><span class="pill ${f.oculto ? 'pill-off' : 'pill-ok'}">${f.oculto ? 'Oculta' : 'Visible'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick="openFincaModal(${i})" title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarFincaCfg(${i})" title="${f.manual ? 'Eliminar' : 'Ocultar'}">${f.manual ? '🗑️' : '🙈'}</button>
+          <button class="icon-btn" onclick="openFincaModal(${i})" title="Editar">âœï¸</button>
+          <button class="icon-btn danger" onclick="eliminarFincaCfg(${i})" title="${f.manual ? 'Eliminar' : 'Ocultar'}">${f.manual ? 'ðŸ—‘ï¸' : 'ðŸ™ˆ'}</button>
         </td>
       </tr>`;
     });
@@ -770,8 +769,8 @@
         <td style="font-size:0.76rem; color:var(--mut);">${escHtml(m.descripcion || '—')}</td>
         <td><span class="pill ${m.activo !== false ? 'pill-ok' : 'pill-off'}">${m.activo !== false ? 'Activa' : 'Inactiva'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick="openMaquinariaModal(${i})" title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarMaquinaria(${i})" title="Eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openMaquinariaModal(${i})" title="Editar">âœï¸</button>
+          <button class="icon-btn danger" onclick="eliminarMaquinaria(${i})" title="Eliminar">ðŸ—‘ï¸</button>
         </td>
       </tr>`;
     });
@@ -798,8 +797,8 @@
         <td><span class="pill">${nMq} maq.</span></td>
         <td><span class="pill ${f.activo !== false ? 'pill-ok' : 'pill-off'}">${f.activo !== false ? 'Activa' : 'Inactiva'}</span></td>
         <td style="white-space:nowrap;">
-          <button class="icon-btn" onclick="openFamiliaModal(${i})" title="Editar">✏️</button>
-          <button class="icon-btn danger" onclick="eliminarFamilia(${i})" title="Eliminar">🗑️</button>
+          <button class="icon-btn" onclick="openFamiliaModal(${i})" title="Editar">âœï¸</button>
+          <button class="icon-btn danger" onclick="eliminarFamilia(${i})" title="Eliminar">ðŸ—‘ï¸</button>
         </td>
       </tr>`;
     });
@@ -974,7 +973,7 @@
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
     try { await fn(); }
     finally {
-      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'ðŸ’¾ Guardar'; }
     }
   }
 
@@ -1261,7 +1260,7 @@
   function renderTablaCargaOperarios(orders) {
     const filas = calcularCargaPorOperariosWrapper(orders);
     if (!filas.length) {
-      return `<div class="carga-box"><h3>⚖️ Carga por Operario</h3>
+      return `<div class="carga-box"><h3>âš–ï¸ Carga por Operario</h3>
         <p style="color:var(--mut); font-size:0.82rem;">No hay operarios activos dados de alta en Configuración.</p></div>`;
     }
     const maxQueda = Math.max(1, ...filas.map(f => f.queda));
@@ -1278,7 +1277,7 @@
         <td style="font-size:0.74rem; color:var(--mut);">${escHtml(f.maquinaria || '—')}</td>
         <td class="carga-num" style="text-align:right;">${f.asignado}</td>
         <td class="carga-num" style="text-align:right; color:var(--lime);">${f.recogido}</td>
-        <td class="carga-num ${sobrecargado ? 'sobrecarga' : ''}" style="text-align:right;">${f.queda}${sobrecargado ? ' ⚠' : ''}</td>
+        <td class="carga-num ${sobrecargado ? 'sobrecarga' : ''}" style="text-align:right;">${f.queda}${sobrecargado ? ' âš ' : ''}</td>
         <td class="carga-num" style="text-align:right; color:var(--warn);">${f.preasignado || ''}</td>
         <td><div style="background:var(--card2); border-radius:4px; height:8px; overflow:hidden;"><div style="height:100%; width:${Math.round(f.queda / maxQueda * 100)}%; background:${sobrecargado ? 'var(--bad)' : 'var(--lime)'};"></div></div></td>
       </tr>`;
@@ -1299,9 +1298,9 @@
     const commercialDiff = o.cliente && o.cliente !== o.clienteFiscal ? `<span style="font-style:italic; color:var(--blue); margin-left:6px;">(${escHtml(o.cliente)})</span>` : '';
     const orderRef = o.referenciaPedido ? `<span style="color:var(--warn); margin-left:10px;">Ref.: <b>${escHtml(o.referenciaPedido)}</b></span>` : '';
     const tot = totalesPlanta(o);
-    const qtyBox = `<span class="pill pill-ok" title="Cantidad de planta a acopiar / acopiada / con operario asignado (sin refs 99990-99999)" style="margin-left:8px;">🌱 ${tot.solicitada} · ✅ ${tot.acopiada} · 👷 ${tot.asignada}</span>`;
+    const qtyBox = `<span class="pill pill-ok" title="Cantidad de planta a acopiar / acopiada / con operario asignado (sin refs 99990-99999)" style="margin-left:8px;">ðŸŒ± ${tot.solicitada} Â· âœ… ${tot.acopiada} Â· ðŸ‘· ${tot.asignada}</span>`;
     const brandHeader = o.marcaPedido
-      ? `<span class="badge blink-prio b-yellow" style="margin-left:8px;">🏷️ ${escHtml(o.marcaPedido)}</span>`
+      ? `<span class="badge blink-prio b-yellow" style="margin-left:8px;">ðŸ·ï¸ ${escHtml(o.marcaPedido)}</span>`
       : '';
     const comercial = o.agente ? `Comercial: <b>${escHtml(o.agente)}</b>` : 'Comercial: N/D';
     const zone = o.sector || 'N/D';
@@ -1323,7 +1322,7 @@
 
       let marcaInfo = '';
       if (l.marca && l.marca !== o.marcaPedido) {
-        marcaInfo = `<br><small class="marca-linea-aviso">⚠ Marca distinta: ${escHtml(l.marca)}</small>`;
+        marcaInfo = `<br><small class="marca-linea-aviso">âš  Marca distinta: ${escHtml(l.marca)}</small>`;
       } else if (l.marca) {
         marcaInfo = `<br><small style="color:var(--mut);">Marca: ${escHtml(l.marca)}</small>`;
       }
@@ -1385,7 +1384,7 @@
               <td>
                 <div style="display:flex; gap:4px; align-items:center;">
                   ${infoBtn}
-                  <button class="btn-sec${lineMsgBlink}" data-unread-key="${o.numero}|${huella}" onclick="openChatModal('${o.numero}', '${huella}')" style="padding:2px 6px; font-size:0.7rem;" title="Chat / Mensajes">💬</button>
+                  <button class="btn-sec${lineMsgBlink}" data-unread-key="${o.numero}|${huella}" onclick="openChatModal('${o.numero}', '${huella}')" style="padding:2px 6px; font-size:0.7rem;" title="Chat / Mensajes">ðŸ’¬</button>
                 </div>
               </td>
             </tr>`;
@@ -1395,13 +1394,13 @@
           <div class="card reparto-bloque" style="margin-bottom: 16px; border-color: var(--line);">
             <div class="card-header reparto-hdr" style="cursor:pointer;" onclick="toggleRepartoOrder('${o.serie}_${o.numero}')">
               <div>
-                <div class="order-id">📦 Pedido #${o.numero} ${orderRef} ${brandHeader} ${qtyBox}</div>
+                <div class="order-id">ðŸ“¦ Pedido #${o.numero} ${orderRef} ${brandHeader} ${qtyBox}</div>
                 <div class="client-name" style="font-size:0.95rem; margin-top:2px;"><b>${escHtml(fiscalName)}</b> ${commercialDiff}</div>
-                <div style="font-size:0.8rem; color:var(--mut); margin-top:4px;">📍 Finca: <b>${escHtml(o.finca || 'S/F')}</b> | Zona carga: <b>${escHtml(zone)}</b> | 👤 ${comercial}</div>
+                <div style="font-size:0.8rem; color:var(--mut); margin-top:4px;">ðŸ“ Finca: <b>${escHtml(o.finca || 'S/F')}</b> | Zona carga: <b>${escHtml(zone)}</b> | ðŸ‘¤ ${comercial}</div>
               </div>
               <div style="display:flex; gap:8px; align-items:center;">
                 ${obsBtn}
-                <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="event.stopPropagation(); openChatModal('${o.numero}', '')" style="padding:4px 8px; font-size:0.75rem;">💬 Mensajes</button>
+                <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="event.stopPropagation(); openChatModal('${o.numero}', '')" style="padding:4px 8px; font-size:0.75rem;">ðŸ’¬ Mensajes</button>
                 <span style="font-size:0.85rem; color:var(--lime); font-weight:700;">▼ Líneas</span>
               </div>
             </div>
@@ -1439,21 +1438,28 @@
 
   function toggleRepartoOrder(key) {
     const el = document.getElementById(`reparto_lines_${key}`);
-    if (!el) return;
+    const card = el ? el.closest('.reparto-bloque') : null;
+    const arrow = document.getElementById(`arrow_${key}`);
+    if (!el || !card) return;
     const abrir = el.style.display === 'none';
     // D-194: solo un pedido abierto a la vez
     document.querySelectorAll('.reparto-bloque.abierto').forEach(b => {
       b.classList.remove('abierto');
       const ln = b.querySelector('[id^="reparto_lines_"]');
+      const ar = b.querySelector('[id^="arrow_"]');
       if (ln) ln.style.display = 'none';
+      if (ar) ar.textContent = '▼ Líneas';
     });
     if (abrir) {
       el.style.display = 'block';
-      const card = el.closest('.reparto-bloque');
-      if (card) {
-        card.classList.add('abierto');
-        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      card.classList.add('abierto');
+      if (arrow) arrow.textContent = '▲ Líneas'; else {}
+    } else {
+      el.style.display = 'none';
+      card.classList.remove('abierto');
+      if (arrow) arrow.textContent = '▼ Líneas';
+    }
+  }
     }
   }
 
@@ -1683,7 +1689,7 @@
     let html = '';
     previstas.forEach(f => {
       const activo = f.fecha === document.getElementById('filterDateReparto').value ? ' chip-activo' : '';
-      html += `<button class="chip chip-cargado${activo}" onclick="selectFechaReparto('${f.fecha}')">📅 ${formatDateDDMMYYYY(f.fecha)} (${f.pedidos} ped)</button>`;
+      html += `<button class="chip chip-cargado${activo}" onclick="selectFechaReparto('${f.fecha}')">ðŸ“… ${formatDateDDMMYYYY(f.fecha)} (${f.pedidos} ped)</button>`;
     });
     cont.innerHTML = html;
   }
@@ -1714,7 +1720,7 @@
       const activo = f.fecha === selectedDate ? ' chip-activo' : '';
       const pends = f.pendientes ?? Math.max(0, f.pedidos - f.cargados);
       const cls = pends === 0 ? 'chip-cargado' : 'chip-pendiente';
-      const txt = pends === 0 ? `✓ ${formatDateDDMMYYYY(f.fecha)}` : `${formatDateDDMMYYYY(f.fecha)} · ${pends} pend`;
+      const txt = pends === 0 ? `âœ“ ${formatDateDDMMYYYY(f.fecha)}` : `${formatDateDDMMYYYY(f.fecha)} Â· ${pends} pend`;
       html += `<button class="chip ${cls}${activo}" onclick="selectFecha('${f.fecha}')">${txt}</button>`;
     });
     cont.innerHTML = html;
@@ -1792,7 +1798,7 @@
 
     let html = '';
     for (const [finca, orders] of Object.entries(byFinca)) {
-      html += `<div class="finca-group"><div class="finca-title">📍 ${escHtml(finca)} (${orders.length} pedidos)</div><div class="grid">`;
+      html += `<div class="finca-group"><div class="finca-title">ðŸ“ ${escHtml(finca)} (${orders.length} pedidos)</div><div class="grid">`;
       orders.forEach(o => {
         const tot = totalesPlanta(o);
         const totalRequested = tot.solicitada;
@@ -1803,18 +1809,18 @@
         let cardClass = 'card-sin_acopiar';
 
         if (o.estado === 'enviado') {
-          badgeHtml = '<span class="badge b-green">✅ Enviado</span>';
+          badgeHtml = '<span class="badge b-green">âœ… Enviado</span>';
           cardClass = 'card-enviado';
         } else if (o.estado === 'camion_asignado') {
           badgeHtml = '<span class="badge b-blue" style="background:rgba(127,208,224,0.3)">🚛 Camión Asignado</span>';
           cardClass = 'card-camion_asignado';
         } else if (o.estado === 'en_proceso') {
-          badgeHtml = '<span class="badge b-yellow">⚙️ En Proceso</span>';
+          badgeHtml = '<span class="badge b-yellow">âš™ï¸ En Proceso</span>';
           cardClass = 'card-en_proceso';
         }
 
-        const brandBadge = o.marcaPedido ? `<span class="badge blink-prio b-yellow" style="margin-left:6px;">🏷️ ${escHtml(o.marcaPedido)}</span>` : '';
-        const qtyBox = `<span class="pill pill-ok" title="A acopiar · Acopiada · Asignada a faena" style="margin-left:6px;">🌱 ${tot.solicitada} · ✅ ${tot.acopiada} · 👷 ${tot.asignada}</span>`;
+        const brandBadge = o.marcaPedido ? `<span class="badge blink-prio b-yellow" style="margin-left:6px;">ðŸ·ï¸ ${escHtml(o.marcaPedido)}</span>` : '';
+        const qtyBox = `<span class="pill pill-ok" title="A acopiar Â· Acopiada Â· Asignada a faena" style="margin-left:6px;">ðŸŒ± ${tot.solicitada} Â· âœ… ${tot.acopiada} Â· ðŸ‘· ${tot.asignada}</span>`;
         const obsBtn = o.notasPedido ? `<button class="icon-btn" onclick="openObsModal('Observaciones — Pedido #${o.numero}', '${jsAttr(o.notasPedido)}')" title="Observaciones del pedido">📝</button>` : '';
         const msgBlink = esSinLeer(o.numero, '') ? ' btn-msg-unread' : '';
 
@@ -1828,7 +1834,7 @@
               <div>${badgeHtml}</div>
             </div>
             <div style="font-size:0.8rem; color:var(--mut); margin-bottom:6px;">
-              📅 Carga: <b>${formatDateDDMMYYYY(o.fechaCarga) || 'N/D'}</b> | Zona: <b>${escHtml(o.sector || 'N/D')}</b>
+              ðŸ“… Carga: <b>${formatDateDDMMYYYY(o.fechaCarga) || 'N/D'}</b> | Zona: <b>${escHtml(o.sector || 'N/D')}</b>
             </div>
             <div class="progress-box">
               <div class="progress-text">
@@ -1840,10 +1846,10 @@
               </div>
             </div>
             <div class="card-actions">
-              <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">👁️ Informe Punteo</button>
-              <button class="btn-sec" onclick="openOrderDetails('${o.serie}', '${o.numero}')">🔍 Detalle</button>
+              <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">ðŸ‘ï¸ Informe Punteo</button>
+              <button class="btn-sec" onclick="openOrderDetails('${o.serie}', '${o.numero}')">ðŸ” Detalle</button>
               ${obsBtn}
-              <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="openChatModal('${o.numero}', '')">💬 Mensajes</button>
+              <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="openChatModal('${o.numero}', '')">ðŸ’¬ Mensajes</button>
             </div>
           </div>
         `;
@@ -1887,7 +1893,7 @@
 
     if (!pedidos.length) {
       document.getElementById('etiquetasDiaBody').innerHTML =
-        '<div style="color:var(--lime); padding:30px; text-align:center;">✅ No hay etiquetas a sacar en los pedidos de esta fecha.</div>';
+        '<div style="color:var(--lime); padding:30px; text-align:center;">âœ… No hay etiquetas a sacar en los pedidos de esta fecha.</div>';
       return;
     }
 
@@ -1895,14 +1901,14 @@
     pedidos.forEach(p => {
       const pend = p.resumen.pendiente || 0;
       const managed = p.resumen.impresa + p.resumen.encolada;
-      let badge = pend === 0 ? 'Todas gestionadas ✓' : (managed > 0 ? `Parcial (${pend} pend.)` : `Nuevas (${pend})`);
+      let badge = pend === 0 ? 'Todas gestionadas âœ“' : (managed > 0 ? `Parcial (${pend} pend.)` : `Nuevas (${pend})`);
       let bColor = pend === 0 ? 'var(--lime)' : (managed > 0 ? 'var(--warn)' : 'var(--blue)');
 
       html += `<div class="card" style="border-color:${bColor}; margin-bottom:12px;">
         <div class="card-header">
           <div>
             <div class="order-id">Pedido #${p.pedido} <small style="color:var(--mut)">(${p.cliente})</small></div>
-            <div class="client-name">📍 ${p.finca || 'SIN FINCA'}</div>
+            <div class="client-name">ðŸ“ ${p.finca || 'SIN FINCA'}</div>
           </div>
           <span class="badge" style="border:1px solid ${bColor}; color:${bColor};">${badge}</span>
         </div>
@@ -1987,7 +1993,7 @@
     let html = '';
     historicoFechasData.forEach(f => {
       const activo = f.fecha === selectedDateHistorico ? ' chip-activo' : '';
-      html += `<button class="chip chip-cargado${activo}" onclick="selectFechaHistorico('${f.fecha}')">📜 ${formatDateDDMMYYYY(f.fecha)} (${f.total} ped)</button>`;
+      html += `<button class="chip chip-cargado${activo}" onclick="selectFechaHistorico('${f.fecha}')">ðŸ“œ ${formatDateDDMMYYYY(f.fecha)} (${f.total} ped)</button>`;
     });
     cont.innerHTML = html;
   }
@@ -2019,7 +2025,7 @@
 
     let html = '<div class="grid">';
     filtered.forEach(o => {
-      const badge = o.estado === 'enviado' ? '<span class="badge b-green">✅ Enviado</span>' : '<span class="badge b-yellow">🚛 Cargado</span>';
+      const badge = o.estado === 'enviado' ? '<span class="badge b-green">âœ… Enviado</span>' : '<span class="badge b-yellow">ðŸš› Cargado</span>';
       const cClass = o.estado === 'enviado' ? 'card-enviado' : 'card-cargado';
       html += `
         <div class="card ${cClass}" id="histCard_${o.numero}">
@@ -2031,13 +2037,13 @@
             <div>${badge}</div>
           </div>
           <div style="font-size:0.8rem; color:var(--mut); margin-bottom:6px;">
-            📍 Finca: <b>${o.finca || 'N/D'}</b> | Zona: <b>${o.sector || 'N/D'}</b><br>
-            ⚡ Total Pistoleado: <b>${o.totalPistoleado} uds</b> (${o.totalEventos} escaneos)
+            ðŸ“ Finca: <b>${o.finca || 'N/D'}</b> | Zona: <b>${o.sector || 'N/D'}</b><br>
+            âš¡ Total Pistoleado: <b>${o.totalPistoleado} uds</b> (${o.totalEventos} escaneos)
           </div>
           <div class="card-actions" style="flex-wrap:wrap;">
-            <button onclick="toggleHistDetalle('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">📋 Desplegar Pistoleo / Carga</button>
-            <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">📄 Punteo</button>
-            <button onclick="verInformeDesglose('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">🔍 Desglose</button>
+            <button onclick="toggleHistDetalle('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">ðŸ“‹ Desplegar Pistoleo / Carga</button>
+            <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">ðŸ“„ Punteo</button>
+            <button onclick="verInformeDesglose('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">ðŸ” Desglose</button>
           </div>
           <div id="histDetalle_${o.numero}" style="display:none; margin-top:10px;"></div>
         </div>
@@ -2061,7 +2067,7 @@
       const data = await res.json();
 
       let matHtml = (data.matriculas || []).map(m =>
-        `<div>🚛 <b>${m.tipo}:</b> ${m.matricula || 'N/D'} (Muelle: ${m.muelle || 'N/D'}) <small style="color:var(--mut);">${m.creadoEn || ''}</small></div>`
+        `<div>ðŸš› <b>${m.tipo}:</b> ${m.matricula || 'N/D'} (Muelle: ${m.muelle || 'N/D'}) <small style="color:var(--mut);">${m.creadoEn || ''}</small></div>`
       ).join('') || '<div style="color:var(--mut)">Sin matrículas registradas</div>';
 
       let regHtml = `<table><thead><tr><th>Parte</th><th>Hora</th><th>Operario</th><th>Ref. Servida</th><th>Cant</th><th>Sust</th><th>OCR / EAN</th></tr></thead><tbody>`;
@@ -2072,7 +2078,7 @@
           <td>${r.empleado}</td>
           <td style="font-weight:700; color:var(--blue);">${r.refServida}</td>
           <td>${r.cantidad}</td>
-          <td>${r.sustituido ? '🔄' : ''}</td>
+          <td>${r.sustituido ? 'ðŸ”„' : ''}</td>
           <td style="font-size:0.7rem;">${r.ocr || r.ean}</td>
         </tr>`;
       });
@@ -2100,7 +2106,7 @@
           ${regHtml}
         </div>
         <div class="hist-section">
-          <div class="hist-title">🏷️ Etiquetas del Pedido (${data.etiquetas.length})</div>
+          <div class="hist-title">ðŸ·ï¸ Etiquetas del Pedido (${data.etiquetas.length})</div>
           ${etHtml}
         </div>
       `;
@@ -2190,10 +2196,10 @@
 
       let bodyHtml = `
         <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; font-size: 0.85rem; background:var(--card2); padding:10px; border-radius:8px;">
-          <div>📍 <b>Finca:</b> ${data.finca}</div>
+          <div>ðŸ“ <b>Finca:</b> ${data.finca}</div>
           <div>🚛 <b>Matrícula Camión:</b> ${data.matriculaCamion || 'Pendiente'}</div>
-          <div>👤 <b>Operarios:</b> ${data.operarios || 'N/D'}</div>
-          <div>📦 <b>Estado Carga:</b> ${data.cargado ? 'CARGADO ✓' : 'EN PROCESO'}</div>
+          <div>ðŸ‘¤ <b>Operarios:</b> ${data.operarios || 'N/D'}</div>
+          <div>ðŸ“¦ <b>Estado Carga:</b> ${data.cargado ? 'CARGADO âœ“' : 'EN PROCESO'}</div>
         </div>
         <h3 style="font-size:0.95rem; margin-bottom:6px; color:var(--blue);">Líneas del Pedido</h3>
         <table>

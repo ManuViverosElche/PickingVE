@@ -2326,11 +2326,43 @@ private fun TruckArrivalDialog(
             }
         },
         confirmButton = {
-            Button(
-                enabled = matriculaCamion.isNotBlank() && doubleCheckOk && !escaneando,
-                onClick = { confirmar() }
-            ) {
-                Text("Registrar")
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // D-196: compartir por WhatsApp con datos del pedido
+                TextButton(
+                    onClick = {
+                        val msg = buildString {
+                            appendLine("🚚 Carga lista")
+                            if (fincaCarga.isNotBlank()) appendLine("📍 Finca: $fincaCarga")
+                            if (muelle.isNotBlank()) appendLine("🏢 Zona: $muelle")
+                            if (matriculaCamion.isNotBlank()) appendLine("🚛 Camión: ${matriculaCamion.trim()}")
+                            if (matriculaRemolque.isNotBlank()) appendLine("🚛 Remolque: ${matriculaRemolque.trim()}")
+                        }
+                        val intent = android.content.Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            `package` = "com.whatsapp"
+                            putExtra(Intent.EXTRA_TEXT, msg)
+                        }
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            // WhatsApp no instalado: comparte genérico
+                            val fallback = android.content.Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, msg)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(fallback, "Compartir"))
+                        }
+                    },
+                    enabled = matriculaCamion.isNotBlank()
+                ) {
+                    Text("WhatsApp", color = MaterialTheme.colorScheme.primary)
+                }
+                Button(
+                    enabled = matriculaCamion.isNotBlank() && doubleCheckOk && !escaneando,
+                    onClick = { confirmar() }
+                ) {
+                    Text("Registrar")
+                }
             }
         },
         dismissButton = {
