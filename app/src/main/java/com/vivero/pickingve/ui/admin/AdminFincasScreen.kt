@@ -100,7 +100,7 @@ fun AdminFincasScreen(
             text = {
                 Text(
                     "Se borra definitivamente. Si la finca vuelve a aparecer en pedidos " +
-                        "nuevos, se volverÃ¡ a importar automÃ¡ticamente."
+                        "nuevos, se volverá a importar automáticamente."
                 )
             },
             confirmButton = {
@@ -124,7 +124,7 @@ fun AdminFincasScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("GestiÃ³n de fincas") },
+                title = { Text("Gestión de fincas") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
@@ -144,9 +144,9 @@ fun AdminFincasScreen(
         ) {
             Text(
                 "Las fincas detectadas en pedidos y las dadas de alta manualmente se asignan " +
-                    "a cada empleado desde GestiÃ³n de usuarios. Puedes renombrarlas, ocultarlas " +
+                    "a cada empleado desde Gestión de usuarios. Puedes renombrarlas, ocultarlas " +
                     "(el interruptor oculta/muestra: las ocultas no se ofrecen al empleado, pero sus " +
-                    "pedidos siguen sincronizÃ¡ndose) o eliminarlas definitivamente.",
+                    "pedidos siguen sincronizándose) o eliminarlas definitivamente.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -170,7 +170,7 @@ fun AdminFincasScreen(
                     },
                     enabled = nuevaFinca.isNotBlank()
                 ) {
-                    Text("AÃ±adir")
+                    Text("Añadir")
                 }
             }
 
@@ -178,7 +178,7 @@ fun AdminFincasScreen(
                 CircularProgressIndicator(modifier = Modifier.padding(top = 24.dp))
             } else if (state.fincas.isEmpty()) {
                 Text(
-                    "Sin fincas todavÃ­a",
+                    "Sin fincas todavía",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -194,7 +194,7 @@ fun AdminFincasScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(finca.nombre, style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    if (finca.oculto) "Oculta" else if (finca.manual) "Manual" else "AutomÃ¡tica (de pedidos)",
+                                    if (finca.oculto) "Oculta" else if (finca.manual) "Manual" else "Automática (de pedidos)",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

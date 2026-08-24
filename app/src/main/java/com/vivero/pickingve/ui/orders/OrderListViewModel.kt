@@ -7,6 +7,7 @@ import com.vivero.pickingve.data.local.dao.OrderWithTotals
 import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
+import com.vivero.pickingve.util.Errores
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -195,7 +196,7 @@ class OrderListViewModel(
             } catch (e: Exception) {
                 Log.e("PickingVE", "sync failed", e)
                 _syncState.value = SyncUiState(
-                    lastError = "Error al sincronizar: ${e.message}"
+                    lastError = "Error al sincronizar: ${Errores.traducir(e)}"
                 )
             }
         }
@@ -247,7 +248,7 @@ class OrderListViewModel(
             } catch (e: Exception) {
                 Log.e("PickingVE", "upload failed", e)
                 _uploadState.value = UploadUiState(
-                    lastError = "Error al subir: ${e.message}"
+                    lastError = "Error al subir: ${Errores.traducir(e)}"
                 )
             }
         }

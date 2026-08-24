@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vivero.pickingve.data.remote.ApiFinca
 import com.vivero.pickingve.data.remote.PickingApiClient
+import com.vivero.pickingve.util.Errores
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -38,7 +39,7 @@ class AdminFincasViewModel(
                 Log.e("PickingVE", "admin fincas load failed", e)
                 _state.value = AdminFincasUiState(
                     loading = false,
-                    error = "No se pudo cargar el listado: ${e.message}"
+                    error = "No se pudo cargar el listado: ${Errores.traducir(e)}"
                 )
             }
         }
@@ -58,7 +59,7 @@ class AdminFincasViewModel(
                 load()
             } catch (e: Exception) {
                 Log.e("PickingVE", "crear finca failed", e)
-                _state.value = _state.value.copy(error = "Error al guardar: ${e.message}")
+                _state.value = _state.value.copy(error = "Error al guardar: ${Errores.traducir(e)}")
             }
         }
     }
@@ -84,7 +85,7 @@ class AdminFincasViewModel(
                 load()
             } catch (e: Exception) {
                 Log.e("PickingVE", "renombrar finca failed", e)
-                _state.value = _state.value.copy(error = "Error al guardar: ${e.message}")
+                _state.value = _state.value.copy(error = "Error al guardar: ${Errores.traducir(e)}")
             }
         }
     }
@@ -113,7 +114,7 @@ class AdminFincasViewModel(
                 _state.value = _state.value.copy(
                     fincas = _state.value.fincas.map { if (it.finca == finca.finca) finca else it },
                     cambiando = _state.value.cambiando - finca.finca,
-                    error = "Error al guardar: ${e.message}"
+                    error = "Error al guardar: ${Errores.traducir(e)}"
                 )
             }
         }
@@ -128,7 +129,7 @@ class AdminFincasViewModel(
                 load()
             } catch (e: Exception) {
                 Log.e("PickingVE", "eliminar finca failed", e)
-                _state.value = _state.value.copy(error = "Error al eliminar: ${e.message}")
+                _state.value = _state.value.copy(error = "Error al eliminar: ${Errores.traducir(e)}")
             }
         }
     }

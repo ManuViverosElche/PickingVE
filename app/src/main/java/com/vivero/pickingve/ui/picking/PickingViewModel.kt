@@ -14,6 +14,7 @@ import com.vivero.pickingve.data.repository.SettingsRepository
 import com.vivero.pickingve.domain.usecase.ParsePlantPassportUseCase
 import com.vivero.pickingve.domain.usecase.PassportData
 import com.vivero.pickingve.scanner.OcrLine
+import com.vivero.pickingve.util.Errores
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -111,13 +112,13 @@ class PickingViewModel(
     private var unpickTargetLine: OrderLineEntity? = null
     private var lastOcrText: String? = null
 
-    /** Lanza en viewModelScope convirtiendo cualquier excepciÃ³n en mensaje de UI (nunca crashea). */
+    /** Lanza en viewModelScope convirtiendo cualquier excepción en mensaje de UI (nunca crashea). */
     private fun launchSafe(errorMessage: String, block: suspend () -> Unit) {
         viewModelScope.launch {
             try {
                 block()
             } catch (e: Exception) {
-                lastMessage.value = "$errorMessage: ${e.message ?: e.javaClass.simpleName}"
+                lastMessage.value = "$errorMessage: ${Errores.traducir(e)}"
             }
         }
     }
@@ -275,7 +276,7 @@ class PickingViewModel(
         val litrajes: List<LitrajeEntity>
     )
 
-    /** D-175: cerrar lÃ­nea es funciÃ³n del OPERARIO de acopio, no del encargado. */
+    /** D-175: cerrar línea es función del OPERARIO de acopio, no del encargado. */
     fun esOperarioAcopio(): Boolean =
         repository.tipoSesion() == PickingRepository.TIPO_OPERARIO
 
@@ -300,7 +301,7 @@ class PickingViewModel(
                 val comentarios = PickingApiClient().fetchComentarios(pedidoId)
                 repository.actualizarChatEstados(comentarios)
             } catch (e: Exception) {
-                // Sin red: se mantiene el Ãºltimo estado conocido
+                // Sin red: se mantiene el último estado conocido
             }
         }
     }
@@ -360,8 +361,8 @@ class PickingViewModel(
     }
 
     /**
-     * D-174: true solo cuando el producto entra por lectura REAL de cÃ³digo de
-     * barras. El acopio manual y el OCR dejan ean_escaneado vacÃ­o en BigQuery,
+     * D-174: true solo cuando el producto entra por lectura REAL de código de
+     * barras. El acopio manual y el OCR dejan ean_escaneado vacío en BigQuery,
      * de modo que el panel las cuenta como "planta sin etiqueta" y el informe
      * distingue EAN servido de EAN escaneado.
      */
@@ -378,9 +379,9 @@ class PickingViewModel(
             if (passport == null) {
                 val recorte = text.trim().replace('\n', ' ').take(140)
                 lastMessage.value = if (recorte.isBlank()) {
-                    "No se detectÃ³ la referencia C: en la etiqueta"
+                    "No se detectó la referencia C: en la etiqueta"
                 } else {
-                    "No se detectÃ³ la referencia C: en la etiqueta. Texto: $recorte"
+                    "No se detectó la referencia C: en la etiqueta. Texto: $recorte"
                 }
                 return@launch
             }
@@ -390,7 +391,7 @@ class PickingViewModel(
                     repository.syncCatalogIfChanged(PickingApiClient())
                     catalogo = repository.allProducts()
                 } catch (e: Exception) {
-                    // Sin red: seguir con el catÃ¡logo vacÃ­o; el modal permite sustituciÃ³n/ampliaciÃ³n
+                    // Sin red: seguir con el catálogo vacío; el modal permite sustitución/ampliación
                 }
             }
             val candidatos = parser.buscarPorReferencia(passport.referencia, catalogo)
@@ -430,7 +431,7 @@ class PickingViewModel(
         }
     }
 
-    /** El encargado aceptÃ³ la referencia leÃ­da (posiblemente con litraje/sector corregidos). */
+    /** El encargado aceptó la referencia leída (posiblemente con litraje/sector corregidos). */
     fun confirmOcrMatch(referencia: String, litrajeDesc: String?, sectorDesc: String?) {
         val pending = pendingOcrMatch.value ?: return
         val ref = referencia.trim().replaceFirst(Regex("^[cC]\\s*[:.]?\\s*"), "")
@@ -449,7 +450,7 @@ class PickingViewModel(
                 parser.resolveSector(it, repository.sectoresList())
             }
             if (candidatos.isEmpty()) {
-                // La referencia no estÃ¡ en el catÃ¡logo: se trata como sustituciÃ³n o ampliaciÃ³n.
+                // La referencia no está en el catálogo: se trata como sustitución o ampliación.
                 pendingOcrMatch.value = null
                 lastOcrText = pending.ocrText
                 rutaProducto(
@@ -500,9 +501,9 @@ class PickingViewModel(
                     sectorDesc = sectorDesc?.takeIf { it.isNotBlank() }
                 )
                 lastMessage.value = when {
-                    candidatos.isEmpty() -> "Referencia C: $ref no encontrada en el catÃ¡logo"
+                    candidatos.isEmpty() -> "Referencia C: $ref no encontrada en el catálogo"
                     filtrados.isEmpty() -> "Ninguna variante de C: $ref coincide con el litraje y sector elegidos"
-                    else -> "Varios productos coinciden con C: $ref â€” elige litraje y sector"
+                    else -> "Varios productos coinciden con C: $ref ↔ elige litraje y sector"
                 }
                 return@launch
             }
@@ -516,7 +517,7 @@ class PickingViewModel(
         pendingOcrMatch.value = null
     }
 
-    /** Ruta segÃºn el modo activo: desacopio, sobrante o acopio normal. */
+    /** Ruta según el modo activo: desacopio, sobrante o acopio normal. */
     private suspend fun rutaProducto(product: ProductEntity) {
         val currentState = uiState.value
         when {
@@ -551,9 +552,9 @@ class PickingViewModel(
             ) ?: parser.buscarPorReferencia(ref, catalogo).firstOrNull()
             if (producto == null) {
                 val leido = "C: $ref" +
-                    (litrajeDesc?.let { " Â· Litraje $it" } ?: "") +
-                    (sectorDesc?.let { " Â· Sector $it" } ?: "")
-                lastMessage.value = "No encontrado en el catÃ¡logo ($leido)"
+                    (litrajeDesc?.let { " · Litraje $it" } ?: "") +
+                    (sectorDesc?.let { " · Sector $it" } ?: "")
+                lastMessage.value = "No encontrado en el catálogo ($leido)"
                 return@launch
             }
             val currentState = uiState.value
@@ -565,7 +566,7 @@ class PickingViewModel(
         }
     }
 
-    /** Acopio manual: misma referencia y mismo litraje/sector que la lÃ­nea â†’ confirmaciÃ³n directa. */
+    /** Acopio manual: misma referencia y mismo litraje/sector que la línea → confirmación directa. */
     fun marcarDirecto(line: OrderLineEntity) {
         lastOcrText = null
         ultimoEscaneoFueEan = false
@@ -577,14 +578,14 @@ class PickingViewModel(
                     (line.sector.isBlank() || it.sector.isBlank() || it.sector == line.sector)
             } ?: parser.buscarPorReferencia(line.productId, catalogo).firstOrNull()
             if (producto == null) {
-                lastMessage.value = "No se encontrÃ³ la referencia ${line.productId} en el catÃ¡logo"
+                lastMessage.value = "No se encontró la referencia ${line.productId} en el catálogo"
                 return@launch
             }
             resolveProduct(producto)
         }
     }
 
-    /** Acopio manual: misma referencia que la lÃ­nea pero con otro litraje y/o sector de la etiqueta. */
+    /** Acopio manual: misma referencia que la línea pero con otro litraje y/o sector de la etiqueta. */
     fun marcarVariant(line: OrderLineEntity, litrajeDesc: String?, sectorDesc: String?) {
         ultimoEscaneoFueEan = false
         val mismoLitraje = litrajeDesc.isNullOrBlank() ||
@@ -611,7 +612,7 @@ class PickingViewModel(
                 repository.sectoresList()
             ) ?: parser.buscarPorReferencia(line.productId, catalogo).firstOrNull()
             if (variante == null) {
-                lastMessage.value = "No encontrado en el catÃ¡logo (C: ${line.productId})"
+                lastMessage.value = "No encontrado en el catálogo (C: ${line.productId})"
                 return@launch
             }
             if (coincideAtributos(variante, line)) {
@@ -629,7 +630,7 @@ class PickingViewModel(
             line.vigente && (line.productId == product.reference || line.productId == product.id)
         } ?: unpickTargetLine?.takeIf { it.vigente }
         if (target == null) {
-            lastMessage.value = "No hay una lÃ­nea de ${product.name} en el pedido"
+            lastMessage.value = "No hay una línea de ${product.name} en el pedido"
             return
         }
         // D-182: registros REALES de la linea para ELEGIR de donde desacopio.
@@ -701,11 +702,11 @@ class PickingViewModel(
         try {
             repository.uploadPendingRegistros(PickingApiClient())
         } catch (e: Exception) {
-            // Sin red: la compensaciÃ³n se sube en el siguiente ciclo
+            // Sin red: la compensación se sube en el siguiente ciclo
         }
     }
 
-    /** CuÃ¡nto muestra la UI como acopiado, descontando compensaciones pendientes de subir. */
+    /** Cuánto muestra la UI como acopiado, descontando compensaciones pendientes de subir. */
     private suspend fun shownPicked(line: OrderLineEntity, comps: Map<String, Int>): Int {
         val compensado = comps[line.orderLineId] ?: 0
         return maxOf(line.pickedQty, line.acopiadoServidor - compensado)
@@ -902,9 +903,9 @@ class PickingViewModel(
             )
             pendingConfirm.value = null
             lastMessage.value = if (confirm.isAmpliacion) {
-                "AmpliaciÃ³n: ${confirm.product.name}"
+                "Ampliación: ${confirm.product.name}"
             } else {
-                "AÃ±adido: ${confirm.product.name}" + if (batchQty > 1) " x$batchQty" else ""
+                "Añadido: ${confirm.product.name}" + if (batchQty > 1) " x$batchQty" else ""
             }
         }
     }
@@ -916,7 +917,7 @@ class PickingViewModel(
     }
 
     fun showOcrError() {
-        lastMessage.value = "No se pudo leer la etiqueta. IntÃ©ntalo de nuevo."
+        lastMessage.value = "No se pudo leer la etiqueta. Inténtalo de nuevo."
     }
 
     /** Generates the XLSX report for the current order and sends it to Telegram. */
@@ -959,10 +960,10 @@ class PickingViewModel(
                     } catch (e: Exception) {
                         0
                     }
-                    if (uploaded > 0) "Excel enviado: $it Â· $uploaded registros subidos a BigQuery"
+                    if (uploaded > 0) "Excel enviado: $it · $uploaded registros subidos a BigQuery"
                     else "Excel enviado: $it"
                 },
-                onFailure = { "Error: ${it.message}" }
+                onFailure = { "Error: ${Errores.traducir(it)}" }
             )
         }
     }
@@ -981,12 +982,12 @@ class PickingViewModel(
             sendingLabels.value = false
             lastMessage.value = result.fold(
                 onSuccess = { "Etiquetas enviadas: $it" },
-                onFailure = { "Error: ${it.message}" }
+                onFailure = { "Error: ${Errores.traducir(it)}" }
             )
         }
     }
 
-    /** Resta una etiqueta pendiente de la cola (si era la Ãºltima, la elimina). */
+    /** Resta una etiqueta pendiente de la cola (si era la última, la elimina). */
     fun decrementPendingLabel(recordId: String) {
         viewModelScope.launch {
             repository.decrementPendingLabel(recordId)
@@ -1009,7 +1010,7 @@ class PickingViewModel(
         fotos: Map<String, ByteArray> = emptyMap()
     ) {
         val orderId = selectedOrderId.value ?: return
-        launchSafe("Error al registrar el camiÃ³n") {
+        launchSafe("Error al registrar el camión") {
             repository.registerTruckArrival(
                 orderId,
                 matriculaCamion,
@@ -1018,7 +1019,7 @@ class PickingViewModel(
                 muelle,
                 fotos
             )
-            lastMessage.value = "CamiÃ³n registrado: $matriculaCamion"
+            lastMessage.value = "Camión registrado: $matriculaCamion"
         }
     }
 
@@ -1071,15 +1072,15 @@ fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
         }
     }
 
-    /** Cierra la lÃ­nea sin completarla, con motivo prediseÃ±ado o libre (logÃ­stica). */
+    /** Cierra la línea sin completarla, con motivo prediseñado o libre (logística). */
     fun cerrarLinea(line: OrderLineEntity, motivo: String, motivoTexto: String) {
-        launchSafe("No se pudo cerrar la lÃ­nea") {
+        launchSafe("No se pudo cerrar la línea") {
             val faltante = (line.requestedQty - maxOf(
                 line.pickedQty,
                 line.acopiadoServidor
             )).coerceAtLeast(0)
             repository.cerrarLinea(line, motivo, motivoTexto, faltante)
-            lastMessage.value = "LÃ­nea cerrada: ${line.productName}" +
+            lastMessage.value = "Línea cerrada: ${line.productName}" +
                 if (motivoTexto.isNotBlank()) " ($motivoTexto)" else ""
         }
     }
@@ -1092,7 +1093,7 @@ fun setUnpickingMode(on: Boolean, targetLine: OrderLineEntity? = null) {
                 lineaHuella = lineaHuella,
                 declarado = declarado,
                 puntado = puntado,
-                mensaje = "El operario declarÃ³ $declarado uds y se han puntuado $puntado uds"
+                mensaje = "El operario declaró $declarado uds y se han puntuado $puntado uds"
             )
         }
     }

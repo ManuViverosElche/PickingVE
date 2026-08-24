@@ -7,6 +7,7 @@ import com.vivero.pickingve.data.remote.PickingApiClient
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
 import com.vivero.pickingve.data.repository.SettingsStore
+import com.vivero.pickingve.util.Errores
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -79,7 +80,7 @@ class SettingsViewModel(
                 _emailState.value = EmailUiState(mensaje = "Correo actualizado")
             } catch (e: Exception) {
                 Log.e("PickingVE", "cambiar email failed", e)
-                _emailState.value = EmailUiState(error = "Error al cambiar el correo: ${e.message}")
+                _emailState.value = EmailUiState(error = "Error al cambiar el correo: ${Errores.traducir(e)}")
             }
         }
     }
@@ -112,7 +113,7 @@ class SettingsViewModel(
                 _passwordState.value = PasswordUiState(mensaje = "Contraseña actualizada")
             } catch (e: Exception) {
                 Log.e("PickingVE", "cambiar password failed", e)
-                _passwordState.value = PasswordUiState(error = "Error al cambiar: ${e.message}")
+                _passwordState.value = PasswordUiState(error = "Error al cambiar: ${Errores.traducir(e)}")
             }
         }
     }
@@ -133,7 +134,7 @@ class SettingsViewModel(
                 _passwordState.value = PasswordUiState(mensaje = "Datos locales borrados")
             } catch (e: Exception) {
                 Log.e("PickingVE", "limpiar datos locales failed", e)
-                _passwordState.value = PasswordUiState(error = "Error al limpiar: ${e.message}")
+                _passwordState.value = PasswordUiState(error = "Error al limpiar: ${Errores.traducir(e)}")
             } finally {
                 _limpiezaState.value = false
             }

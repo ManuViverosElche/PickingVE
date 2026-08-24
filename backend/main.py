@@ -4882,22 +4882,19 @@ def manager_orders(
          LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN (
             SELECT order_id, order_line_id,
-                   SUM(cantidad) AS ACOPIADO,
                    STRING_AGG(empleado, ', ') AS OPERARIOS,
-                   STRING_AGG(detalle, ', ') AS DETALLE_OPS
+                   STRING_AGG(CONCAT(op_email, ':', CAST(uds AS INT64)), ', ') AS DETALLE_OPS,
+                   SUM(uds) AS ACOPIADO
             FROM (
                 SELECT order_id, order_line_id,
                        COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido') AS empleado,
                        COALESCE(NULLIF(TRIM(LOWER(empleado_email)), ''),
-                                'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')) AS empleado_email,
-                       CONCAT(COALESCE(NULLIF(TRIM(LOWER(empleado_email)), ''),
-                                'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')),
-                               ':', CAST(SUM(cantidad_partida) AS INT64)) AS detalle,
-                       SUM(cantidad_partida) AS cantidad
+                                'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')) AS op_email,
+                       SUM(cantidad_partida) AS uds
                 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
-                GROUP BY 1, 2, 3, 4
+                GROUP BY order_id, order_line_id, empleado_nombre, empleado_email
             )
-            GROUP BY order_id, order_line_id
+            GROUP BY order_id, order_line_id, op_email
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
         LEFT JOIN (
             SELECT order_id, SUM(cantidad_partida) AS TOTAL_ACOPIADO
@@ -4968,7 +4965,8 @@ def manager_orders(
                     "referencia": ref,
                     "descripcion": r.get("DESCRIPCION_ARTICULO") or "",
                     "litraje": r.get("LITRAJE_DESC") or r.get("CODIGO_LITRAJE") or "",
-                    "sector": r.get("SECTOR_DESC") or r.get("CODIGO_SECTOR") or r.get("SECTOR_RELEVADO") or "",
+                    "sector": r.get("SECTOR_RELEVADO") or r.get("SECTOR_DESC") or r.get("CODIGO_SECTOR") or "",
+                    "sectorRelevado": r.get("SECTOR_RELEVADO") or "",
                     "ubicacionExtra": r.get("UBICACION_EXTRA") or "",
                     "fincaLinea": r.get("FINCA_RELEVADA") or p["finca"],
                     "prioritario": str(r.get("PRIORIDAD") or "").upper() == "PRIORITARIO",

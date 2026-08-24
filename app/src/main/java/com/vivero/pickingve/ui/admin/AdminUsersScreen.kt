@@ -109,7 +109,7 @@ fun AdminUsersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("GestiÃ³n de usuarios") },
+                title = { Text("Gestión de usuarios") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
@@ -149,7 +149,7 @@ fun AdminUsersScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text(if (editing) "Nueva contraseÃ±a (vacÃ­o = no cambia)" else "ContraseÃ±a") },
+                label = { Text(if (editing) "Nueva contraseña (vacío = no cambia)" else "Contraseña") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -258,7 +258,7 @@ fun AdminUsersScreen(
                         onClick = { viewModel.cancelarEdicion() },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Cancelar ediciÃ³n")
+                        Text("Cancelar edición")
                     }
                 }
             }
@@ -267,13 +267,13 @@ fun AdminUsersScreen(
 
             Text("Usuarios dados de alta", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Toca un usuario para editarlo (email, rol, modo, estado, fincas o contraseÃ±a).",
+                "Toca un usuario para editarlo (email, rol, modo, estado, fincas o contraseña).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (state.encargados.isEmpty()) {
                 Text(
-                    "Sin usuarios todavÃ­a",
+                    "Sin usuarios todavía",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -294,7 +294,7 @@ fun AdminUsersScreen(
                         ) {
                             Text(e.nombre, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                if (e.activo) e.modo else "${e.modo} Â· BAJA",
+                                if (e.activo) e.modo else "${e.modo} · BAJA",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (e.activo) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -304,7 +304,7 @@ fun AdminUsersScreen(
                             )
                         }
                         Text(
-                            "@${e.usuario} Â· ${e.rol}",
+                            "@${e.usuario} · ${e.rol}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

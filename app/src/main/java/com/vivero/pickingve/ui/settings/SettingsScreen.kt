@@ -119,7 +119,7 @@ fun SettingsScreen(
                 )
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text(
-                        "Correo: ${encargado.email.ifBlank { "â€”" }}",
+                        "Correo: ${encargado.email.ifBlank { "↔" }}",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
                     )
@@ -186,7 +186,7 @@ fun SettingsScreen(
                 Text("Guardar")
             }
             Text(
-                "CÃ³mo obtener el Chat ID: envÃ­a un mensaje al bot y consulta " +
+                "Cómo obtener el Chat ID: envía un mensaje al bot y consulta " +
                     "https://api.telegram.org/bot<TOKEN>/getUpdates",
                 style = MaterialTheme.typography.bodySmall
             )
@@ -195,7 +195,7 @@ fun SettingsScreen(
             Text("Bot de etiquetas", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Las etiquetas (maceta rota, cambio de formato) se piden a este bot. " +
-                    "Si se deja vacÃ­o, se usa el bot del parte.",
+                    "Si se deja vacío, se usa el bot del parte.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -215,11 +215,11 @@ fun SettingsScreen(
             )
 
             HorizontalDivider()
-            Text("ContraseÃ±a", style = MaterialTheme.typography.titleMedium)
+            Text("Contraseña", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = passwordActual,
                 onValueChange = { passwordActual = it },
-                label = { Text("ContraseÃ±a actual") },
+                label = { Text("Contraseña actual") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -228,7 +228,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = passwordNueva,
                 onValueChange = { passwordNueva = it },
-                label = { Text("Nueva contraseÃ±a (mÃ­n. 4 caracteres)") },
+                label = { Text("Nueva contraseña (mín. 4 caracteres)") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -237,7 +237,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = passwordConfirm,
                 onValueChange = { passwordConfirm = it },
-                label = { Text("Confirmar nueva contraseÃ±a") },
+                label = { Text("Confirmar nueva contraseña") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -247,7 +247,7 @@ fun SettingsScreen(
                 onClick = {
                     if (passwordNueva != passwordConfirm) {
                         scope.launch {
-                            snackbarHostState.showSnackbar("Las contraseÃ±as no coinciden")
+                            snackbarHostState.showSnackbar("Las contraseñas no coinciden")
                         }
                     } else {
                         viewModel.cambiarPassword(passwordActual, passwordNueva)
@@ -256,23 +256,23 @@ fun SettingsScreen(
                 enabled = !passwordState.changing,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (passwordState.changing) "Cambiando..." else "Cambiar contraseÃ±a")
+                Text(if (passwordState.changing) "Cambiando..." else "Cambiar contraseña")
             }
 
             if (isSuperUser) {
                 HorizontalDivider()
-                Text("AdministraciÃ³n", style = MaterialTheme.typography.titleMedium)
+                Text("Administración", style = MaterialTheme.typography.titleMedium)
                 Button(
                     onClick = onOpenUsers,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("GestiÃ³n de usuarios")
+                    Text("Gestión de usuarios")
                 }
                 Button(
                     onClick = onOpenFincas,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("GestiÃ³n de fincas")
+                    Text("Gestión de fincas")
                 }
             }
 
@@ -287,7 +287,7 @@ fun SettingsScreen(
             }
             Text(
                 "Borra pedidos, registros de picking y chats guardados en este dispositivo. " +
-                    "No afecta a BigQuery ni a la sesiÃ³n. Tras borrar, pulsa 'Sincronizar' para volver a descargar.",
+                    "No afecta a BigQuery ni a la sesión. Tras borrar, pulsa 'Sincronizar' para volver a descargar.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -296,7 +296,7 @@ fun SettingsScreen(
                 AlertDialog(
                     onDismissRequest = { confirmarLimpieza = false },
                     title = { Text("Limpiar datos locales") },
-                    text = { Text("Â¿Seguro? Se borrarÃ¡n los pedidos, registros y chats guardados en este dispositivo.") },
+                    text = { Text("¿Seguro? Se borrarán los pedidos, registros y chats guardados en este dispositivo.") },
                     confirmButton = {
                         Button(onClick = {
                             confirmarLimpieza = false

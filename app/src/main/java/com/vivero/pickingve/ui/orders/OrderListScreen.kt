@@ -146,12 +146,12 @@ fun OrderListScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.setSearchQuery(it) },
-                placeholder = { Text("Buscar pedido: cliente, nÂº, muelle, marcaâ€¦") },
+                placeholder = { Text("Buscar pedido: cliente, nº, muelle, marca…") },
                 singleLine = true,
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Limpiar bÃºsqueda")
+                            Icon(Icons.Filled.Close, contentDescription = "Limpiar búsqueda")
                         }
                     }
                 },
@@ -218,11 +218,11 @@ fun OrderListScreen(
                 ) {
                     Text(
                         text = if (searchQuery.isNotBlank()) {
-                            "Sin pedidos para \"${searchQuery.trim()}\".\nPrueba con otro cliente, nÂº de pedido o muelle."
+                            "Sin pedidos para \"${searchQuery.trim()}\".\nPrueba con otro cliente, nº de pedido o muelle."
                         } else if (selectedDays.size == 1 && LocalDate.now() in selectedDays) {
-                            "No hay pedidos de carga para hoy.\nToca otro dÃ­a para ver mÃ¡s pedidos."
+                            "No hay pedidos de carga para hoy.\nToca otro día para ver más pedidos."
                         } else {
-                            "No hay pedidos para los dÃ­as seleccionados.\nSincroniza (â†») o toca otro dÃ­a."
+                            "No hay pedidos para los días seleccionados.\nSincroniza (↻) o toca otro día."
                         },
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center
@@ -276,8 +276,8 @@ private fun dayLabel(epochMillis: Long): String {
         .atZone(ZoneId.systemDefault())
         .toLocalDate()
     return when (date) {
-        LocalDate.now() -> "Hoy Â· ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
-        LocalDate.now().plusDays(1) -> "MaÃ±ana Â· ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
+        LocalDate.now() -> "Hoy · ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
+        LocalDate.now().plusDays(1) -> "Mañana · ${date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
         else -> date.format(DateTimeFormatter.ofPattern("EEEE dd/MM/yyyy", Locale("es")))
     }
 }
@@ -312,7 +312,7 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                     )
                     if (order.modificado) {
                         Text(
-                            text = "MODIFICADO Â· revisa las lÃ­neas",
+                            text = "MODIFICADO · revisa las líneas",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
@@ -386,7 +386,7 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
                     text = listOf(
                         order.fincaCarga.ifBlank { null }?.let { "Finca de carga: $it" },
                         order.sectorCarga.ifBlank { null }?.let { "Sector de carga: $it" }
-                    ).filterNotNull().joinToString(" Â· "),
+                    ).filterNotNull().joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
@@ -394,7 +394,7 @@ private fun OrderCard(order: OrderWithTotals, onClick: () -> Unit, onInfo: () ->
             }
             if (order.cargado) {
                 Text(
-                    text = "âœ“ CARGADO",
+                    text = "✓ CARGADO",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,

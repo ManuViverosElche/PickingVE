@@ -1504,9 +1504,10 @@ private fun OrderLineCard(
 @Composable
 private fun PrioBadge(prioridad: String) {
     val p = prioridad.trim().uppercase()
-    when {
-        // D-187: PRIORITARIO = amarillo parpadeante
-        p == "PRIORITARIO" -> {
+    when (p) {
+        // D-193: SOLO existen dos etiquetas. Todo lo demas (NORMAL, vacio...)
+        // no pinta nada.
+        "PRIORITARIO" -> {
             val transition = rememberInfiniteTransition(label = "prio")
             val alpha by transition.animateFloat(
                 initialValue = 0.45f,
@@ -1523,8 +1524,7 @@ private fun PrioBadge(prioridad: String) {
                 modifier = Modifier.alpha(alpha)
             )
         }
-        // D-187: NO PRIORITARIO = rojo corporativo parpadeante
-        p == "NO PRIORITARIO" -> {
+        "NO PRIORITARIO" -> {
             val transition = rememberInfiniteTransition(label = "noprio")
             val alpha by transition.animateFloat(
                 initialValue = 0.45f,
@@ -1541,7 +1541,6 @@ private fun PrioBadge(prioridad: String) {
                 modifier = Modifier.alpha(alpha)
             )
         }
-        // D-187: VACIO = sin etiqueta (no significa prioritario)
     }
 }
 

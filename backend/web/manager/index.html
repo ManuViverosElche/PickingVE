@@ -92,11 +92,18 @@
   .filters-sticky { position: sticky; top: 118px; z-index: 930; box-shadow: 0 6px 14px rgba(0,0,0,0.35); }
   body { padding-top: 8px; }
 
+  /* D-194: pedido desplegado en reparto — cabecera ANCLADA arriba y lineas
+     con scroll propio; el resto de la pagina queda detras. */
+  .reparto-bloque.abierto { position: sticky; top: 8px; z-index: 40; max-height: calc(100vh - 20px); overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+  .reparto-bloque.abierto .card-header { position: sticky; top: 0; z-index: 7; background: var(--card2, #123); border-radius: 12px 12px 0 0; }
+
   /* ===== Animaciones de aviso (parpadeo) ===== */
   @keyframes blinkSoft { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
   @keyframes blinkRedCorp { 0%,100% { background: rgba(150,38,34,0.35); color: #ff9e95; border-color: #c03a30; box-shadow: 0 0 8px rgba(224,90,78,0.5); } 50% { background: rgba(150,38,34,0.08); color: #e05a4e; border-color: rgba(224,90,78,0.35); box-shadow: none; } }
   .blink-prio { animation: blinkSoft 1s ease-in-out infinite; }
   .badge-noprio { background: transparent; border: 1px solid rgba(224,90,78,0.45); color: #ff9e95; animation: blinkSoft 1s ease-in-out infinite; }
+  /* D-193: NO PRIORITARIO = rojo corporativo parpadeante */
+  .badge-prio-roja { background: #962622; color: #ffffff; border: 1px solid #b23a30; font-weight: 700; animation: blinkSoft 1.2s ease-in-out infinite; }
   .marca-linea-aviso { color: var(--warn); font-weight: 700; animation: blinkSoft 1s ease-in-out infinite; }
   .btn-msg-unread { animation: blinkRedCorp 1s ease-in-out infinite !important; }
 
@@ -1305,14 +1312,13 @@
 
     let lineasHtml = (o.lineas || []).map((l, idx) => {
       const lineNum = l.posicion || (idx + 1);
-      // D-185: 3 estados de PRIORIDAD — "PRIORITARIO" destacado, "NO PRIORITARIO"
-      // neutro, y VACIO sin etiqueta alguna (vacio no significa prioritario).
-      const prioTxt = (l.prioridadTexto || '').toUpperCase();
+      // D-193: SOLO dos etiquetas posibles. NORMAL/vacio/otros = nada.
+      const prioTxt = (l.prioridadTexto || '').toUpperCase().trim();
       let prioBadge = '';
       if (prioTxt === 'PRIORITARIO') {
         prioBadge = '<span class="badge b-yellow blink-prio">⭐ Prioritario</span>';
-      } else if (prioTxt) {
-        prioBadge = '<span class="badge badge-noprio">' + escHtml(prioTxt) + '</span>';
+      } else if (prioTxt === 'NO PRIORITARIO') {
+        prioBadge = '<span class="badge badge-prio-roja blink-prio">NO PRIORITARIO</span>';
       }
 
       let marcaInfo = '';
@@ -1386,8 +1392,8 @@
     }).join('');
 
     return `
-          <div class="card" style="margin-bottom: 16px; border-color: var(--line);">
-            <div class="card-header" style="cursor:pointer;" onclick="toggleRepartoOrder('${o.serie}_${o.numero}')">
+          <div class="card reparto-bloque" style="margin-bottom: 16px; border-color: var(--line);">
+            <div class="card-header reparto-hdr" style="cursor:pointer;" onclick="toggleRepartoOrder('${o.serie}_${o.numero}')">
               <div>
                 <div class="order-id">📦 Pedido #${o.numero} ${orderRef} ${brandHeader} ${qtyBox}</div>
                 <div class="client-name" style="font-size:0.95rem; margin-top:2px;"><b>${escHtml(fiscalName)}</b> ${commercialDiff}</div>
@@ -1433,8 +1439,21 @@
 
   function toggleRepartoOrder(key) {
     const el = document.getElementById(`reparto_lines_${key}`);
-    if (el) {
-      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (!el) return;
+    const abrir = el.style.display === 'none';
+    // D-194: solo un pedido abierto a la vez
+    document.querySelectorAll('.reparto-bloque.abierto').forEach(b => {
+      b.classList.remove('abierto');
+      const ln = b.querySelector('[id^="reparto_lines_"]');
+      if (ln) ln.style.display = 'none';
+    });
+    if (abrir) {
+      el.style.display = 'block';
+      const card = el.closest('.reparto-bloque');
+      if (card) {
+        card.classList.add('abierto');
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
   }
 

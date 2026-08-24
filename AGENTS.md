@@ -1,5 +1,20 @@
 # AGENTS.md - PickingVE
 
+## Router de Skills (activación automática)
+Antes de empezar CUALQUIER tarea, comprueba si el pedido del usuario encaja aquí e invoca la skill correspondiente (herramienta `skill`). Si dudas entre dos, carga AMBAS. El usuario no nombrará las skills: tú decides por él.
+
+| Si el usuario pide algo como... | Skill |
+|---|---|
+| "audita el código", "revisa calidad", "comprueba fugas/seguridad Android" | `auditoria-android` |
+| "prueba la app como usuario", "mira si va fluida", "comprueba mensajes/errores" | `auditoria-experiencia-usuario` |
+| "despliega", "publica", "súbelo al servidor", "pásalo a producción" | `despliegue-backend` |
+| "revisa el backend", "main.py", "seguridad del servidor", "endpoints" | `auditoria-backend` |
+| "sincroniza", "reconcilia", "los datos no cuadran", "BigQuery/Access" | `conector-bigquery` |
+| "instala/prueba el APK en el móvil", "haz un smoke test real" | `prueba-dispositivo-apk` |
+| "diseña una pantalla", "mejora la UI", "estilo Material" | `mobile-android-design` |
+
+Regla general de calidad: tras cambios significativos en la app → `auditoria-experiencia-usuario`; tras cambios en `backend/` → deploy + verificación con `despliegue-backend` (D-156).
+
 ## Proyecto
 App Android (Kotlin, Jetpack Compose) de picking offline-first para viveros/campo.
 - Compila con: `gradlew.bat assembleDebug` (Gradle 8.7, JDK del Android Studio en `C:\Program Files\Android\Android Studio\jbr`).

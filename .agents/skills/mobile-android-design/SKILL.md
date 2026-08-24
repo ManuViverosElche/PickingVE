@@ -1,6 +1,6 @@
 ---
 name: mobile-android-design
-description: Master Material Design 3 and Jetpack Compose patterns for building native Android apps. Use when designing Android interfaces, implementing Compose UI, or following Google's Material Design guidelines.
+description: Master Material Design 3 and Jetpack Compose patterns for building native Android apps. Activar cuando se pida diseñar pantallas, mejorar la UI, aplicar estilo Material, crear componentes Compose o seguir las guías de Google ("diseña una pantalla", "mejora la interfaz", "estilo Material 3").
 ---
 
 # Android Mobile Design

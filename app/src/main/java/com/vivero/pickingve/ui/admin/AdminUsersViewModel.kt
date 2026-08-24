@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.vivero.pickingve.data.remote.ApiEncargado
 import com.vivero.pickingve.data.remote.CrearEncargadoRequest
 import com.vivero.pickingve.data.remote.PickingApiClient
+import com.vivero.pickingve.util.Errores
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -105,7 +106,7 @@ class AdminUsersViewModel(
                 load()
             } catch (e: Exception) {
                 Log.e("PickingVE", "guardar encargado failed", e)
-                _state.value = _state.value.copy(error = "Error al guardar: ${e.message}")
+                _state.value = _state.value.copy(error = "Error al guardar: ${Errores.traducir(e)}")
             }
         }
     }

@@ -1,6 +1,6 @@
 ---
 name: auditoria-android
-description: Skill para ejecutar auditorías integrales de calidad, seguridad, rendimiento y buenas prácticas en proyectos Android con Kotlin y Jetpack Compose.
+description: Skill para ejecutar auditorías integrales de calidad, seguridad, rendimiento, fugas de memoria y buenas prácticas en PickingVE (Kotlin + Jetpack Compose). Activar con frases como "audita el código", "revisa calidad", "busca fugas", "seguridad Android", "rendimiento de la app", "buenas prácticas Compose".
 ---
 
 # Skill: Auditoría y Control de Calidad Android (Clean Architecture)
