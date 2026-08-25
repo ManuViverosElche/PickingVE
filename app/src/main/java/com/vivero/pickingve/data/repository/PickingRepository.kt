@@ -184,7 +184,8 @@ class PickingRepository(
                     maquinaria = it.maquinaria,
                     fincasCarga = it.fincasCarga,
                     activo = it.activo,
-                    debeCambiarPassword = it.passwordProvisional
+                    debeCambiarPassword = it.passwordProvisional,
+                    modo = it.modo
                 )
             }
         )
@@ -219,7 +220,8 @@ class PickingRepository(
                 maquinaria = r.maquinaria,
                 fincasCarga = r.fincasCarga,
                 activo = true,
-                debeCambiarPassword = r.passwordProvisional
+                debeCambiarPassword = r.passwordProvisional,
+                modo = r.modo
             )
             operarioDao.upsert(listOf(op))
             setCurrentOperario(op)
@@ -250,6 +252,7 @@ class PickingRepository(
             .putString(KEY_OPERARIO_EMAIL, op.email)
             .putString(KEY_MAQUINARIA, op.maquinaria)
             .putBoolean(KEY_OPERARIO_CAMBIA_PASS, op.debeCambiarPassword)
+            .putString(KEY_OPERARIO_MODO, op.modo)
             .apply()
     }
 
@@ -262,7 +265,8 @@ class PickingRepository(
             email = sesPrefs.getString(KEY_OPERARIO_EMAIL, "") ?: "",
             passwordHash = "",
             maquinaria = sesPrefs.getString(KEY_MAQUINARIA, "") ?: "",
-            debeCambiarPassword = sesPrefs.getBoolean(KEY_OPERARIO_CAMBIA_PASS, false)
+            debeCambiarPassword = sesPrefs.getBoolean(KEY_OPERARIO_CAMBIA_PASS, false),
+            modo = sesPrefs.getString(KEY_OPERARIO_MODO, "ACOPIO") ?: "ACOPIO"
         )
     }
 
@@ -1783,5 +1787,6 @@ class PickingRepository(
         const val KEY_OPERARIO_NOMBRE = "operario_nombre"
         const val KEY_OPERARIO_EMAIL = "operario_email"
         const val KEY_OPERARIO_CAMBIA_PASS = "operario_cambia_pass"
+        const val KEY_OPERARIO_MODO = "operario_modo"
     }
 }

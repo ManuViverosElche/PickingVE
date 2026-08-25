@@ -355,7 +355,8 @@ data class ApiLoginOperarioResponse(
     val email: String = "",
     val maquinaria: String = "",
     @SerialName("fincas_carga") val fincasCarga: String = "",
-    @SerialName("password_provisional") val passwordProvisional: Boolean = true
+    @SerialName("password_provisional") val passwordProvisional: Boolean = true,
+    val modo: String = "ACOPIO"
 )
 
 @Serializable
@@ -368,7 +369,8 @@ data class ApiOperarioApp(
     val maquinaria: String = "",
     @SerialName("fincas_carga") val fincasCarga: String = "",
     val activo: Boolean = true,
-    @SerialName("password_provisional") val passwordProvisional: Boolean = true
+    @SerialName("password_provisional") val passwordProvisional: Boolean = true,
+    val modo: String = "ACOPIO"
 )
 
 @Serializable

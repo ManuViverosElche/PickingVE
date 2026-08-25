@@ -13,5 +13,6 @@ data class OperarioEntity(
     val maquinaria: String = "",
     val fincasCarga: String = "",
     val activo: Boolean = true,
-    val debeCambiarPassword: Boolean = true
+    val debeCambiarPassword: Boolean = true,
+    val modo: String = "ACOPIO"
 )

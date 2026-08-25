@@ -1222,6 +1222,8 @@ def _ensure_operarios_table() -> None:
     _ensure_column(OPERARIOS_TABLE, "email", "email STRING")
     _ensure_column(OPERARIOS_TABLE, "activo", "activo BOOL")
     _ensure_column(OPERARIOS_TABLE, "maquinaria", "maquinaria STRING")
+    # D-196: modo del operario — ACOPIO (default), INVENTARIO o AMBAS
+    _ensure_column(OPERARIOS_TABLE, "modo", "modo STRING")
 
 
 def _ensure_maquinarias_table() -> None:
@@ -3594,6 +3596,7 @@ def login_operario(
         "maquinaria": o.get("maquinaria") or "",
         "fincas_carga": o.get("fincas_carga") or "",
         "password_provisional": o.get("password_provisional") is not False,
+        "modo": o.get("modo") or "ACOPIO",
     }
 
 
@@ -3662,6 +3665,7 @@ def lista_operarios_app(
                 "fincas_carga": r.get("fincas_carga") or "",
                 "activo": r.get("activo") is not False,
                 "password_provisional": r.get("password_provisional") is not False,
+                "modo": r.get("modo") or "ACOPIO",
             }
             for r in rows
             if r.get("activo") is not False

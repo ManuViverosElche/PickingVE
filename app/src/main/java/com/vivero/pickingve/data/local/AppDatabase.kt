@@ -36,7 +36,7 @@ import com.vivero.pickingve.data.local.entities.SectorEntity
         ChatEstadoEntity::class,
         OperarioEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -349,6 +349,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // D-196: añade columna modo (ACOPIO/INVENTARIO/AMBAS). La entidad
+                // OperarioEntity ya la exige; los DB en v22 sin ella crasheaban
+                // en verificación de Room incluso tras borrar datos por el
+                // fallback sin migracion. Migración idempotente: si ya existe
+                // (instalación fresca v22 con modo) no hace nada.
+                var hasModo = false
+                db.query("PRAGMA table_info(operarios)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "modo") { hasModo = true; break }
+                    }
+                }
+                if (!hasModo) {
+                    db.execSQL("ALTER TABLE operarios ADD COLUMN modo TEXT NOT NULL DEFAULT 'ACOPIO'")
+                }
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -362,8 +382,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                         MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                        MIGRATION_21_22
+                        MIGRATION_21_22, MIGRATION_22_23
                     )
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance
                 instance

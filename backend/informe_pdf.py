@@ -489,7 +489,8 @@ def build_punteo_pdf(
             y = _alto_tras_cabecera(y0)
             y -= 10 * mm  # titulo
             return y - 6 * mm - limite_inferior  # header tabla
-        return y0 - 9 * mm - 6 * mm - limite_inferior
+        # Páginas 2+ también llevan cabecera completa (HEADER_H) + continuación
+        return _alto_tras_cabecera(y0) - 9 * mm - 6 * mm - limite_inferior
 
     paginas_plan: list[list[tuple]] = [[]]
     libres = [capacidad(True)]
