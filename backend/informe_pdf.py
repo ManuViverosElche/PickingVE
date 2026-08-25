@@ -115,12 +115,13 @@ _COLS = [
 ]
 TABLE_W = sum(w for _, w in _COLS)
 
-_AZUL = colors.HexColor("#4472C4")
-_GRIS_BORDE = colors.HexColor("#999999")
-_AMBAR_FONDO = colors.HexColor("#FFF2CC")
-_AMBAR_TEXTO = colors.HexColor("#8A5D00")
-_LIME = colors.HexColor("#AFCB37")
+_AZUL = colors.HexColor("#0c3a3f")      # D-200: corp-dark del HTML (antes azul Office)
+_GRIS_BORDE = colors.HexColor("#b8d8d3")  # D-200: corp-line del HTML
+_AMBAR_FONDO = colors.HexColor("#fdf3e0")  # D-200: corp-warn-bg del HTML
+_AMBAR_TEXTO = colors.HexColor("#a06a10")
+_LIME = colors.HexColor("#35b8ac")      # D-200: corp-lime del HTML
 _GRIS_TEXTO = colors.HexColor("#3D565A")
+_ZEBRA = colors.HexColor("#eef7f5")     # D-200: corp-bg para filas pares
 
 
 def _cortar(texto: str, ancho_mm: float, font: str = F, size: float = 7) -> str:
@@ -270,7 +271,14 @@ def _draw_tabla_header(c, y):
     return y - 6 * mm
 
 
-def _draw_fila(c, y, num, g, susts):
+def _draw_fila(c, y, num, g, susts, zebra=False):
+    if zebra:
+        # D-200: fondo corporativo de filas pares, como el HTML
+        x = MARG
+        c.setFillColor(_ZEBRA)
+        for _, w in _COLS:
+            c.rect(x, y - ROW_H, w, ROW_H, stroke=0, fill=1)
+            x += w
     x = MARG
     c.setStrokeColor(_GRIS_BORDE)
     c.setLineWidth(0.35)
@@ -529,8 +537,8 @@ def build_punteo_pdf(
             )
             c.setFillColor(colors.black)
 
-        for i, g, s, _alto in plan:
-            y = _draw_fila(c, y, i, g, s)
+        for fila_idx, (i, g, s, _alto) in enumerate(plan):
+            y = _draw_fila(c, y, i, g, s, zebra=(fila_idx % 2 == 1))
 
         _draw_pie(c, obs, empleado_txt, peso)
         if num_pag != total_paginas or not filas_agrupadas:

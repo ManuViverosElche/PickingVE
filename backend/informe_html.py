@@ -89,8 +89,8 @@ def _logo_b64() -> str:
 
 def _css() -> str:
     return """
-@page { size: A4 portrait; margin: 8mm; }
-@page apaisada { size: A4 landscape; margin: 8mm; }
+@page { size: A4 portrait; margin: 0; }
+@page apaisada { size: A4 landscape; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 /* D-177: imprimir con los sombreados/fondos tal cual se ven en pantalla */
 * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -108,10 +108,13 @@ body {
   font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   color: #1a2b2e; background: #fff; font-size: 9pt; line-height: 1.4;
 }
-.pagina { width: 210mm; min-height: 280mm; padding: 6mm 8mm; page-break-after: always; position: relative; }
-.pagina.apaisada { width: 297mm; min-height: 190mm; page: apaisada; }
+/* D-200: pagina fisica EXACTA (height fija + overflow hidden): el contenido
+   nunca puede crecer ni pisar el pie; el navegador no re-pagina porque
+   @page margin es 0 y cada .pagina ocupa justo una hoja. */
+.pagina { width: 210mm; height: 297mm; padding: 7mm 9mm 34mm; page-break-after: always; position: relative; overflow: hidden; }
+.pagina.apaisada { width: 297mm; height: 210mm; padding: 6mm 8mm 10mm; page: apaisada; }
 .pagina:last-child { page-break-after: auto; }
-@media print { .no-print { display: none; } }
+@media print { .no-print { display: none; } body { background: #fff; } }
 
 /* ---- Cabecera ---- */
 .cabecera { display: flex; gap: 5mm; align-items: stretch; border-bottom: 2px solid var(--corp-teal); padding-bottom: 3mm; margin-bottom: 4mm; }
@@ -119,39 +122,40 @@ body {
   flex: 0 0 62mm; border: 1.5px solid var(--corp-mid); border-radius: 2mm;
   padding: 2.5mm 3mm; font-size: 8pt; background: var(--corp-bg);
 }
-.cab-fiscal .empresa { font-size: 12.5pt; font-weight: 700; color: var(--corp-dark); letter-spacing: -0.2px; }
+.cab-fiscal .empresa { font-size: 12.5pt; font-weight: 700; color: var(--corp-dark); letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cab-fiscal .dir { color: #3d565a; margin-top: 0.5mm; }
 .cab-fiscal .cliente { margin-top: 2mm; border-top: 1px solid var(--corp-line); padding-top: 1.5mm; }
 .cab-fiscal .cliente .codigo { display: inline-block; background: var(--corp-teal); color: #fff; border-radius: 1mm; padding: 0.3mm 1.6mm; font-weight: 700; font-size: 8.5pt; }
 .cab-fiscal .cliente .nombre { font-weight: 700; color: var(--corp-dark); }
 .cab-centro { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; align-content: start; }
-.caja-dato { border: 1px solid var(--corp-line); border-left: 3px solid var(--corp-teal); border-radius: 1.5mm; padding: 1.4mm 2mm; background: #fff; }
-.caja-dato b { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.6px; color: var(--corp-mid); }
-.caja-dato span { font-size: 9.5pt; font-weight: 700; color: var(--corp-dark); }
+.caja-dato { border: 1px solid var(--corp-line); border-left: 3px solid var(--corp-teal); border-radius: 1.5mm; padding: 1.4mm 2mm; background: #fff; min-width: 0; }
+.caja-dato b { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.6px; color: var(--corp-mid); white-space: nowrap; }
+.caja-dato span { font-size: 9.5pt; font-weight: 700; color: var(--corp-dark); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cab-doc { flex: 0 0 52mm; display: flex; flex-direction: column; align-items: stretch; }
-.cab-logo { width: 100%; max-height: 26mm; object-fit: contain; margin-bottom: 2mm; }
+.cab-logo { width: 100%; max-height: 22mm; object-fit: contain; margin-bottom: 2mm; }
 .tabla-doc { width: 100%; border-collapse: collapse; font-size: 7.5pt; border: 1px solid var(--corp-mid); border-radius: 1.5mm; overflow: hidden; }
-.tabla-doc td { border: 1px solid var(--corp-line); padding: 1mm 1.6mm; }
+.tabla-doc td { border: 1px solid var(--corp-line); padding: 1mm 1.6mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
 .tabla-doc td.k { background: var(--corp-bg); color: var(--corp-mid); font-weight: 600; text-transform: uppercase; font-size: 6.5pt; width: 38%; }
 .tabla-doc td.v { font-weight: 700; color: var(--corp-dark); }
 
-/* ---- Título de sección ---- */
+/* ---- Titulo de seccion ---- */
 .titulo-informe {
   display: flex; justify-content: space-between; align-items: center;
   background: linear-gradient(90deg, var(--corp-dark), var(--corp-mid));
   color: #fff; border-radius: 1.5mm; padding: 2mm 3.5mm; margin-bottom: 3mm;
 }
-.titulo-informe h2 { font-size: 11.5pt; font-weight: 700; letter-spacing: 0.3px; }
-.titulo-informe .meta { font-size: 7.5pt; opacity: 0.85; }
+.titulo-informe h2 { font-size: 11.5pt; font-weight: 700; letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titulo-informe .meta { font-size: 7.5pt; opacity: 0.85; white-space: nowrap; }
 
 /* ---- Tablas de datos ---- */
-table.datos { width: 100%; border-collapse: collapse; font-size: 8pt; }
+table.datos { width: 100%; border-collapse: collapse; font-size: 8pt; table-layout: fixed; }
+table.datos th, table.datos td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.datos thead th {
   background: var(--corp-dark); color: #fff; font-weight: 600; text-transform: uppercase;
   font-size: 6.8pt; letter-spacing: 0.5px; padding: 1.8mm 1.2mm; text-align: center;
   border-bottom: 2px solid var(--corp-teal);
 }
-table.datos tbody td { border-bottom: 1px solid var(--corp-line); padding: 1.4mm 1.2mm; vertical-align: top; }
+table.datos tbody td { border-bottom: 1px solid var(--corp-line); padding: 1.4mm 1.2mm; vertical-align: middle; }
 table.datos tbody tr:nth-child(even) td { background: var(--corp-bg); }
 table.datos td.c { text-align: center; }
 table.datos td.nl { text-align: center; font-weight: 700; color: var(--corp-teal); }
@@ -175,14 +179,16 @@ table.apaisada tr.sust td { background: var(--corp-warn-bg) !important; }
 .cambio { color: #a06a10; font-weight: 700; }
 
 /* ---- Pie ---- */
-.pie { position: absolute; bottom: 6mm; left: 8mm; right: 8mm; font-size: 7.5pt; }
+.pie { position: absolute; bottom: 7mm; left: 9mm; right: 9mm; height: 24mm; overflow: hidden; font-size: 7.5pt; }
+.pagina.apaisada .pie { display: none; }
 .pie .ggn-line { color: var(--corp-mid); margin-bottom: 1.5mm; }
-.pie .obs-box { border: 1px solid var(--corp-line); border-radius: 1.5mm; padding: 1.6mm 2.2mm; min-height: 9mm; background: var(--corp-bg); margin-bottom: 2mm; }
+.pie .obs-box { border: 1px solid var(--corp-line); border-radius: 1.5mm; padding: 1.6mm 2.2mm; min-height: 9mm; background: var(--corp-bg); margin-bottom: 2mm; overflow: hidden; }
+.pie .obs-box br + *, .pie .obs-box { max-height: 12mm; }
 .pie .obs-box b { color: var(--corp-mid); text-transform: uppercase; font-size: 6.5pt; letter-spacing: 0.5px; }
 .pie .fila-final { display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; }
 .firma-box { flex: 1; border: 1px solid var(--corp-line); border-radius: 1.5mm; padding: 1.6mm 2.5mm 3mm; }
 .firma-box b { color: var(--corp-mid); text-transform: uppercase; font-size: 6.5pt; letter-spacing: 0.5px; }
-.firma-box .linea { display: block; border-bottom: 1px solid #7fa8a2; min-height: 6mm; font-weight: 700; color: var(--corp-dark); text-align: center; }
+.firma-box .linea { display: block; border-bottom: 1px solid #7fa8a2; min-height: 6mm; font-weight: 700; color: var(--corp-dark); text-align: center; overflow: hidden; white-space: nowrap; }
 .peso-box { flex: 0 0 60mm; border: 1.5px solid var(--corp-mid); border-radius: 1.5mm; padding: 1.6mm 2.5mm 3mm; }
 .peso-box b { color: var(--corp-mid); text-transform: uppercase; font-size: 6.5pt; letter-spacing: 0.5px; }
 .peso-box .valor { float: right; border: 1px solid var(--corp-mid); border-radius: 1mm; min-width: 24mm; text-align: center; font-weight: 700; padding: 0.4mm 2mm; background: #fff; }
@@ -279,12 +285,13 @@ def _trocear_por_filas(bloques: list[tuple[str, int]], primera: int, siguientes:
     return paginas
 
 
-# Presupuesto de filas por página (vertical / apaisada). Conservador: garantiza
-# que cabecera + titulo + thead + pie conviven sin solape en una .pagina A4.
-_FILAS_P1_VERTICAL = 24
-_FILAS_PN_VERTICAL = 27
-_FILAS_P1_APAISADA = 20
-_FILAS_PN_APAISADA = 23
+# Presupuesto calibrado CON MEDICION REAL en navegador (Playwright): fila
+# media ~7.3mm con font 8pt/padding 1.4mm. Hueco vertical util ~169mm (p1) y
+# ~183mm (pn); apaisada ~141mm con filas ~4.9mm.
+_FILAS_P1_VERTICAL = 22
+_FILAS_PN_VERTICAL = 24
+_FILAS_P1_APAISADA = 22
+_FILAS_PN_APAISADA = 25
 
 
 def _paginar_informe(
