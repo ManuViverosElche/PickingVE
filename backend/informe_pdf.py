@@ -287,12 +287,19 @@ def _draw_fila(c, y, num, g, susts, zebra=False):
         x += w
 
     desc = _set(g.get("DESCRIPCION"))
+    medida_txt = _set(g.get("MEDIDA_TXT"))
+    # D-201: descripcion + " · medida" en cursiva (Helvetica-Oblique); se trunca
+    # la desc para que ambos quepan en la columna (53mm).
+    sufijo = f" \u00b7 {medida_txt}" if medida_txt else ""
+    ancho_suf = c.stringWidth(sufijo, "Helvetica-Oblique", 7) if sufijo else 0
+    disp_pt = 53 * mm - 1.4 * mm - ancho_suf
+    desc_final = desc[: max(3, int(disp_pt / (7 * 0.155 * mm)))]
     vals = {
         0: (str(num), "C", F),
         1: (_set(g.get("POSICION")), "C", F),
         2: (_set(g["ref_servida"]), "C", FB),
         3: ("*" if g.get("EQUIVALENTE") else "", "C", FB),
-        4: (_cortar(desc, 53 * mm), "L", F),
+        4: (desc_final, "L", F),
         5: (_set(g["TALLA"]), "C", F),
         6: (_set(g["SECTOR"]), "C", F),
         7: (_cortar(_set(g.get("FINCA_ARTICULO")), 22 * mm), "C", F),
@@ -311,6 +318,14 @@ def _draw_fila(c, y, num, g, susts, zebra=False):
         else:
             c.drawString(x + 1.4 * mm, y - ROW_H + 1.6 * mm, v)
         x += w
+    # D-201: medida fisica en cursiva pegada a la descripcion
+    if sufijo:
+        ancho_desc = c.stringWidth(desc_final, F, 7)
+        c.setFont("Helvetica-Oblique", 7)
+        c.setFillColor(_GRIS_TEXTO)
+        c.drawString(MARG + _COLS[0][1] + _COLS[1][1] + _COLS[2][1] + _COLS[3][1] + 1.4 * mm + ancho_desc,
+                     y - ROW_H + 1.6 * mm, sufijo)
+        c.setFillColor(colors.black)
     # Chip GGN pegado a la referencia (como .marca-ggn del HTML)
     if g.get("EQUIVALENTE"):
         ref_w = _COLS[2][1]
@@ -382,8 +397,8 @@ def _draw_pie(c, obs, empleado_txt, peso):
 
 
 def _agrupar_filas_pedido(filas: list) -> list:
-    """Listado correlativo único por (POSICION, ref_servida, TALLA, SECTOR),
-    igual que el HTML del panel."""
+    """Listado correlativo único por (POSICION, ref_servida, TALLA, SECTOR,
+    MEDIDA_TXT), igual que el HTML del panel. D-201: la medida separa lotes."""
     agrupado: dict[tuple, dict] = {}
     for r in filas:
         key = (
@@ -391,6 +406,7 @@ def _agrupar_filas_pedido(filas: list) -> list:
             str(r.get("ref_servida") or ""),
             str(r.get("TALLA") or ""),
             str(r.get("SECTOR") or ""),
+            str(r.get("MEDIDA_TXT") or ""),
         )
         g = agrupado.get(key)
         if g is None:
@@ -399,6 +415,7 @@ def _agrupar_filas_pedido(filas: list) -> list:
                 "ref_servida": key[1],
                 "TALLA": key[2],
                 "SECTOR": key[3],
+                "MEDIDA_TXT": key[4],
                 "DESCRIPCION": r.get("DESCRIPCION"),
                 "EQUIVALENTE": r.get("EQUIVALENTE"),
                 "FINCA_ARTICULO": r.get("FINCA_ARTICULO"),
@@ -410,7 +427,7 @@ def _agrupar_filas_pedido(filas: list) -> list:
         g["SUSTITUCIONES"] += int(r.get("SUSTITUCIONES") or 0)
     return sorted(
         agrupado.values(),
-        key=lambda g: (g["POSICION"], g["ref_servida"], g["TALLA"], g["SECTOR"]),
+        key=lambda g: (g["POSICION"], g["ref_servida"], g["TALLA"], g["SECTOR"], g["MEDIDA_TXT"]),
     )
 
 

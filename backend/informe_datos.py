@@ -246,17 +246,21 @@ def _load_datos(
     """
     sin_localizar = [dict(r) for r in bq_client.query(sin_localizar_sql, job_config=jc).result()]
 
-    # ---- D-201: medida/calibre en el punteo + descripciones sin parentesis ----
+    # ---- D-201 (enmendada): el litraje nominal NUNCA se sustituye. La medida
+    # fisica viaja en MEDIDA_TXT y cada formato la concatena a la descripcion
+    # en cursiva (HTML/PDF) o texto plano (XLSX). Descripcion queda sin "(...)".
     for r in filas:
         n_cal = int(_num(r.get("N_CALIBRES") or 0))
+        n_med = int(_num(r.get("N_MEDIDAS") or 0))
         if n_cal > 0:
             c_min, c_max = _num(r.get("CALIBRE_MIN")), _num(r.get("CALIBRE_MAX"))
-            r["TALLA"] = f"Ø{_fmt_num(c_min)}" if n_cal == 1 else f"Ø{_fmt_num(c_min)}-{_fmt_num(c_max)}"
-            continue
-        n_med = int(_num(r.get("N_MEDIDAS") or 0))
-        if n_med > 0:
+            r["MEDIDA_TXT"] = f"Ø{_fmt_num(c_min)}" if n_cal == 1 else f"Ø{_fmt_num(c_min)}-{_fmt_num(c_max)}"
+        elif n_med > 0:
             m_min, m_max = _num(r.get("MEDIDA_MIN")), _num(r.get("MEDIDA_MAX"))
-            r["TALLA"] = f"{_fmt_num(m_min)} cm" if n_med == 1 else f"{_fmt_num(m_min)}-{_fmt_num(m_max)} cm"
+            r["MEDIDA_TXT"] = f"{_fmt_num(m_min)} cm" if n_med == 1 else f"{_fmt_num(m_min)}-{_fmt_num(m_max)} cm"
+        else:
+            r["MEDIDA_TXT"] = ""
+        r["TALLA"] = _set(r.get("TALLA")) or ""
     for col_desc in ("DESCRIPCION", "DESC_SERVIDA", "DESCRIPCION_ARTICULO"):
         for lista in (filas, detalle, control):
             for r in lista:
@@ -475,12 +479,18 @@ def _build_workbook(pedido, o, partes, filas, detalle, control, sin_localizar):
             data_start = 17 + off
             n1 = min(len(chunk), TABLE_ROWS)
             for i, r in enumerate(chunk[:n1]):
+                desc_x = r.get("DESCRIPCION") or ""
+                if r.get("MEDIDA_TXT"):
+                    desc_x = f"{desc_x} · {r['MEDIDA_TXT']}"
                 _write_table_row(ws, data_start + i, i + 1, r.get("ref_servida"),
-                                 r.get("EQUIVALENTE"), r.get("DESCRIPCION"), r.get("TALLA"),
+                                 r.get("EQUIVALENTE"), desc_x, r.get("TALLA"),
                                  r.get("SECTOR"), r.get("FINCA_ARTICULO"), r.get("CANT"), _T1)
             for i, r in enumerate(chunk[n1:]):
+                desc_x = r.get("DESCRIPCION") or ""
+                if r.get("MEDIDA_TXT"):
+                    desc_x = f"{desc_x} · {r['MEDIDA_TXT']}"
                 _write_table_row(ws, data_start + i, i + 1, r.get("ref_servida"),
-                                 r.get("EQUIVALENTE"), r.get("DESCRIPCION"), r.get("TALLA"),
+                                 r.get("EQUIVALENTE"), desc_x, r.get("TALLA"),
                                  r.get("SECTOR"), r.get("FINCA_ARTICULO"), r.get("CANT"), _T2)
             if len(rows) <= (block + 1) * 2 * TABLE_ROWS:
                 break

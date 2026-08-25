@@ -164,6 +164,7 @@ table.datos tr.ggn .marca-ggn { display: inline-block; background: var(--corp-li
 table.datos td.estrella { text-align: center; font-weight: 700; color: var(--corp-teal); }
 table.datos tr.sust td { background: var(--corp-warn-bg) !important; border-left: 3px solid var(--corp-warn-line); }
 .sust-tag { color: #a06a10; font-weight: 700; }
+.medida-desc { color: #3d565a; font-style: italic; }
 
 /* ---- Tablas apaisadas (detalle/control) ---- */
 table.apaisada { width: 100%; border-collapse: collapse; font-size: 6.8pt; table-layout: fixed; }
@@ -334,7 +335,8 @@ def _paginar_informe(
 
 def _agrupar_filas_pedido(filas: list) -> list:
     """Agrupa todas las partidas pistoleadas del pedido en un listado correlativo
-    único por línea original (POSICION) + referencia servida + litraje + sector."""
+    único por línea original (POSICION) + referencia servida + litraje + sector
+    + medida fisica (D-201): lotes de distinta medida salen como lineas separadas."""
     agrupado: dict[tuple, dict] = {}
     for r in filas:
         key = (
@@ -342,6 +344,7 @@ def _agrupar_filas_pedido(filas: list) -> list:
             str(r.get("ref_servida") or ""),
             str(r.get("TALLA") or ""),
             str(r.get("SECTOR") or ""),
+            str(r.get("MEDIDA_TXT") or ""),
         )
         g = agrupado.get(key)
         if g is None:
@@ -350,6 +353,7 @@ def _agrupar_filas_pedido(filas: list) -> list:
                 "ref_servida": key[1],
                 "TALLA": key[2],
                 "SECTOR": key[3],
+                "MEDIDA_TXT": key[4],
                 "DESCRIPCION": r.get("DESCRIPCION"),
                 "EQUIVALENTE": r.get("EQUIVALENTE"),
                 "FINCA_ARTICULO": r.get("FINCA_ARTICULO"),
@@ -360,7 +364,7 @@ def _agrupar_filas_pedido(filas: list) -> list:
         g["CANT"] += _num(r.get("CANT"))
         g["SUSTITUCIONES"] += int(r.get("SUSTITUCIONES") or 0)
         g["partes"].add(f"{r.get('picking_tipo')}{r.get('picking_numero')}")
-    return sorted(agrupado.values(), key=lambda g: (g["POSICION"], g["ref_servida"], g["TALLA"], g["SECTOR"]))
+    return sorted(agrupado.values(), key=lambda g: (g["POSICION"], g["ref_servida"], g["TALLA"], g["SECTOR"], g["MEDIDA_TXT"]))
 
 
 def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido) -> str:
@@ -406,7 +410,7 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
   <td class="c">{_html_esc(g['POSICION'])}</td>
   <td class="c ref">{_html_esc(g['ref_servida'])}{marca_ggn}</td>
   <td class="estrella">{estrella}</td>
-  <td>{_html_esc(_set(g.get("DESCRIPCION")))}</td>
+  <td>{_html_esc(_set(g.get("DESCRIPCION")))}{f' <i class="medida-desc">· {_html_esc(g["MEDIDA_TXT"])}</i>' if g.get("MEDIDA_TXT") else ''}</td>
   <td class="c">{_html_esc(g['TALLA'])}</td>
   <td class="c">{_html_esc(g['SECTOR'])}</td>
   <td class="c">{_html_esc(_set(g.get("FINCA_ARTICULO")))}</td>
