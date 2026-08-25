@@ -253,6 +253,7 @@
         <option value="">Todas las Fincas</option>
       </select>
       <input type="text" id="searchReparto" placeholder="Buscar pedido, cliente, ref..." oninput="renderReparto()" style="flex: 1; min-width: 180px;">
+      <span id="contadorPendientes" style="font-size:0.78rem; font-weight:700; color:var(--warn); display:none;"></span>
       <button onclick="guardarRepartoFaena()">💾 Guardar Reparto</button>
       <button class="btn-sec" onclick="loadRepartoData()">🔄 Actualizar Faena</button>
     </div>
@@ -1168,6 +1169,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const orders = data.pedidos || [];
+      window._cargaOrders = orders;
 
       const fincaSel = document.getElementById('filterFincaReparto');
       const currentFinca = fincaSel.value;
@@ -1213,7 +1215,7 @@
       if (!email) return;
       opsByEmail[email] = op;
       if (op.activo !== false && !(email in carga)) {
-        carga[email] = { email: email, nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0 };
+        carga[email] = { email: email, nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0, proyectado: 0 };
       }
     });
     const opPorNombre = {};
@@ -1244,12 +1246,23 @@
         if (filaAsig) {
           filaAsig.asignado += l.pendientes || 0;
           filaAsig.queda += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
+          filaAsig.proyectado += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
         }
         const keyLinea = `${o.serie}_${o.numero}`;
         const cambios = cambiosFaenaPendientes[keyLinea] || {};
+        // D-202: proyeccion neta — resta al operario origen y suma al destino
         Object.entries(cambios).forEach(([posicion, nuevoOpEmail]) => {
-          if (String(l.posicion) === String(posicion) && nuevoOpEmail && carga[nuevoOpEmail.toLowerCase()]) {
-            carga[nuevoOpEmail.toLowerCase()].preasignado += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
+          if (String(l.posicion) !== String(posicion)) return;
+          const uds = Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
+          const origen = (l.operarioAsignadoEmail || '').trim().toLowerCase();
+          const destino = (nuevoOpEmail || '').trim().toLowerCase();
+          if (origen === destino) return;
+          if (origen && carga[origen]) carga[origen].proyectado -= uds;
+          if (destino && carga[destino]) {
+            carga[destino].proyectado += uds;
+            carga[destino].preasignado += uds;
+          } else if (destino && !carga[destino] && opsByEmail[destino]) {
+            // operario existe pero inactivo: solo preasignado informativo
           }
         });
       });
@@ -1263,29 +1276,34 @@
       return `<div class="carga-box"><h3>⚖️ Carga por Operario</h3>
         <p style="color:var(--mut); font-size:0.82rem;">No hay operarios activos dados de alta en Configuración.</p></div>`;
     }
-    const maxQueda = Math.max(1, ...filas.map(f => f.queda));
-    let html = `<div class="carga-box"><h3>⚖️ Carga por Operario <span style="font-weight:400; color:var(--mut); font-size:0.78rem;">— comparativa para valorar reasignaciones antes de guardar</span></h3>
+    const hayPend = Object.values(cambiosFaenaPendientes).some(l => Object.keys(l || {}).length);
+    const maxProy = Math.max(1, ...filas.map(f => f.proyectado));
+    let html = `<div class="carga-box"><h3>⚖️ Carga por Operario <span style="font-weight:400; color:var(--mut); font-size:0.78rem;">— comparativa para valorar reasignaciones antes de guardar${hayPend ? ' · <b style="color:var(--warn);">hay cambios sin guardar</b>' : ''}</span></h3>
       <table class="carga-table">
         <thead><tr>
           <th>Operario</th><th>Maquinaria</th><th style="text-align:right;">Asignado</th><th style="text-align:right;">Recogido</th>
-          <th style="text-align:right;">Queda por acopiar</th><th style="text-align:right;">Preasignado*</th><th>Equilibrio</th>
+          <th style="text-align:right;">Queda guardado</th><th style="text-align:right;">Preasignado*</th><th style="text-align:right;"><b>Proyectado</b></th><th>Equilibrio (proy.)</th>
         </tr></thead><tbody>`;
     filas.forEach(f => {
-      const sobrecargado = f.queda >= maxQueda * 0.75 && f.queda > 0;
+      const sobrecargado = f.proyectado >= maxProy * 0.75 && f.proyectado > 0;
+      const delta = f.proyectado - f.queda;
+      const deltaTxt = delta > 0 ? `<span style="color:var(--warn); font-size:0.7rem;"> (+${delta})</span>` : (delta < 0 ? `<span style="color:var(--bad); font-size:0.7rem;"> (${delta})</span>` : '');
       html += `<tr style="${sobrecargado ? 'background:rgba(224,90,78,0.07);' : ''}">
         <td><b>${escHtml(f.nombre)}</b></td>
         <td style="font-size:0.74rem; color:var(--mut);">${escHtml(f.maquinaria || '—')}</td>
         <td class="carga-num" style="text-align:right;">${f.asignado}</td>
         <td class="carga-num" style="text-align:right; color:var(--lime);">${f.recogido}</td>
-        <td class="carga-num ${sobrecargado ? 'sobrecarga' : ''}" style="text-align:right;">${f.queda}${sobrecargado ? ' ⚠' : ''}</td>
+        <td class="carga-num" style="text-align:right; color:var(--mut);">${f.queda}</td>
         <td class="carga-num" style="text-align:right; color:var(--warn);">${f.preasignado || ''}</td>
-        <td><div style="background:var(--card2); border-radius:4px; height:8px; overflow:hidden;"><div style="height:100%; width:${Math.round(f.queda / maxQueda * 100)}%; background:${sobrecargado ? 'var(--bad)' : 'var(--lime)'};"></div></div></td>
+        <td class="carga-num ${sobrecargado ? 'sobrecarga' : ''}" style="text-align:right; font-weight:700; font-size:0.95rem;">${f.proyectado}${sobrecargado ? ' ⚠' : ''}${deltaTxt}</td>
+        <td><div style="background:var(--card2); border-radius:4px; height:8px; overflow:hidden;"><div style="height:100%; width:${Math.round(Math.max(0, f.proyectado) / maxProy * 100)}%; background:${sobrecargado ? 'var(--bad)' : 'var(--lime)'};"></div></div></td>
       </tr>`;
     });
     html += `</tbody></table>
       <p style="font-size:0.72rem; color:var(--mut); margin-top:8px;">
-        * Preasignado: cambios de operario aún sin guardar ("Guardar Reparto"). Asignado: unidades pendientes de las líneas con ese operario ya guardado.
-        Recogido: unidades que el operario ya ha pistoleado hoy. Las filas marcadas en rojo concentran más faena pendiente: valora reasignar líneas.</p></div>`;
+        * Preasignado: cambios de operario aún sin guardar ("Guardar Reparto"). Asignado/Queda guardado: solo lo ya guardado en el servidor.
+        <b>Proyectado</b>: lo que quedaría por acopiar aplicando tus cambios sin guardar (resta al que le quitas líneas y suma al que se las pones). Recogido: unidades ya pistoleadas hoy.
+        Filas en rojo concentran más faena proyectada: valora reasignar líneas.</p></div>`;
     return html;
   }
 
@@ -1459,6 +1477,18 @@
 
   let cambiosFaenaPendientes = {};
   let detalleOpsGlobal = {};
+  function actualizarContadorPendientes() {
+    const el = document.getElementById('contadorPendientes');
+    if (!el) return;
+    let n = 0;
+    Object.values(cambiosFaenaPendientes).forEach(l => { n += Object.keys(l || {}).length; });
+    if (n > 0) {
+      el.textContent = `⚠ ${n} cambio${n > 1 ? 's' : ''} sin guardar`;
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+    }
+  }
   function cambiarOperarioFaena(sel) {
     const pedido = sel.getAttribute('data-pedido');
     const linea = sel.getAttribute('data-linea');
@@ -1473,6 +1503,7 @@
       cell.textContent = '—';
     }
     refrescarTablaCarga();
+    actualizarContadorPendientes();
   }
 
   function refrescarTablaCarga() {
@@ -1534,6 +1565,7 @@
         alert(`✅ Reparto guardado: ${data.guardadas} asignación(es) registradas${data.borradas ? `, ${data.borradas} desasignada(s)` : ''}.`);
         cambiosFaenaPendientes = {};
         renderReparto();
+        actualizarContadorPendientes();
       } else {
         alert("Error al guardar el reparto: " + (data.detail || res.status));
       }
@@ -1555,6 +1587,7 @@
       return;
     }
     if (nPedidos > 0) cambiosFaenaPendientes = {};
+    actualizarContadorPendientes();
     document.getElementById('filterDateReparto').value = fecha;
     renderDateChipsReparto();
     renderReparto();
