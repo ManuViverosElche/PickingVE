@@ -11,7 +11,13 @@ Antes de empezar CUALQUIER tarea, comprueba si el pedido del usuario encaja aqu�
 | "revisa el backend", "main.py", "seguridad del servidor", "endpoints" | `auditoria-backend` |
 | "sincroniza", "reconcilia", "los datos no cuadran", "BigQuery/Access" | `conector-bigquery` |
 | "instala/prueba el APK en el móvil", "haz un smoke test real" | `prueba-dispositivo-apk` |
+| "valida lo desarrollado", "revisa el turno nocturno", "qué hizo el agente" | `validacion-turno` |
 | "diseña una pantalla", "mejora la UI", "estilo Material" | `mobile-android-design` |
+
+## Turno nocturno (agente en marcha)
+- **Marca de partida**: commit `2b7b416` (hotfix auditoría UX, D-193/D-194). Todo lo posterior a esa marca es del turno.
+- Reglas del turno: commits **por ficheros propios** (PROHIBIDO `git add -A` — ya mezcló WIP ajeno en v2.2.6); NO tocar `backend/web/truffaut/**`, `reportes/truffaut/**`, lógica `TRUFFAUT_*` ni `backend/web/manager/index.html` (WIP ajeno); decisiones → D-XX en `docs/SPECS.md`; app → build+tests verdes antes de cerrar; backend → deploy + verificación con `despliegue-backend` (D-156).
+- **Si el turno falla o se queda a medias**: NO bloquearse. El WIP queda visible con `git status --porcelain`; quien retome por la mañana ejecuta la skill `validacion-turno` (detecta WIP, valida contra `2b7b416`, y propone completar/revertir). Revertir = `git revert <commit>`, nunca borrar a mano. Ningún fallo de un agente bloquea al siguiente: el repo es la fuente de verdad.
 
 Regla general de calidad: tras cambios significativos en la app → `auditoria-experiencia-usuario`; tras cambios en `backend/` → deploy + verificación con `despliegue-backend` (D-156).
 
