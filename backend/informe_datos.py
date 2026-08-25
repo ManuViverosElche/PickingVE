@@ -36,6 +36,23 @@ def _num(v):
         return 0.0
 
 
+def _fmt_num(v: float) -> str:
+    """Numero sin decimales inutiles: 50.0 -> '50', 50.5 -> '50,5'."""
+    if abs(v - round(v)) < 1e-9:
+        return str(int(round(v)))
+    return f"{v:.1f}".replace(".", ",")
+
+
+def _limpiar_desc(d) -> str:
+    """D-201: quita la parte entre parentesis de las descripciones del ERP
+    (p.ej. 'TRACHYCARPUS FORTUNEI (precio por cm)' -> 'TRACHYCARPUS FORTUNEI')."""
+    import re
+
+    txt = re.sub(r"\s*\([^)]*\)", "", str(d))
+    txt = re.sub(r"\s{2,}", " ", txt).strip()
+    return txt.strip(" -,·")
+
+
 # Columnas de la tabla de datos. Tabla 1 (A-S) y tabla 2 (U-AL) por pagina.
 _T1 = {"seq": 1, "ref": 2, "equiv": 4, "desc": 5, "talla": 13, "sector": 15, "finca": 17, "cant": 19}
 _T2 = {"seq": 20, "ref": 21, "equiv": 23, "desc": 24, "talla": 32, "sector": 34, "finca": 36, "cant": 38}
@@ -152,6 +169,37 @@ def _load_datos(
     """
     filas = [dict(r) for r in bq_client.query(filas_sql, job_config=jc).result()]
 
+    # D-201: medidas/calibres reales por grupo (parte+ref) para puntear plantas
+    # de medida. Trae min/max/n de medida (cm) y calibre registrados al pistolear.
+    for r in filas:
+        r["MEDIDA_MIN"] = None
+        r["MEDIDA_MAX"] = None
+        r["N_MEDIDAS"] = 0
+        r["CALIBRE_MIN"] = None
+        r["CALIBRE_MAX"] = None
+        r["N_CALIBRES"] = 0
+    medidas_sql = f"""
+        SELECT CONCAT(CAST(picking_numero AS STRING), picking_tipo, ref_servida) AS clave,
+               MIN(SAFE_CAST(medida AS FLOAT64)) AS MEDIDA_MIN,
+               MAX(SAFE_CAST(medida AS FLOAT64)) AS MEDIDA_MAX,
+               COUNT(DISTINCT SAFE_CAST(medida AS FLOAT64)) AS N_MEDIDAS,
+               MIN(SAFE_CAST(calibre AS FLOAT64)) AS CALIBRE_MIN,
+               MAX(SAFE_CAST(calibre AS FLOAT64)) AS CALIBRE_MAX,
+               COUNT(DISTINCT SAFE_CAST(calibre AS FLOAT64)) AS N_CALIBRES
+        FROM `{project}.{picking_dataset}.{picking_table}`
+        WHERE order_id = @pedido AND (SAFE_CAST(medida AS FLOAT64) > 0 OR SAFE_CAST(calibre AS FLOAT64) > 0)
+        GROUP BY clave
+    """
+    claves_medidas = {
+        r["clave"]: dict(r) for r in bq_client.query(medidas_sql, job_config=jc).result()
+    }
+    for r in filas:
+        m = claves_medidas.get(
+            f"{r.get('picking_numero')}{r.get('picking_tipo')}{r.get('ref_servida')}"
+        )
+        if m:
+            r.update(m)
+
     # Sustituciones por (parte, ref_servida) para mostrar "orig -> serv"
     sust_map: dict[tuple, list[str]] = {}
     for r in detalle:
@@ -197,6 +245,23 @@ def _load_datos(
         ORDER BY r.ref_servida
     """
     sin_localizar = [dict(r) for r in bq_client.query(sin_localizar_sql, job_config=jc).result()]
+
+    # ---- D-201: medida/calibre en el punteo + descripciones sin parentesis ----
+    for r in filas:
+        n_cal = int(_num(r.get("N_CALIBRES") or 0))
+        if n_cal > 0:
+            c_min, c_max = _num(r.get("CALIBRE_MIN")), _num(r.get("CALIBRE_MAX"))
+            r["TALLA"] = f"Ø{_fmt_num(c_min)}" if n_cal == 1 else f"Ø{_fmt_num(c_min)}-{_fmt_num(c_max)}"
+            continue
+        n_med = int(_num(r.get("N_MEDIDAS") or 0))
+        if n_med > 0:
+            m_min, m_max = _num(r.get("MEDIDA_MIN")), _num(r.get("MEDIDA_MAX"))
+            r["TALLA"] = f"{_fmt_num(m_min)} cm" if n_med == 1 else f"{_fmt_num(m_min)}-{_fmt_num(m_max)} cm"
+    for col_desc in ("DESCRIPCION", "DESC_SERVIDA", "DESCRIPCION_ARTICULO"):
+        for lista in (filas, detalle, control):
+            for r in lista:
+                if r.get(col_desc):
+                    r[col_desc] = _limpiar_desc(r[col_desc])
 
     return {
         "o": o,
