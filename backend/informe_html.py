@@ -193,7 +193,7 @@ table.apaisada tr.sust td { background: var(--corp-warn-bg) !important; }
 # Cabecera y pie comunes
 # ---------------------------------------------------------------------------
 
-def _cabecera(o, documento: str) -> str:
+def _cabecera(o, documento: str, pagina: int = 1, total_paginas: int = 1) -> str:
     logo = _logo_b64()
     logo_html = f'<img class="cab-logo" src="data:image/png;base64,{logo}">' if logo else '<div style="height:20mm;"></div>'
     dir_html = "".join(f"<div>{_html_esc(l)}</div>" for l in _DIRECCION)
@@ -223,6 +223,7 @@ def _cabecera(o, documento: str) -> str:
       <tr><td class="k">Documento</td><td class="v">{_html_esc(documento)}</td></tr>
       <tr><td class="k">Número</td><td class="v">{_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</td></tr>
       <tr><td class="k">Fecha Carga</td><td class="v">{_html_esc(_fecha_es(o.get('FECHA_CARGA')))}</td></tr>
+      <tr><td class="k">Página</td><td class="v">{pagina} de {total_paginas}</td></tr>
     </table>
   </div>
 </div>
@@ -254,6 +255,70 @@ def _doc_html(title: str, body_paginas: str) -> str:
 {body_paginas}
 </body>
 </html>"""
+
+
+def _trocear_por_filas(bloques: list[tuple[str, int]], primera: int, siguientes: int) -> list[list[str]]:
+    """Trocea bloques (html, filas_equivalentes) en páginas estilo ERP.
+
+    La primera página gasta menos presupuesto (cabecera + título grandes) que
+    las siguientes. Un bloque nunca se parte: si no cabe entero, pasa a la
+    siguiente página.
+    """
+    paginas: list[list[str]] = []
+    actual: list[str] = []
+    libres = float(primera)
+    for html_b, peso in bloques:
+        if actual and libres < peso:
+            paginas.append(actual)
+            actual = []
+            libres = float(siguientes)
+        actual.append(html_b)
+        libres -= peso
+    if actual or not paginas:
+        paginas.append(actual)
+    return paginas
+
+
+# Presupuesto de filas por página (vertical / apaisada). Conservador: garantiza
+# que cabecera + titulo + thead + pie conviven sin solape en una .pagina A4.
+_FILAS_P1_VERTICAL = 24
+_FILAS_PN_VERTICAL = 27
+_FILAS_P1_APAISADA = 20
+_FILAS_PN_APAISADA = 23
+
+
+def _paginar_informe(
+    bloques: list[tuple[str, int]],
+    cabecera_fn,
+    pie_html: str,
+    titulo_fn,
+    thead: str,
+    apaisada: bool,
+) -> str:
+    """Genera el body con N páginas .pagina, cada una con cabecera completa,
+    título (cont. a partir de la 2ª), thead repetido y pie propio."""
+    p1 = _FILAS_P1_APAISADA if apaisada else _FILAS_P1_VERTICAL
+    pn = _FILAS_PN_APAISADA if apaisada else _FILAS_PN_VERTICAL
+    trozos = _trocear_por_filas(bloques, p1, pn)
+    total = len(trozos)
+    clase = "pagina apaisada" if apaisada else "pagina"
+    out = []
+    for num_pag, trozo in enumerate(trozos, start=1):
+        cuerpo = "".join(trozo)
+        out.append(f"""
+<div class="{clase}">
+  {cabecera_fn(num_pag, total)}
+  <div class="titulo-informe">
+    {titulo_fn(num_pag)}
+  </div>
+  <table class="{'apaisada' if apaisada else 'datos'}">
+    {thead}
+    <tbody>{cuerpo}</tbody>
+  </table>
+  {pie_html}
+</div>
+""")
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +376,7 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
 
     filas_agrupadas = _agrupar_filas_pedido(filas)
 
-    cuerpo = ""
+    bloques: list[tuple[str, int]] = []
     for i, g in enumerate(filas_agrupadas, start=1):
         clase_ggn = "ggn" if g.get("EQUIVALENTE") else ""
         marca_ggn = '<span class="marca-ggn">GGN</span>' if g.get("EQUIVALENTE") else ""
@@ -328,7 +393,7 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
                 f"{d.get('ref_original') or '—'} ({_set(d.get('LITRAJE_PEDIDA'))} · {_set(d.get('SECTOR_PEDIDA'))})"
                 f" → {d.get('ref_servida') or '—'} ({_set(g['TALLA'])} · {_set(g['SECTOR'])})"
             )
-        cuerpo += f"""
+        bloque_html = f"""
 <tr class="{clase_ggn}">
   <td class="nl">{i}</td>
   <td class="c">{_html_esc(g['POSICION'])}</td>
@@ -341,20 +406,25 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
   <td class="c" style="font-weight:700;">{_num(g['CANT']):,.0f}</td>
 </tr>"""
         for s in susts:
-            cuerpo += f'<tr class="sust"><td colspan="9"><span class="sust-tag">↔ Sustitución:</span> {_html_esc(s)}</td></tr>'
+            bloque_html += f'<tr class="sust"><td colspan="9"><span class="sust-tag">↔ Sustitución:</span> {_html_esc(s)}</td></tr>'
+        bloques.append((bloque_html, 1 + len(susts)))
 
-    if not filas_agrupadas:
-        cuerpo = '<tr><td colspan="9" class="c" style="padding:8mm; color:#5a7578;">Sin pistoleo registrado todavía para este pedido.</td></tr>'
+    if not bloques:
+        bloques.append((
+            '<tr><td colspan="9" class="c" style="padding:8mm; color:#5a7578;">Sin pistoleo registrado todavía para este pedido.</td></tr>',
+            1,
+        ))
 
-    pagina = f"""
-<div class="pagina">
-  {_cabecera(o, doc_label)}
-  <div class="titulo-informe">
-    <h2>DOCUMENTO DE PUNTEO</h2>
-    <div class="meta">Pedido {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))} · Generado {_dt_es(datetime.now(timezone.utc))}</div>
-  </div>
-  <table class="datos">
-    <thead><tr>
+    def cabecera_fn(pag: int, total: int) -> str:
+        return _cabecera(o, doc_label, pag, total)
+
+    def titulo_fn(pag: int) -> str:
+        meta = f"Pedido {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))} · Generado {_dt_es(datetime.now(timezone.utc))}"
+        if pag == 1:
+            return f'<h2>DOCUMENTO DE PUNTEO</h2>\n    <div class="meta">{meta}</div>'
+        return f'<h2>DOCUMENTO DE PUNTEO · Pedido {_html_esc(str(o.get("NUMERO_PEDIDO") or ""))} (cont.)</h2>\n    <div class="meta">{meta}</div>'
+
+    thead = """<thead><tr>
       <th style="width:8mm;">N.º</th>
       <th style="width:12mm;">N.L.</th>
       <th style="width:24mm;">Referencia</th>
@@ -364,13 +434,10 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
       <th style="width:20mm;">Sector</th>
       <th style="width:26mm;">Finca</th>
       <th style="width:16mm;">Cant.</th>
-    </tr></thead>
-    <tbody>{cuerpo}</tbody>
-  </table>
-  {_pie(obs, empleado_txt, peso)}
-</div>
-"""
-    return _doc_html(f"Punteo - Pedido {numero_pedido}", pagina)
+    </tr></thead>"""
+
+    body = _paginar_informe(bloques, cabecera_fn, _pie(obs, empleado_txt, peso), titulo_fn, thead, apaisada=False)
+    return _doc_html(f"Punteo - Pedido {numero_pedido}", body)
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +450,7 @@ def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_tab
     o = datos["o"]
     detalle = datos["detalle"]
 
-    filas = ""
+    filas_lista: list[str] = []
     for r in detalle:
         ref_ped = _set(r.get("REF_LINEA"))
         lit_ped = _set(r.get("LITRAJE_PEDIDA"))
@@ -393,8 +460,8 @@ def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_tab
         sec_ser = _set(r.get("SECTOR_SERVIDA") or r.get("SECTOR"))
         cambio = bool(r.get("sustituido")) or (ref_ped and ref_ser and ref_ped != ref_ser) or (lit_ped and lit_ser and lit_ped != lit_ser) or (sec_ped and sec_ser and sec_ped != sec_ser)
         cls = ' class="sust"' if cambio else ""
-        marca = ' <span class="cambio">âŸ²</span>' if cambio else ""
-        filas += f"""
+        marca = ' <span class="cambio">⟲</span>' if cambio else ""
+        filas_lista.append(f"""
 <tr{cls}>
   <td class="c">{_html_esc(_set(r.get('picking_tipo')))}{_html_esc(_set(r.get('picking_numero')))}</td>
   <td class="c">{_html_esc(_dt_es(r.get('fecha_hora')))}</td>
@@ -411,20 +478,24 @@ def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_tab
   <td class="c">{_html_esc(_set(r.get('ean_escaneado')))}</td>
   <td title="{_html_esc(_set(r.get('ocr_texto')))}">{_html_esc((_set(r.get('ocr_texto')) or '')[:28])}</td>
   <td class="c">{_html_esc(_set(r.get('calibre')))}</td>
-</tr>"""
+</tr>""")
 
     if not detalle:
-        filas = '<tr><td colspan="15" class="c" style="padding:8mm;">Sin eventos de pistoleo registrados todavía.</td></tr>'
+        filas_lista = ['<tr><td colspan="15" class="c" style="padding:8mm;">Sin eventos de pistoleo registrados todavía.</td></tr>']
 
-    pagina = f"""
-<div class="pagina apaisada">
-  {_cabecera(o, 'Detalle del Pistoleo')}
-  <div class="titulo-informe">
-    <h2>DETALLE DEL PISTOLEO — PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</h2>
-    <div class="meta">{len(detalle)} eventos · Generado {_dt_es(datetime.now(timezone.utc))} (hora España)</div>
-  </div>
-  <table class="apaisada">
-    <colgroup>
+    bloques = [(b, 1) for b in filas_lista]
+
+    def cabecera_fn(pag: int, total: int) -> str:
+        return _cabecera(o, 'Detalle del Pistoleo', pag, total)
+
+    meta_base = f"{len(detalle)} eventos · Generado {_dt_es(datetime.now(timezone.utc))} (hora España)"
+    def titulo_fn(pag: int) -> str:
+        h2 = f"DETALLE DEL PISTOLEO — PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}"
+        if pag > 1:
+            h2 += " (cont.)"
+        return f'<h2>{h2}</h2>\n    <div class="meta">{meta_base}</div>'
+
+    thead = """<colgroup>
       <col style="width:5%"><col style="width:9%"><col style="width:7%"><col style="width:4%">
       <col style="width:8%"><col style="width:7%"><col style="width:8%">
       <col style="width:8%"><col style="width:7%"><col style="width:8%">
@@ -435,12 +506,10 @@ def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_tab
       <th>Ref. Pedida</th><th>Litraje Ped.</th><th>Sector Ped.</th>
       <th>Ref. Servida</th><th>Litraje Serv.</th><th>Sector Serv.</th>
       <th>Cant.</th><th>Cambio</th><th>EAN</th><th>OCR / Pasaporte</th><th>Calibre</th>
-    </tr></thead>
-    <tbody>{filas}</tbody>
-  </table>
-</div>
-"""
-    return _doc_html(f"Detalle Pistoleo - Pedido {numero_pedido}", pagina)
+    </tr></thead>"""
+
+    body = _paginar_informe(bloques, cabecera_fn, "", titulo_fn, thead, apaisada=True)
+    return _doc_html(f"Detalle Pistoleo - Pedido {numero_pedido}", body)
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +538,7 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
     sin_localizar = datos["sin_localizar"]
     sust_por_linea = _susts_por_linea(datos["detalle"])
 
-    filas = ""
+    filas_lista: list[tuple[str, int]] = []
     total_ped = total_acop = 0.0
     for l in control:
         ped = _num(l.get("UNIDADES"))
@@ -480,12 +549,9 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
         total_acop += acop
         pos = int(_num(l.get("POSICION_PEDIDO")))
         susts = sust_por_linea.get(pos, [])
-        estado = "âœ” Completo" if dif <= 0 and ped > 0 else ("â— Parcial" if acop > 0 else "â—‹ Sin acopiar")
+        estado = "✔ Completo" if dif <= 0 and ped > 0 else ("● Parcial" if acop > 0 else "○ Sin acopiar")
         color_estado = "#0e8a80" if dif <= 0 and ped > 0 else ("#e0a13c" if acop > 0 else "#8fb0ac")
-        extra_sust = ""
-        for s in susts:
-            extra_sust += f'<tr class="sust"><td colspan="12"><span class="sust-tag">↔ Cambio de artículo:</span> {_html_esc(s)}</td></tr>'
-        filas += f"""
+        bloque_html = f"""
 <tr>
   <td class="c" style="font-weight:700; color:#0e8a80;">{pos}</td>
   <td class="c" style="font-weight:700;">{_html_esc(l.get('REFERENCIA_ARTICULO') or '')}</td>
@@ -499,25 +565,32 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
   <td class="c">{'S' if l.get('SUSTITUIDO') else ''}</td>
   <td class="c" style="font-weight:600; color:{color_estado};">{estado}</td>
   <td class="c">{_html_esc(l.get('PARTES') or '')}</td>
-</tr>{extra_sust}"""
+</tr>"""
+        peso_bloque = 1
+        for s in susts:
+            bloque_html += f'<tr class="sust"><td colspan="12"><span class="sust-tag">↔ Cambio de artículo:</span> {_html_esc(s)}</td></tr>'
+            peso_bloque += 1
+        filas_lista.append((bloque_html, peso_bloque))
 
     if sin_localizar:
-        filas += ('<tr class="sust"><td colspan="12"><b>REFERENCIAS SERVIDAS NO LOCALIZADAS EN EL CATÁLOGO (revisar)</b></td></tr>')
+        extra = '<tr class="sust"><td colspan="12"><b>REFERENCIAS SERVIDAS NO LOCALIZADAS EN EL CATÁLOGO (revisar)</b></td></tr>'
         for s in sin_localizar:
-            filas += f'<tr class="sust"><td class="c">{_html_esc(s.get("ref_servida"))}</td><td colspan="11">EAN: {_html_esc(s.get("ean_escaneado"))}</td></tr>'
+            extra += f'<tr class="sust"><td class="c">{_html_esc(s.get("ref_servida"))}</td><td colspan="11">EAN: {_html_esc(s.get("ean_escaneado"))}</td></tr>'
+        filas_lista.append((extra, len(sin_localizar) + 1))
 
-    if not control:
-        filas = '<tr><td colspan="12" class="c" style="padding:8mm;">Este pedido no tiene líneas activas.</td></tr>'
+    bloques = filas_lista or [('<tr><td colspan="12" class="c" style="padding:8mm;">Este pedido no tiene líneas activas.</td></tr>', 1)]
 
-    pagina = f"""
-<div class="pagina apaisada">
-  {_cabecera(o, 'Control de Acopio')}
-  <div class="titulo-informe">
-    <h2>CONTROL DE ACOPIO — PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}</h2>
-    <div class="meta">Total pedido {total_ped:,.0f} uds · Acopiado {total_acop:,.0f} uds · Generado {_dt_es(datetime.now(timezone.utc))}</div>
-  </div>
-  <table class="apaisada">
-    <colgroup>
+    def cabecera_fn(pag: int, total: int) -> str:
+        return _cabecera(o, 'Control de Acopio', pag, total)
+
+    meta_base = f"Total pedido {total_ped:,.0f} uds · Acopiado {total_acop:,.0f} uds · Generado {_dt_es(datetime.now(timezone.utc))}"
+    def titulo_fn(pag: int) -> str:
+        h2 = f"CONTROL DE ACOPIO — PEDIDO {_html_esc(str(o.get('NUMERO_PEDIDO') or ''))}"
+        if pag > 1:
+            h2 += " (cont.)"
+        return f'<h2>{h2}</h2>\n    <div class="meta">{meta_base}</div>'
+
+    thead = """<colgroup>
       <col style="width:4%"><col style="width:8%"><col style="width:auto"><col style="width:7%"><col style="width:8%">
       <col style="width:5.5%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:5.5%">
       <col style="width:4%"><col style="width:8%"><col style="width:9%">
@@ -525,12 +598,10 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
     <thead><tr>
       <th>N.L.</th><th>Ref. Pedida</th><th style="text-align:left;">Descripción</th><th>Litraje</th><th>Sector</th>
       <th>Pedido</th><th>Pendiente</th><th>Pistoleado</th><th>Difer.</th><th>Sust.</th><th>Estado</th><th>Partes</th>
-    </tr></thead>
-    <tbody>{filas}</tbody>
-  </table>
-</div>
-"""
-    return _doc_html(f"Control Acopio - Pedido {numero_pedido}", pagina)
+    </tr></thead>"""
+
+    body = _paginar_informe(bloques, cabecera_fn, "", titulo_fn, thead, apaisada=True)
+    return _doc_html(f"Control Acopio - Pedido {numero_pedido}", body)
 
 
 # ---------------------------------------------------------------------------

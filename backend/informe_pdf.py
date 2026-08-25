@@ -3,7 +3,7 @@ se previsualiza en el panel (informe_html.build_punteo_html, D-152/D-173).
 
 Misma capa de datos (informe_datos._load_datos) y mismo layout que el HTML:
 cabecera fiscal + cliente + cajas finca/zona/tractora/remolque/marca/referencia
-+ logo y tabla Documento/NÃºmero/Fecha; tabla N.Âº/N.L./Referencia/*/DescripciÃ³n/
++ logo y tabla Documento/Número/Fecha; tabla N.º/N.L./Referencia/*/Descripción/
 Litraje/Sector/Finca/Cant.; sustituciones resaltadas; pie GGN/GLN +
 Observaciones + Verificado por + Peso de la carga.
 """
@@ -27,8 +27,8 @@ from informe_datos import (
 
 # --- Helpers propios: autosuficiente en el contenedor ---
 _DIRECCION = [
-    "PARTIDA DE ALGORÃ“S, POLÃGONO 1-189-A",
-    "03293 ELCHE Â· ALICANTE",
+    "PARTIDA DE ALGORÓS, POLÍGONO 1-189-A",
+    "03293 ELCHE · ALICANTE",
     "Tel. 965483747 / 966635023",
 ]
 
@@ -47,7 +47,7 @@ def _fecha_es(v) -> str:
 
 
 def _offset_espana(dt_utc: datetime) -> timedelta:
-    """Offset CET/CEST por regla (Ãºltimo domingo de marzo/octubre, 01:00 UTC),
+    """Offset CET/CEST por regla (último domingo de marzo/octubre, 01:00 UTC),
     sin depender de tzdata del sistema."""
     year = dt_utc.year
 
@@ -67,7 +67,7 @@ def _offset_espana(dt_utc: datetime) -> timedelta:
 
 
 def _dt_es(dt) -> str:
-    """Datetime UTC -> 'dd/mm/yyyy HH:MM' hora de EspaÃ±a."""
+    """Datetime UTC -> 'dd/mm/yyyy HH:MM' hora de España."""
     if not dt:
         return ""
     if isinstance(dt, str):
@@ -160,7 +160,7 @@ def _draw_cabecera(c, o, documento, y_top, pagina=1, total_paginas=1):
         c.drawString(x, yy, linea)
         yy -= 3.4 * mm
 
-    # Cliente: cÃ³digo + comercial + fiscalÂ·direcciÃ³n
+    # Cliente: código + comercial + fiscal·dirección
     cy = yy - 3 * mm
     c.setFont(FB, 8.5)
     codigo = _set(o.get("NUMERO_CLIENTE"))
@@ -374,7 +374,7 @@ def _draw_pie(c, obs, empleado_txt, peso):
 
 
 def _agrupar_filas_pedido(filas: list) -> list:
-    """Listado correlativo Ãºnico por (POSICION, ref_servida, TALLA, SECTOR),
+    """Listado correlativo único por (POSICION, ref_servida, TALLA, SECTOR),
     igual que el HTML del panel."""
     agrupado: dict[tuple, dict] = {}
     for r in filas:

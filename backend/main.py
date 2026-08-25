@@ -4351,7 +4351,7 @@ TRUFFAUT_ROUTES_A = [
     {
         "num": 3,
         "title": "Camión 3 · ESPECIAL URBANO París (Hayon / Plataforma)",
-        "corridor": "ÃŽle-de-France (tiendas urbanas sin muelle)",
+        "corridor": "Île-de-France (tiendas urbanas sin muelle)",
         "highway": "A10 / Périphérique / A86 / A3 / N3",
         "totalPal": 33,
         "special": "Camión imprescindible con plataforma elevadora (Hayon)",
@@ -5631,6 +5631,208 @@ def manager_historico_detalle(
         "etiquetas": etiquetas_data.get("etiquetas", []),
         "resumenEtiquetas": etiquetas_data.get("resumen", {}),
     }
+
+
+# =============================================================================
+# PANEL COMERCIAL (Fase 4)
+# =============================================================================
+COMERCIAL_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "comercial")
+
+@app.get("/comercial")
+def comercial_web(k: Optional[str] = Query(default=None)):
+    if k != MANAGER_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(COMERCIAL_WEB_DIR, "index.html"))
+
+@app.get("/api/comercial/marcas")
+def comercial_marcas(
+    q: Optional[str] = Query(None, description="Filtro de marca o artículo"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    _verify_manager_key(k, x_api_key)
+    filtro = ""
+    params = []
+    if q:
+        filtro = "WHERE UPPER(MARCA) LIKE @q OR UPPER(REFERENCIA_ARTICULO) LIKE @q OR UPPER(DESCRIPCION_ARTICULO) LIKE @q"
+        params.append(bigquery.ScalarQueryParameter("q", "STRING", f"%{q.upper()}%"))
+    
+    sql = f"""
+        SELECT MARCA, SERIE_PEDIDO, NUMERO_PEDIDO, FECHA_CARGA, ESTADO_PEDIDO,
+               PEDIDO_ANULADO, REFERENCIA_ARTICULO, DESCRIPCION_ARTICULO,
+               UNIDADES, UNIDADES_PENDIENTES, TOTAL_ACOPIADO,
+               CLIENTE_COMERCIAL, COMERCIAL
+        FROM `{PROJECT}.Analytics.mart_marcas`
+        {filtro}
+        ORDER BY FECHA_CARGA DESC
+        LIMIT 50
+    """
+    jc = bigquery.QueryJobConfig(query_parameters=params) if params else None
+    rows = client.query(sql, job_config=jc).result()
+    return [
+        {
+            "MARCA": r.get("MARCA"),
+            "SERIE_PEDIDO": r.get("SERIE_PEDIDO"),
+            "NUMERO_PEDIDO": r.get("NUMERO_PEDIDO"),
+            "FECHA_CARGA": str(r.get("FECHA_CARGA")) if r.get("FECHA_CARGA") else None,
+            "ESTADO_PEDIDO": r.get("ESTADO_PEDIDO"),
+            "PEDIDO_ANULADO": r.get("PEDIDO_ANULADO"),
+            "REFERENCIA_ARTICULO": r.get("REFERENCIA_ARTICULO"),
+            "DESCRIPCION_ARTICULO": r.get("DESCRIPCION_ARTICULO"),
+            "UNIDADES": r.get("UNIDADES"),
+            "UNIDADES_PENDIENTES": r.get("UNIDADES_PENDIENTES"),
+            "TOTAL_ACOPIADO": r.get("TOTAL_ACOPIADO"),
+            "CLIENTE_COMERCIAL": r.get("CLIENTE_COMERCIAL"),
+            "COMERCIAL": r.get("COMERCIAL"),
+        }
+        for r in rows
+    ]
+
+@app.get("/api/comercial/clientes")
+def comercial_clientes(
+    q: Optional[str] = Query(None, description="Filtro de nombre de cliente"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    _verify_manager_key(k, x_api_key)
+    filtro = ""
+    params = []
+    if q:
+        filtro = "WHERE UPPER(NOMBRE_COMERCIAL) LIKE @q OR UPPER(NOMBRE_FISCAL) LIKE @q"
+        params.append(bigquery.ScalarQueryParameter("q", "STRING", f"%{q.upper()}%"))
+    
+    sql = f"""
+        SELECT ID_CLIENTE, NOMBRE_FISCAL, NOMBRE_COMERCIAL, DIRECCION,
+               CIUDAD, PROVINCIA, TELEFONOS, EMAIL, NOMBRE_AGENTE,
+               DESCRIPCION_FORMA_PAGO, IMPORTE_PENDIENTE, IMPORTE_VENCIDO, NUM_RECIBOS_VENCIDOS
+        FROM `{PROJECT}.Analytics.mart_estado_cliente`
+        {filtro}
+        ORDER BY IMPORTE_VENCIDO DESC, NOMBRE_COMERCIAL
+        LIMIT 50
+    """
+    jc = bigquery.QueryJobConfig(query_parameters=params) if params else None
+    rows = client.query(sql, job_config=jc).result()
+    return [
+        {
+            "ID_CLIENTE": r.get("ID_CLIENTE"),
+            "NOMBRE_FISCAL": r.get("NOMBRE_FISCAL"),
+            "NOMBRE_COMERCIAL": r.get("NOMBRE_COMERCIAL"),
+            "DIRECCION": r.get("DIRECCION"),
+            "CIUDAD": r.get("CIUDAD"),
+            "PROVINCIA": r.get("PROVINCIA"),
+            "TELEFONOS": r.get("TELEFONOS"),
+            "EMAIL": r.get("EMAIL"),
+            "NOMBRE_AGENTE": r.get("NOMBRE_AGENTE"),
+            "DESCRIPCION_FORMA_PAGO": r.get("DESCRIPCION_FORMA_PAGO"),
+            "IMPORTE_PENDIENTE": r.get("IMPORTE_PENDIENTE"),
+            "IMPORTE_VENCIDO": r.get("IMPORTE_VENCIDO"),
+            "NUM_RECIBOS_VENCIDOS": r.get("NUM_RECIBOS_VENCIDOS"),
+        }
+        for r in rows
+    ]
+
+@app.get("/api/comercial/pedidos-parciales")
+def comercial_pedidos_parciales(
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    _verify_manager_key(k, x_api_key)
+    sql = f"""
+        SELECT SERIE_PEDIDO, NUMERO_PEDIDO, FECHA_CARGA, FINCA_CARGA, SECTOR_CARGA,
+               CLIENTE_COMERCIAL, COMERCIAL, REFERENCIA_ARTICULO, DESCRIPCION_ARTICULO,
+               DESCRIPCION_FAMILIA, DESCRIPCION_SECCION, UNIDADES_SOLICITADAS,
+               UNIDADES_ACOPIADAS, UNIDADES_PENDIENTES
+        FROM `{PROJECT}.Analytics.mart_pedidos_parciales`
+        ORDER BY FECHA_CARGA ASC
+        LIMIT 100
+    """
+    rows = client.query(sql).result()
+    return [
+        {
+            "SERIE_PEDIDO": r.get("SERIE_PEDIDO"),
+            "NUMERO_PEDIDO": r.get("NUMERO_PEDIDO"),
+            "FECHA_CARGA": str(r.get("FECHA_CARGA")) if r.get("FECHA_CARGA") else None,
+            "FINCA_CARGA": r.get("FINCA_CARGA"),
+            "SECTOR_CARGA": r.get("SECTOR_CARGA"),
+            "CLIENTE_COMERCIAL": r.get("CLIENTE_COMERCIAL"),
+            "COMERCIAL": r.get("COMERCIAL"),
+            "REFERENCIA_ARTICULO": r.get("REFERENCIA_ARTICULO"),
+            "DESCRIPCION_ARTICULO": r.get("DESCRIPCION_ARTICULO"),
+            "DESCRIPCION_FAMILIA": r.get("DESCRIPCION_FAMILIA"),
+            "DESCRIPCION_SECCION": r.get("DESCRIPCION_SECCION"),
+            "UNIDADES_SOLICITADAS": r.get("UNIDADES_SOLICITADAS"),
+            "UNIDADES_ACOPIADAS": r.get("UNIDADES_ACOPIADAS"),
+            "UNIDADES_PENDIENTES": r.get("UNIDADES_PENDIENTES"),
+        }
+        for r in rows
+    ]
+
+@app.get("/api/comercial/alertas-morosidad")
+def comercial_alertas_morosidad(
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    _verify_manager_key(k, x_api_key)
+    sql = f"""
+        SELECT 
+          p.SERIE_PEDIDO,
+          p.NUMERO_PEDIDO,
+          p.FECHA_CARGA,
+          p.FINCA_CARGA,
+          c.ID_CLIENTE,
+          c.NOMBRE_COMERCIAL,
+          c.NOMBRE_AGENTE,
+          c.IMPORTE_PENDIENTE,
+          c.IMPORTE_VENCIDO,
+          c.NUM_RECIBOS_VENCIDOS
+        FROM `{PROJECT}.Analytics.PEDIDOS` p
+        JOIN `{PROJECT}.Analytics.mart_estado_cliente` c ON p.NUMERO_CLIENTE = c.ID_CLIENTE
+        WHERE p.ESTADO_PEDIDO != 3 
+          AND p.FECHA_CARGA IS NOT NULL
+          AND SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(p.FECHA_CARGA, 1, 10)) >= CURRENT_DATE()
+          AND c.IMPORTE_VENCIDO > 0
+        ORDER BY p.FECHA_CARGA ASC
+    """
+    rows = client.query(sql).result()
+    alertas = []
+    for r in rows:
+        alerta = {
+            "SERIE_PEDIDO": r.get("SERIE_PEDIDO"),
+            "NUMERO_PEDIDO": r.get("NUMERO_PEDIDO"),
+            "FECHA_CARGA": str(r.get("FECHA_CARGA")) if r.get("FECHA_CARGA") else None,
+            "FINCA_CARGA": r.get("FINCA_CARGA"),
+            "ID_CLIENTE": r.get("ID_CLIENTE"),
+            "NOMBRE_COMERCIAL": r.get("NOMBRE_COMERCIAL"),
+            "NOMBRE_AGENTE": r.get("NOMBRE_AGENTE"),
+            "IMPORTE_PENDIENTE": float(r.get("IMPORTE_PENDIENTE") or 0),
+            "IMPORTE_VENCIDO": float(r.get("IMPORTE_VENCIDO") or 0),
+            "NUM_RECIBOS_VENCIDOS": int(r.get("NUM_RECIBOS_VENCIDOS") or 0),
+        }
+        alertas.append(alerta)
+        
+        bot_token = os.getenv("TELEGRAM_MESSAGES_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+        if bot_token and chat_id:
+            try:
+                msg = (
+                    f"🚨 *ALERTA MOROSIDAD CARGA CAMIÓN* 🚨\n\n"
+                    f"📦 Pedido: *{r.get('SERIE_PEDIDO')}-{r.get('NUMERO_PEDIDO')}*\n"
+                    f"📅 Fecha Carga: *{str(r.get('FECHA_CARGA'))[:10]}* (Finca: {r.get('FINCA_CARGA')})\n"
+                    f"👤 Cliente: *{r.get('NOMBRE_COMERCIAL')}*\n"
+                    f"💼 Comercial: {r.get('NOMBRE_AGENTE') or 'N/D'}\n"
+                    f"⚠️ Deuda Vencida: *{float(r.get('IMPORTE_VENCIDO') or 0):.2f} €* "
+                    f"({r.get('NUM_RECIBOS_VENCIDOS')} recibos vencidos)\n\n"
+                    f"_Verificar antes de cargar el camión._"
+                )
+                _telegram_request(bot_token, "sendMessage", {
+                    "chat_id": chat_id,
+                    "text": msg,
+                    "parse_mode": "Markdown"
+                })
+            except Exception:
+                pass
+
+    return {"alertas": alertas, "total": len(alertas)}
 
 
 if __name__ == "__main__":
