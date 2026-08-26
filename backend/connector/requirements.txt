@@ -6,12 +6,15 @@
 pyodbc>=5.0
 
 # Manipulacion de datos (DataFrames) y lectura desde ODBC
-# Pin <2.1 con Python 3.11-32: pandas 2.1+ dejo de publicar ruedas para
-# Windows de 32 bits, y el conector necesita el driver ODBC de Access 32-bit.
-# numpy<2: pandas 2.0.3 esta compilado contra NumPy 1.x.
-# Entorno: backend/connector/.venv (Python 3.11 32-bit).
-pandas>=2.0,<2.1
-numpy>=1.26,<2
+# El pin estricto pandas<2.1 SOLO aplica a Python < 3.12 (portatil desarrollo
+# con Python 3.11 de 32 bits, decision D-09: pandas 2.1+ no publica ruedas
+# win32). En PCs con Python 3.12+ (p.ej. servidor ULISES) se usa pandas 2.x
+# moderna, que si tiene ruedas binarias.
+# numpy<2: pandas 2.0.3 esta compilado contra NumPy 1.x (solo afecta py<3.12).
+pandas>=2.0,<2.1; python_version < "3.12"
+pandas>=2.2,<3;   python_version >= "3.12"
+numpy>=1.26,<2;   python_version < "3.12"
+numpy>=1.26;      python_version >= "3.12"
 
 # Configuracion declarativa de tablas y sincronizacion (archivos YAML)
 PyYAML>=6.0

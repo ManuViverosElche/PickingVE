@@ -98,7 +98,9 @@ tables:
           EANART AS CODIGO_EAN,
           CP4ART AS FINCA_ARTICULO,
           CP5ART AS AUTORIZACION,
-          DEWART AS DESCRIPCION_DETALLADA
+          DEWART AS DESCRIPCION_DETALLADA,
+          PESART AS PESO,
+          FUMART AS FECHA_MODIFICACION
       FROM F_ART
       ORDER BY CODART
     schema:
@@ -115,6 +117,8 @@ tables:
       - {name: "FINCA_ARTICULO",        type: "STRING", mode: "NULLABLE", description: "Finca del artículo"}
       - {name: "AUTORIZACION",          type: "STRING", mode: "NULLABLE", description: "Campo de autorización / cítrico inmovilizado CP5ART"}
       - {name: "DESCRIPCION_DETALLADA", type: "STRING", mode: "NULLABLE", description: "Información adicional del artículo"}
+      - {name: "PESO",                  type: "FLOAT",  mode: "NULLABLE", description: "Peso del artículo (PESART)"}
+      - {name: "FECHA_MODIFICACION",    type: "DATETIME", mode: "NULLABLE", description: "Fecha de última modificación (FUMART)"}
 
   # ---------------------------------------------------------------------------
   # 4. ALBARANES  (script: actualizar_albaranes.py -> tabla ALBARANES)
@@ -540,16 +544,195 @@ tables:
       - {name: "CODIGO_SECTOR",      type: "STRING", mode: "NULLABLE", description: "Código del sector"}
       - {name: "ES_COMBINACION",     type: "STRING", mode: "NULLABLE", description: "Indica si es combinación o no"}
 
-# =============================================================================
-# EXTENSION FUTURA (Fase 2) - Tablas para el dataset Analytics
-# =============================================================================
-# Estas tablas NO se cargan todavia (las filas de la lista `tables` con
-# enabled: false quedan fuera). Su definicion esta documentada en docs/MA_TABLAS.md.
-#   - LINEA_FACTURA   (F_LFA)  -> ventas por articulo
-#   - LINEA_ALBARAN   (F_LAL)  -> entregas por articulo
-#   - COBROS          (F_COB)  -> cobros de clientes
-#   - VENCIMIENTOS    (F_REC)  -> vencimientos / deudas
-#   - FAMILIAS        (F_FAM)  -> jerarquia de producto
-#   - OBRAS           (F_OBR)  -> destinos / obras de los clientes
-#   - ALMACENES       (F_ALM), TRANSPORTISTAS (F_TRN), BANCOS (F_BAN)
-#   - PROVINCIAS      (F_PRO), PAISES (F_PAI)
+  # ---------------------------------------------------------------------------
+  # 15. SECCIONES  (F_SEC) - Agrupación superior de familias de artículos
+  # ---------------------------------------------------------------------------
+  - name: "SECCIONES"
+    source_table: "F_SEC"
+    mode: "full"
+    query: |
+      SELECT
+          CODSEC AS ID_SECCION,
+          DESSEC AS DESCRIPCION_SECCION
+      FROM F_SEC
+      ORDER BY CODSEC
+    schema:
+      - {name: "ID_SECCION",          type: "STRING", mode: "NULLABLE", description: "Código de la sección"}
+      - {name: "DESCRIPCION_SECCION", type: "STRING", mode: "NULLABLE", description: "Descripción de la sección"}
+
+  # ---------------------------------------------------------------------------
+  # 16. FAMILIAS  (F_FAM) - Familias de artículos
+  # ---------------------------------------------------------------------------
+  - name: "FAMILIAS"
+    source_table: "F_FAM"
+    mode: "full"
+    query: |
+      SELECT
+          CODFAM AS ID_FAMILIA,
+          DESFAM AS DESCRIPCION_FAMILIA,
+          SECFAM AS ID_SECCION
+      FROM F_FAM
+      ORDER BY CODFAM
+    schema:
+      - {name: "ID_FAMILIA",          type: "STRING", mode: "NULLABLE", description: "Código de la familia"}
+      - {name: "DESCRIPCION_FAMILIA", type: "STRING", mode: "NULLABLE", description: "Descripción de la familia"}
+      - {name: "ID_SECCION",          type: "STRING", mode: "NULLABLE", description: "Código de sección asociada"}
+
+  # ---------------------------------------------------------------------------
+  # 17. VENCIMIENTOS  (F_REC) - Recibos y vencimientos de clientes (Morosidad)
+  #     only_analytics: no se carga en GestionComercialVE (D-17)
+  # ---------------------------------------------------------------------------
+  - name: "VENCIMIENTOS"
+    source_table: "F_REC"
+    mode: "full"
+    only_analytics: true
+    query: |
+      SELECT
+          TIPREC AS TIPO_RECIBO,
+          CODREC AS CODIGO_RECIBO,
+          POSREC AS POSICION,
+          IMPREC AS IMPORTE,
+          FEXREC AS FECHA_EMISION,
+          FVEREC AS FECHA_VENCIMIENTO,
+          ESTREC AS ESTADO,
+          CLIREC AS CLIENTE,
+          NOMREC AS NOMBRE_CLIENTE,
+          DEVREC AS DEVUELTO
+      FROM F_REC
+      ORDER BY CLIREC, FVEREC
+    schema:
+      - {name: "TIPO_RECIBO",       type: "STRING",  mode: "NULLABLE", description: "Tipo de recibo"}
+      - {name: "CODIGO_RECIBO",     type: "STRING",  mode: "NULLABLE", description: "Código del recibo"}
+      - {name: "POSICION",          type: "INTEGER", mode: "NULLABLE", description: "Posición"}
+      - {name: "IMPORTE",           type: "FLOAT",   mode: "NULLABLE", description: "Importe del recibo"}
+      - {name: "FECHA_EMISION",     type: "STRING",  mode: "NULLABLE", description: "Fecha de emisión"}
+      - {name: "FECHA_VENCIMIENTO", type: "STRING",  mode: "NULLABLE", description: "Fecha de vencimiento"}
+      - {name: "ESTADO",            type: "STRING",  mode: "NULLABLE", description: "Estado del recibo"}
+      - {name: "CLIENTE",           type: "STRING",  mode: "NULLABLE", description: "Código de cliente"}
+      - {name: "NOMBRE_CLIENTE",    type: "STRING",  mode: "NULLABLE", description: "Nombre del cliente"}
+      - {name: "DEVUELTO",          type: "INTEGER", mode: "NULLABLE", description: "Indicador de devuelto"}
+
+  # ---------------------------------------------------------------------------
+  # 18. COBROS  (F_COB) - Historial de cobros realizados
+  #     only_analytics: no se carga en GestionComercialVE (D-17)
+  # ---------------------------------------------------------------------------
+  - name: "COBROS"
+    source_table: "F_COB"
+    mode: "full"
+    only_analytics: true
+    query: |
+      SELECT
+          CODCOB AS CODIGO_COBRO,
+          FECCOB AS FECHA_COBRO,
+          IMPCOB AS IMPORTE_COBRO,
+          CPTCOB AS CONCEPTO,
+          CPACOB AS CUENTA_PAGO,
+          TIPCOB AS TIPO_COBRO
+      FROM F_COB
+      ORDER BY FECCOB DESC
+    schema:
+      - {name: "CODIGO_COBRO",  type: "STRING",  mode: "NULLABLE", description: "Código del cobro"}
+      - {name: "FECHA_COBRO",   type: "STRING",  mode: "NULLABLE", description: "Fecha del cobro"}
+      - {name: "IMPORTE_COBRO", type: "FLOAT",   mode: "NULLABLE", description: "Importe cobrado"}
+      - {name: "CONCEPTO",      type: "STRING",  mode: "NULLABLE", description: "Concepto"}
+      - {name: "CUENTA_PAGO",   type: "STRING",  mode: "NULLABLE", description: "Cuenta de pago"}
+      - {name: "TIPO_COBRO",    type: "STRING",  mode: "NULLABLE", description: "Tipo de cobro"}
+
+  # ---------------------------------------------------------------------------
+  # 19. DIRECCIONES_DESCARGA  (F_OBR) - Direcciones de descarga de los clientes
+  #     only_analytics: no se carga en GestionComercialVE (D-17)
+  # ---------------------------------------------------------------------------
+  - name: "DIRECCIONES_DESCARGA"
+    source_table: "F_OBR"
+    mode: "full"
+    only_analytics: true
+    query: |
+      SELECT
+          CLIOBR AS CLIENTE,
+          CODOBR AS CODIGO_OBRA,
+          NOMOBR AS NOMBRE_OBRA,
+          DIROBR AS DIRECCION,
+          POBOBR AS CIUDAD,
+          PROOBR AS PROVINCIA,
+          CPOOBR AS CP,
+          TELOBR AS TELEFONO,
+          PAIOBR AS PAIS
+      FROM F_OBR
+      ORDER BY CLIOBR, CODOBR
+    schema:
+      - {name: "CLIENTE",       type: "STRING", mode: "NULLABLE", description: "Código de cliente"}
+      - {name: "CODIGO_OBRA",   type: "STRING", mode: "NULLABLE", description: "Código de obra / dirección de descarga"}
+      - {name: "NOMBRE_OBRA",   type: "STRING", mode: "NULLABLE", description: "Nombre de la obra"}
+      - {name: "DIRECCION",     type: "STRING", mode: "NULLABLE", description: "Dirección"}
+      - {name: "CIUDAD",        type: "STRING", mode: "NULLABLE", description: "Ciudad"}
+      - {name: "PROVINCIA",     type: "STRING", mode: "NULLABLE", description: "Provincia"}
+      - {name: "CP",            type: "STRING", mode: "NULLABLE", description: "Código Postal"}
+      - {name: "TELEFONO",      type: "STRING", mode: "NULLABLE", description: "Teléfono"}
+      - {name: "PAIS",          type: "STRING", mode: "NULLABLE", description: "País"}
+
+  # ---------------------------------------------------------------------------
+  # 20. LINEA_FACTURA  (F_LFA) - Detalle de artículos por factura
+  #     only_analytics: no se carga en GestionComercialVE (D-17)
+  # ---------------------------------------------------------------------------
+  - name: "LINEA_FACTURA"
+    source_table: "F_LFA"
+    mode: "full"
+    only_analytics: true
+    query: |
+      SELECT
+          TIPLFA AS TIPO_FACTURA,
+          CODLFA AS CODIGO_FACTURA,
+          POSLFA AS POSICION,
+          ARTLFA AS REFERENCIA_ARTICULO,
+          DESLFA AS DESCRIPCION,
+          CANLFA AS UNIDADES,
+          PRELFA AS PRECIO,
+          TOTLFA AS TOTAL,
+          CE1LFA AS CODIGO_LITRAJE,
+          CE2LFA AS CODIGO_SECTOR
+      FROM F_LFA
+    schema:
+      - {name: "TIPO_FACTURA",        type: "STRING",  mode: "NULLABLE", description: "Tipo de factura"}
+      - {name: "CODIGO_FACTURA",      type: "STRING",  mode: "NULLABLE", description: "Código de factura"}
+      - {name: "POSICION",            type: "INTEGER", mode: "NULLABLE", description: "Posición de línea"}
+      - {name: "REFERENCIA_ARTICULO", type: "STRING",  mode: "NULLABLE", description: "Referencia artículo"}
+      - {name: "DESCRIPCION",         type: "STRING",  mode: "NULLABLE", description: "Descripción"}
+      - {name: "UNIDADES",            type: "FLOAT",   mode: "NULLABLE", description: "Unidades"}
+      - {name: "PRECIO",              type: "FLOAT",   mode: "NULLABLE", description: "Precio"}
+      - {name: "TOTAL",               type: "FLOAT",   mode: "NULLABLE", description: "Total línea"}
+      - {name: "CODIGO_LITRAJE",      type: "STRING",  mode: "NULLABLE", description: "Litraje"}
+      - {name: "CODIGO_SECTOR",       type: "STRING",  mode: "NULLABLE", description: "Sector"}
+
+  # ---------------------------------------------------------------------------
+  # 21. LINEA_ALBARAN  (F_LAL) - Detalle de artículos por albarán
+  #     only_analytics: no se carga en GestionComercialVE (D-17)
+  # ---------------------------------------------------------------------------
+  - name: "LINEA_ALBARAN"
+    source_table: "F_LAL"
+    mode: "full"
+    only_analytics: true
+    query: |
+      SELECT
+          TIPLAL AS TIPO_ALBARAN,
+          CODLAL AS CODIGO_ALBARAN,
+          POSLAL AS POSICION,
+          ARTLAL AS REFERENCIA_ARTICULO,
+          DESLAL AS DESCRIPCION,
+          CANLAL AS UNIDADES,
+          PRELAL AS PRECIO,
+          TOTLAL AS TOTAL,
+          CE1LAL AS CODIGO_LITRAJE,
+          CE2LAL AS CODIGO_SECTOR
+      FROM F_LAL
+    schema:
+      - {name: "TIPO_ALBARAN",        type: "STRING",  mode: "NULLABLE", description: "Tipo de albarán"}
+      - {name: "CODIGO_ALBARAN",      type: "STRING",  mode: "NULLABLE", description: "Código de albarán"}
+      - {name: "POSICION",            type: "INTEGER", mode: "NULLABLE", description: "Posición de línea"}
+      - {name: "REFERENCIA_ARTICULO", type: "STRING",  mode: "NULLABLE", description: "Referencia artículo"}
+      - {name: "DESCRIPCION",         type: "STRING",  mode: "NULLABLE", description: "Descripción"}
+      - {name: "UNIDADES",            type: "FLOAT",   mode: "NULLABLE", description: "Unidades"}
+      - {name: "PRECIO",              type: "FLOAT",   mode: "NULLABLE", description: "Precio"}
+      - {name: "TOTAL",               type: "FLOAT",   mode: "NULLABLE", description: "Total línea"}
+      - {name: "CODIGO_LITRAJE",      type: "STRING",  mode: "NULLABLE", description: "Litraje"}
+      - {name: "CODIGO_SECTOR",       type: "STRING",  mode: "NULLABLE", description: "Sector"}
+

@@ -8,7 +8,7 @@ sys.path.insert(0, str(CONNECTOR_ROOT))
 from core.access_client import open_connection
 from core.bigquery_client import build_client
 from core.config import load_settings, load_tables
-from core.sync import build_logger, extract, sync_all, sync_table, transform_df
+from core.sync import build_logger, extract, filter_for_dataset, sync_all, sync_table, transform_df
 
 
 def main() -> int:
@@ -23,11 +23,11 @@ def main() -> int:
     logger = build_logger(settings)
     dataset = args.dataset or settings["bigquery"]["test_dataset"]
 
-    tables = load_tables()
+    tables = filter_for_dataset(load_tables(), dataset, settings)
     if args.table:
         tables = [t for t in tables if t["name"] == args.table]
         if not tables:
-            logger.error("Tabla no encontrada: %s", args.table)
+            logger.error("Tabla no encontrada en %s (¿solo Analytics?): %s", dataset, args.table)
             return 1
 
     client = build_client(settings)

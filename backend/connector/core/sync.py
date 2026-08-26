@@ -58,8 +58,16 @@ def sync_table(client, conn, table_cfg: dict, dataset: str, logger: logging.Logg
     return load_with_retry()
 
 
+def filter_for_dataset(tables: list[dict], dataset: str, settings: dict) -> list[dict]:
+    production = settings["bigquery"].get("production_dataset")
+    if dataset != production:
+        return tables
+    return [t for t in tables if not t.get("only_analytics")]
+
+
 def sync_all(client, conn, tables: list[dict], dataset: str, logger: logging.Logger, settings: dict) -> dict:
     results = {}
+    tables = filter_for_dataset(tables, dataset, settings)
     for table_cfg in tables:
         name = table_cfg["name"]
         logger.info("=== Sincronizando %s ===", name)
