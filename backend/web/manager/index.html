@@ -266,7 +266,7 @@
   <!-- SECCIÓN CARGA POR OPERARIO -->
   <div id="viewCarga" style="display:none;">
     <div class="filters filters-sticky">
-      <input type="date" id="filterDateCarga" onchange="selectFechaCarga(this.value)">
+      <span style="font-size:0.82rem; color:var(--mut);">Faena prevista total — todas las fechas de carga</span>
       <button class="btn-sec" onclick="loadCarga()">🔄 Actualizar</button>
     </div>
     <div id="cargaContainer">
@@ -279,7 +279,7 @@
     <!-- Encargados -->
     <div class="cfg-section" id="cfgSecEncargados">
       <div class="cfg-section-head" onclick="cfgToggle('cfgSecEncargados')">
-        <h3>👥 Encargados (Pistoleo) <span class="cfg-count" id="cfgCountEncargados"></span></h3>
+        <h3>👥 Encargados <span class="cfg-count" id="cfgCountEncargados"></span></h3>
         <div style="display:flex; gap:10px; align-items:center;">
           <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('encargado')">＋ Nuevo encargado</button>
           <span class="cfg-chevron">▶</span>
@@ -296,7 +296,7 @@
     <!-- Operarios -->
     <div class="cfg-section" id="cfgSecOperarios">
       <div class="cfg-section-head" onclick="cfgToggle('cfgSecOperarios')">
-        <h3>👷 Operarios (Faena) <span class="cfg-count" id="cfgCountOperarios"></span></h3>
+        <h3>👷 Operarios (Acopio) <span class="cfg-count" id="cfgCountOperarios"></span></h3>
         <div style="display:flex; gap:10px; align-items:center;">
           <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('operario')">＋ Nuevo operario</button>
           <span class="cfg-chevron">▶</span>
@@ -307,6 +307,28 @@
           <input type="text" id="searchOperarios" class="cfg-search" placeholder="🔍 Buscar por nombre, email o maquinaria..." oninput="renderOperariosConfigTable()">
         </div>
         <div id="operariosListConfig" class="cfg-table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- Operarios de inventario -->
+    <div class="cfg-section" id="cfgSecOperariosInv">
+      <div class="cfg-section-head" onclick="cfgToggle('cfgSecOperariosInv')">
+        <h3>👥 Operarios (Inventario) <span class="cfg-count" id="cfgCountOperariosInv"></span></h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn-primary-modern" onclick="event.stopPropagation(); openPersonModal('operarioInv')">＋ Nuevo operario inventario</button>
+          <span class="cfg-chevron">▶</span>
+        </div>
+      </div>
+      <div class="cfg-section-body">
+        <div class="cfg-toolbar">
+          <input type="text" id="searchOperariosInv" class="cfg-search" placeholder="🔍 Buscar por nombre, email..." oninput="renderOperariosInvConfigTable()">
+          <select id="filtroActivoInv" onchange="renderOperariosInvConfigTable()" style="min-width:150px;">
+            <option value="todos">Todos (activos e inactivos)</option>
+            <option value="activos">Solo activos</option>
+            <option value="inactivos">Solo inactivos</option>
+          </select>
+        </div>
+        <div id="operariosInvListConfig" class="cfg-table-wrap"></div>
       </div>
     </div>
 
@@ -386,8 +408,15 @@
       <div class="field"><label>Fincas asignadas</label><div class="chips-select" id="pmFincas"></div></div>
       <div class="field" id="pmMaquinariaField"><label>Maquinaria que lleva</label><div class="chips-select" id="pmMaquinaria"></div></div>
       <div class="field-row">
-        <div class="field" id="pmRolField"><label for="pmRol">Rol</label>
+        <div class="field" id="pmRolField"><label for="pmRol">Nivel de acceso</label>
           <select id="pmRol"><option value="ENCARGADO">Encargado</option><option value="SUPERUSUARIO">Superusuario</option></select>
+        </div>
+        <div class="field" id="pmModoField"><label for="pmModo">Rol de trabajo</label>
+          <select id="pmModo">
+            <option value="PICKING">Pistoleo</option>
+            <option value="INVENTARIO">Inventario</option>
+            <option value="AMBAS">Ambas</option>
+          </select>
         </div>
         <div class="field"><label>Estado</label>
           <select id="pmActivo"><option value="true">Activo</option><option value="false">Dado de baja</option></select>
@@ -412,6 +441,12 @@
       <input type="hidden" id="fmOriginal" value="">
       <div class="field"><label for="fmNombreReal">Finca (valor real del ERP) *</label><input type="text" id="fmNombreReal" placeholder="Ej.: LA FABRICA"></div>
       <div class="field"><label for="fmNombreMostrar">Nombre mostrado</label><input type="text" id="fmNombreMostrar" placeholder="Opcional: nombre amigable"></div>
+      <div class="field"><label>Tipo de finca</label>
+        <select id="fmPropia">
+          <option value="true">Propia (inventariable)</option>
+          <option value="false">Ajena (cliente)</option>
+        </select>
+      </div>
       <div class="field"><label>Estado</label>
         <select id="fmActivo"><option value="true">Visible</option><option value="false">Oculta</option></select>
       </div>
@@ -653,6 +688,7 @@
     await Promise.all([loadEncargados(), loadOperarios(), loadFincasCfg(), loadMaquinarias(), loadFamilias()]);
     renderEncargadosConfigTable();
     renderOperariosConfigTable();
+    renderOperariosInvConfigTable();
     renderFincasConfigTable();
     renderMaquinariasConfigTable();
     renderFamiliasConfigTable();
@@ -680,11 +716,13 @@
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin encargados que coincidan.</div>';
       return;
     }
-    let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Fincas</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
+    let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Rol</th><th>Fincas</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
     lista.forEach((e, i) => {
+      const rolBadge = e.modo === "INVENTARIO" ? 'Inventario' : (e.modo === "AMBAS" ? 'Ambas' : 'Pistoleo');
       html += `<tr>
         <td><div class="person-cell"><span class="avatar">${escHtml(initials(e.nombre, e.apellidos))}</span><div><b>${escHtml(e.nombre)}</b> <span style="color:var(--mut);">${escHtml(e.apellidos || '')}</span></div></div></td>
         <td style="font-size:0.78rem; color:var(--mut);">${escHtml(e.email)}</td>
+        <td><span class="pill ${e.modo === "AMBAS" ? 'pill-ok' : ''}">${rolBadge}</span></td>
         <td style="font-size:0.72rem; max-width:180px;">${escHtml((e.fincas_carga || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
         <td><span class="pill ${e.activo !== false ? 'pill-ok' : 'pill-off'}">${e.activo !== false ? 'Activo' : 'Baja'}</span></td>
         <td style="white-space:nowrap;">
@@ -708,11 +746,13 @@
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin operarios que coincidan.</div>';
       return;
     }
-    let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Maquinaria</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
+    let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Rol</th><th>Maquinaria</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
     lista.forEach((op, i) => {
+      const rolBadge = op.modo === "INVENTARIO" ? 'Inventario' : (op.modo === "AMBAS" ? 'Ambas' : 'Acopio');
       html += `<tr>
         <td><div class="person-cell"><span class="avatar">${escHtml(initials(op.nombre, op.apellidos))}</span><div><b>${escHtml(op.nombre)}</b> <span style="color:var(--mut);">${escHtml(op.apellidos || '')}</span></div></div></td>
         <td style="font-size:0.78rem; color:var(--mut);">${escHtml(op.email)}</td>
+        <td><span class="pill ${op.modo === "INVENTARIO" || op.modo === "AMBAS" ? 'pill-ok' : ''}">${rolBadge}</span></td>
         <td style="font-size:0.72rem; max-width:160px;">${escHtml((op.maquinaria || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
         <td><span class="pill ${op.activo !== false ? 'pill-ok' : 'pill-off'}">${op.activo !== false ? 'Activo' : 'Baja'}</span></td>
         <td style="white-space:nowrap;">
@@ -722,6 +762,63 @@
       </tr>`;
     });
     cont.innerHTML = html + '</tbody></table>';
+  }
+
+  function renderOperariosInvConfigTable() {
+    const cont = document.getElementById('operariosInvListConfig');
+    if (!cont) return;
+    const q = (document.getElementById('searchOperariosInv')?.value || '').toLowerCase();
+    const filtro = document.getElementById('filtroActivoInv')?.value || 'todos';
+    const lista = operariosList.filter(op => {
+      const modoInv = (op.modo || 'ACOPIO') === 'INVENTARIO' || (op.modo || 'ACOPIO') === 'AMBAS';
+      if (!modoInv) return false;
+      if (!q || `${op.nombre} ${op.apellidos || ''} ${op.email}`.toLowerCase().includes(q)) {
+        if (filtro === 'activos' && op.activo === false) return false;
+        if (filtro === 'inactivos' && op.activo !== false) return false;
+        return true;
+      }
+      return false;
+    });
+    _cfgFiltered.operariosInv = lista;
+    setCfgCount('cfgCountOperariosInv', lista.length);
+    if (!lista.length) {
+      cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin operarios de inventario que coincidan.</div>';
+      return;
+    }
+    let html = '<table class="cfg-table"><thead><tr><th>Persona</th><th>Email</th><th>Rol</th><th>Fincas</th><th>Estado</th><th style="width:90px;">Acciones</th></tr></thead><tbody>';
+    lista.forEach((op, i) => {
+      const rolBadge = op.modo === "AMBAS" ? 'Ambas' : 'Inventario';
+      html += `<tr>
+        <td><div class="person-cell"><span class="avatar">${escHtml(initials(op.nombre, op.apellidos))}</span><div><b>${escHtml(op.nombre)}</b> <span style="color:var(--mut);">${escHtml(op.apellidos || '')}</span></div></div></td>
+        <td style="font-size:0.78rem; color:var(--mut);">${escHtml(op.email)}</td>
+        <td><span class="pill pill-ok">${rolBadge}</span></td>
+        <td style="font-size:0.72rem; max-width:180px;">${escHtml((op.fincas_carga || '—').split(',').map(s => s.trim()).filter(Boolean).join(', ') || '—')}</td>
+        <td><span class="pill ${op.activo !== false ? 'pill-ok' : 'pill-off'}">${op.activo !== false ? 'Activo' : 'Baja'}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="icon-btn" onclick="openPersonModal('operarioInv', ${i})" title="Editar">✏️</button>
+          <button class="icon-btn danger" onclick="eliminarOperarioInv(${i})" title="Eliminar">🗑️</button>
+        </td>
+      </tr>`;
+    });
+    cont.innerHTML = html + '</tbody></table>';
+  }
+
+  async function eliminarOperarioInv(idx) {
+    const op = cfgGet('operarioInv', idx);
+    if (!op) return;
+    if (!confirm(`¿Eliminar definitivamente al operario de inventario ${op.nombre} (${op.email})?`)) return;
+    try {
+      const res = await fetch(`/api/operarios/eliminar?k=${MANAGER_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: op.email })
+      });
+      if (!res.ok) alert(`Error al eliminar el operario (HTTP ${res.status})`);
+      renderConfigView();
+    } catch (err) {
+      console.error(err);
+      alert("Error de red al eliminar el operario");
+    }
   }
 
   function renderFincasConfigTable() {
@@ -734,12 +831,13 @@
       cont.innerHTML = '<div style="text-align:center; color:var(--mut); padding:24px;">Sin fincas que coincidan.</div>';
       return;
     }
-    let html = '<table class="cfg-table"><thead><tr><th>Finca</th><th>Nombre mostrado</th><th>Tipo</th><th>Estado</th><th style="width:120px;">Acciones</th></tr></thead><tbody>';
+    let html = '<table class="cfg-table"><thead><tr><th>Finca</th><th>Nombre mostrado</th><th>Tipo</th><th>Propia</th><th>Estado</th><th style="width:120px;">Acciones</th></tr></thead><tbody>';
     lista.forEach((f, i) => {
       html += `<tr>
         <td><b>${escHtml(f.finca)}</b></td>
         <td style="color:var(--blue);">${escHtml(f.nombre || f.finca)}</td>
         <td><span class="pill">${f.manual ? 'Manual' : 'Auto (pedidos)'}</span></td>
+        <td><span class="pill ${f.propia ? 'pill-ok' : 'pill-off'}">${f.propia ? 'Propia' : 'Ajena'}</span></td>
         <td><span class="pill ${f.oculto ? 'pill-off' : 'pill-ok'}">${f.oculto ? 'Oculta' : 'Visible'}</span></td>
         <td style="white-space:nowrap;">
           <button class="icon-btn" onclick="openFincaModal(${i})" title="Editar">✏️</button>
@@ -819,8 +917,11 @@
     return [...document.querySelectorAll(`#${containerId} .chip-sel.on`)].map(el => el.dataset.val);
   }
 
-  const _cfgFiltered = { encargados: [], operarios: [], fincas: [], maquinarias: [], familias: [] };
-  function cfgGet(tipo, idx) { return (_cfgFiltered[tipo] || [])[idx] || null; }
+  const _cfgFiltered = { encargados: [], operarios: [], operariosInv: [], fincas: [], maquinarias: [], familias: [] };
+  function cfgGet(tipo, idx) {
+    const key = tipo === 'operarioInv' ? 'operariosInv' : tipo;
+    return (_cfgFiltered[key] || [])[idx] || null;
+  }
   function jsAttr(s) {
     return String(s ?? '')
       .replace(/\\/g, '\\\\')
@@ -830,7 +931,10 @@
   }
 
   async function openPersonModal(tipo, idx) {
-    const data = idx === undefined || idx === null ? null : cfgGet(tipo === 'encargado' ? 'encargados' : 'operarios', idx);
+    const key = tipo === 'operarioInv' ? 'operariosInv' : (tipo === 'encargado' ? 'encargados' : 'operarios');
+    const data = idx === undefined || idx === null ? null : _cfgFiltered[key][idx];
+    const esOp = tipo === 'operario' || tipo === 'operarioInv';
+    const esEnc = tipo === 'encargado';
     document.getElementById('pmTipo').value = tipo;
     document.getElementById('pmOriginalEmail').value = data?.email || '';
     document.getElementById('pmNombre').value = data?.nombre || '';
@@ -839,17 +943,26 @@
     document.getElementById('pmPass').value = '';
     document.getElementById('pmPass').type = 'password';
     document.getElementById('pmRol').value = data?.rol && data.rol !== 'ENCARGADO' ? data.rol : 'ENCARGADO';
+    const modoVal = data?.modo || (tipo === 'operarioInv' ? 'INVENTARIO' : (esOp ? 'ACOPIO' : 'PICKING'));
+    const pmModo = document.getElementById('pmModo');
+    if (esOp) {
+      pmModo.innerHTML = '<option value="ACOPIO">Acopio</option><option value="INVENTARIO">Inventario</option><option value="AMBAS">Ambas</option>';
+    } else {
+      pmModo.innerHTML = '<option value="PICKING">Pistoleo</option><option value="INVENTARIO">Inventario</option><option value="AMBAS">Ambas</option>';
+    }
+    pmModo.value = (['PICKING','INVENTARIO','AMBAS','ACOPIO'].includes(modoVal)) ? modoVal : (esOp ? 'ACOPIO' : 'PICKING');
     document.getElementById('pmActivo').value = data ? String(data.activo !== false) : 'true';
-    document.getElementById('personModalTitle').textContent = tipo === 'encargado'
-      ? (data ? `Editar encargado — ${data.nombre}` : 'Nuevo encargado')
-      : (data ? `Editar operario — ${data.nombre}` : 'Nuevo operario');
-    document.getElementById('personModalSub').textContent = tipo === 'encargado'
-      ? 'Empleado con acceso a la app de pistoleo.'
-      : 'Trabajador de carga al que se le reparte faena.';
+    const esInventario = tipo === 'operarioInv';
+    document.getElementById('personModalTitle').textContent = esInventario
+      ? (data ? `Editar operario inventario — ${data.nombre}` : 'Nuevo operario inventario')
+      : (esEnc ? (data ? `Editar encargado — ${data.nombre}` : 'Nuevo encargado') : (data ? `Editar operario — ${data.nombre}` : 'Nuevo operario'));
+    document.getElementById('personModalSub').textContent = esInventario
+      ? 'Operario que realiza inventario (sin maquinaria de acopio).'
+      : (esEnc ? 'Empleado con acceso a la app de pistoleo.' : 'Trabajador de carga al que se le reparte faena.');
     document.getElementById('pmPassHint').textContent = data ? '(vacío = no cambia)' : '(vacío = por defecto "1234")';
-    const esOp = tipo === 'operario';
-    document.getElementById('pmMaquinariaField').style.display = esOp ? '' : 'none';
-    document.getElementById('pmRolField').style.display = esOp ? 'none' : '';
+    document.getElementById('pmMaquinariaField').style.display = esOp && !esInventario ? '' : 'none';
+    document.getElementById('pmRolField').style.display = esEnc ? '' : 'none';
+    document.getElementById('pmModoField').style.display = '';
     const nombresFinca = fincasCfgList.filter(f => !f.oculto).map(f => f.nombre || f.finca);
     chipsSelect('pmFincas', nombresFinca, (data?.fincas_carga || '').split(','));
     chipsSelect('pmMaquinaria', maquinariasList.filter(m => m.activo !== false).map(m => m.nombre), (data?.maquinaria || '').split(','));
@@ -874,7 +987,8 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: emailOriginal || undefined, nombre, apellidos, email, password,
-            fincas_carga: fincas, rol: document.getElementById('pmRol').value, activo
+            fincas_carga: fincas, rol: document.getElementById('pmRol').value,
+            modo: document.getElementById('pmModo').value, activo
           })
         });
       } else {
@@ -882,7 +996,8 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email, nombre, apellidos, password, fincas_carga: fincas,
-            maquinaria: chipsSelected('pmMaquinaria').join(', '), activo
+            maquinaria: chipsSelected('pmMaquinaria').join(', '),
+            modo: document.getElementById('pmModo').value, activo
           })
         });
       }
@@ -907,6 +1022,7 @@
     document.getElementById('fmNombreReal').value = f?.finca || '';
     document.getElementById('fmNombreReal').disabled = !!f;
     document.getElementById('fmNombreMostrar').value = (f && f.nombre !== f.finca) ? (f.nombre || '') : '';
+    document.getElementById('fmPropia').value = f ? String(f.propia !== false) : 'true';
     document.getElementById('fmActivo').value = f ? String(!f.oculto) : 'true';
     document.getElementById('fincaModalTitle').textContent = f ? `Editar finca — ${f.finca}` : 'Nueva finca';
     document.getElementById('fincaModal').classList.add('open');
@@ -918,13 +1034,21 @@
     const finca = (document.getElementById('fmNombreReal').value || original).trim();
     const nombreMostrar = document.getElementById('fmNombreMostrar').value.trim();
     const activo = document.getElementById('fmActivo').value === 'true';
+    const propia = document.getElementById('fmPropia').value === 'true';
     if (!finca) { alert("Indica el nombre de la finca"); return; }
     try {
       const res = await fetch(`/api/fincas?k=${MANAGER_KEY}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ finca, nombre: nombreMostrar || null, activo })
       });
-      if (res.ok) { closeModal('fincaModal'); renderConfigView(); }
+      if (res.ok) {
+        const res2 = await fetch(`/api/fincas/propia?k=${MANAGER_KEY}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ finca, propia })
+        });
+        if (!res2.ok) console.error("Error al guardar tipo de finca", res2.status);
+        closeModal('fincaModal'); renderConfigView();
+      }
       else alert(`Error al guardar la finca (HTTP ${res.status})`);
     } catch (e) { console.error(e); alert("Error de red"); }
     });
@@ -1169,7 +1293,6 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const orders = data.pedidos || [];
-      window._cargaOrders = orders;
 
       const fincaSel = document.getElementById('filterFincaReparto');
       const currentFinca = fincaSel.value;
@@ -1204,111 +1327,69 @@
     }
   }
 
-  // ===== D-74/D-185: carga por operario — SIEMPRE por EMAIL (unico).
-  // Los nombres de pila se repiten (Antonio Calderon encargado vs Antonio
-  // Ballester operario): agrupar por nombre mezclaba personas.
-  function calcularCargaPorOperario(orders) {
-    const carga = {};
-    const opsByEmail = {};
-    operariosList.forEach(op => {
-      const email = (op.email || '').trim().toLowerCase();
-      if (!email) return;
-      opsByEmail[email] = op;
-      if (op.activo !== false && !(email in carga)) {
-        carga[email] = { email: email, nombre: op.nombre, maquinaria: op.maquinaria || '', asignado: 0, recogido: 0, queda: 0, preasignado: 0, proyectado: 0 };
-      }
+  // ===== D-228: carga GLOBAL por operario (todas las fechas de carga).
+  // El backend devuelve asignado (reparto guardado) y recogido (pistoleo) por
+  // operario; la preasignada (cambios sin guardar) se calcula aquí como delta
+  // neto (resta al origen, suma al destino). Siempre por EMAIL (unico).
+  function calcularCargaGlobal(opsBackend) {
+    const filas = {};
+    opsBackend.forEach(op => {
+      filas[op.email] = {
+        email: op.email,
+        nombre: op.nombre,
+        maquinaria: op.maquinaria || '',
+        asignado: op.asignado || 0,
+        recogido: op.recogido || 0,
+        preasignado: 0,
+      };
     });
-    const opPorNombre = {};
-    Object.values(carga).forEach(f => { opPorNombre[(f.nombre || '').toLowerCase()] = f; });
-    orders.forEach(o => {
-      (o.lineas || []).forEach(l => {
-        if (esRefControl(l.referencia)) return;
-        const detOps = {};
-        (l.detalleOperarios || '').split(',').forEach(par => {
-          const [clave, cant] = par.split(':');
-          if (clave && clave.trim()) detOps[clave.trim().toLowerCase()] = parseInt(cant) || 0;
-        });
-        Object.entries(detOps).forEach(([clave, cant]) => {
-          let destino = opsByEmail[clave] ? carga[clave] : null;
-          if (!destino && clave.startsWith('sin-email:')) {
-            destino = opPorNombre[clave.replace('sin-email:', '').toLowerCase()] || null;
-          }
-          if (!destino && !opsByEmail[clave]) {
-            // compatibilidad con registros antiguos agregados por nombre
-            destino = opPorNombre[clave.toLowerCase()] || null;
-          }
-          if (destino) destino.recogido += cant;
-        });
-        const asigEmail = (l.operarioAsignadoEmail || '').trim().toLowerCase();
-        const asigNombre = (l.operarioAsignado || '').trim();
-        let filaAsig = asigEmail ? carga[asigEmail] : null;
-        if (!filaAsig && asigNombre) filaAsig = opPorNombre[asigNombre.toLowerCase()] || null;
-        if (filaAsig) {
-          filaAsig.asignado += l.pendientes || 0;
-          filaAsig.queda += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
-          filaAsig.proyectado += Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
-        }
-        const keyLinea = `${o.serie}_${o.numero}`;
-        const cambios = cambiosFaenaPendientes[keyLinea] || {};
-        // D-202: proyeccion neta — resta al operario origen y suma al destino
-        Object.entries(cambios).forEach(([posicion, nuevoOpEmail]) => {
-          if (String(l.posicion) !== String(posicion)) return;
-          const uds = Math.max(0, (l.pendientes || 0) - (l.acopiado || 0));
-          const origen = (l.operarioAsignadoEmail || '').trim().toLowerCase();
-          const destino = (nuevoOpEmail || '').trim().toLowerCase();
-          if (origen === destino) return;
-          if (origen && carga[origen]) carga[origen].proyectado -= uds;
-          if (destino && carga[destino]) {
-            carga[destino].proyectado += uds;
-            carga[destino].preasignado += uds;
-          } else if (destino && !carga[destino] && opsByEmail[destino]) {
-            // operario existe pero inactivo: solo preasignado informativo
-          }
-        });
+    Object.values(cambiosFaenaPendientes).forEach(lineas => {
+      Object.values(lineas).forEach(c => {
+        if (!c || c.email === undefined) return;
+        const uds = Math.max(0, (c.pendientes || 0) - (c.acopiado || 0));
+        const origen = (c.origen || '').trim().toLowerCase();
+        const destino = (c.email || '').trim().toLowerCase();
+        if (origen === destino) return;
+        if (origen && filas[origen]) filas[origen].preasignado -= uds;
+        if (destino && filas[destino]) filas[destino].preasignado += uds;
       });
     });
-    return Object.values(carga).sort((a, b) => b.asignado - a.asignado);
+    return Object.values(filas).sort((a, b) => (b.asignado + b.preasignado) - (a.asignado + a.preasignado));
   }
 
-  function renderTablaCargaOperarios(orders) {
-    const filas = calcularCargaPorOperariosWrapper(orders);
+  function renderTablaCargaOperarios(opsBackend) {
+    const filas = calcularCargaGlobal(opsBackend);
     if (!filas.length) {
       return `<div class="carga-box"><h3>⚖️ Carga por Operario</h3>
         <p style="color:var(--mut); font-size:0.82rem;">No hay operarios activos dados de alta en Configuración.</p></div>`;
     }
     const hayPend = Object.values(cambiosFaenaPendientes).some(l => Object.keys(l || {}).length);
-    const maxProy = Math.max(1, ...filas.map(f => f.proyectado));
-    let html = `<div class="carga-box"><h3>⚖️ Carga por Operario <span style="font-weight:400; color:var(--mut); font-size:0.78rem;">— comparativa para valorar reasignaciones antes de guardar${hayPend ? ' · <b style="color:var(--warn);">hay cambios sin guardar</b>' : ''}</span></h3>
+    const maxTot = Math.max(1, ...filas.map(f => f.asignado + f.preasignado));
+    let html = `<div class="carga-box"><h3>⚖️ Carga por Operario <span style="font-weight:400; color:var(--mut); font-size:0.78rem;">— faena prevista total (todas las fechas de carga)${hayPend ? ' · <b style="color:var(--warn);">hay cambios sin guardar</b>' : ''}</span></h3>
       <table class="carga-table">
         <thead><tr>
-          <th>Operario</th><th>Maquinaria</th><th style="text-align:right;">Asignado</th><th style="text-align:right;">Recogido</th>
-          <th style="text-align:right;">Queda guardado</th><th style="text-align:right;">Preasignado*</th><th style="text-align:right;"><b>Proyectado</b></th><th>Equilibrio (proy.)</th>
+          <th>Operario</th><th>Maquinaria</th><th style="text-align:right;">Asignado</th><th style="text-align:right;">Preasignado*</th><th style="text-align:right;">Recogido</th><th style="text-align:right;"><b>Total a acopiar</b></th><th>Equilibrio</th>
         </tr></thead><tbody>`;
     filas.forEach(f => {
-      const sobrecargado = f.proyectado >= maxProy * 0.75 && f.proyectado > 0;
-      const delta = f.proyectado - f.queda;
-      const deltaTxt = delta > 0 ? `<span style="color:var(--warn); font-size:0.7rem;"> (+${delta})</span>` : (delta < 0 ? `<span style="color:var(--bad); font-size:0.7rem;"> (${delta})</span>` : '');
+      const total = f.asignado + f.preasignado;
+      const sobrecargado = total >= maxTot * 0.75 && total > 0;
+      const preaTxt = f.preasignado > 0 ? `<span style="color:var(--warn);">+${f.preasignado}</span>` : (f.preasignado < 0 ? `<span style="color:var(--bad);">${f.preasignado}</span>` : '');
       html += `<tr style="${sobrecargado ? 'background:rgba(224,90,78,0.07);' : ''}">
         <td><b>${escHtml(f.nombre)}</b></td>
         <td style="font-size:0.74rem; color:var(--mut);">${escHtml(f.maquinaria || '—')}</td>
         <td class="carga-num" style="text-align:right;">${f.asignado}</td>
+        <td class="carga-num" style="text-align:right;">${preaTxt || ''}</td>
         <td class="carga-num" style="text-align:right; color:var(--lime);">${f.recogido}</td>
-        <td class="carga-num" style="text-align:right; color:var(--mut);">${f.queda}</td>
-        <td class="carga-num" style="text-align:right; color:var(--warn);">${f.preasignado || ''}</td>
-        <td class="carga-num ${sobrecargado ? 'sobrecarga' : ''}" style="text-align:right; font-weight:700; font-size:0.95rem;">${f.proyectado}${sobrecargado ? ' ⚠' : ''}${deltaTxt}</td>
-        <td><div style="background:var(--card2); border-radius:4px; height:8px; overflow:hidden;"><div style="height:100%; width:${Math.round(Math.max(0, f.proyectado) / maxProy * 100)}%; background:${sobrecargado ? 'var(--bad)' : 'var(--lime)'};"></div></div></td>
+        <td class="carga-num ${sobrecargado ? 'sobrecarga' : ''}" style="text-align:right; font-weight:700; font-size:0.95rem;">${total}${sobrecargado ? ' ⚠' : ''}</td>
+        <td><div style="background:var(--card2); border-radius:4px; height:8px; overflow:hidden;"><div style="height:100%; width:${Math.round(Math.max(0, total) / maxTot * 100)}%; background:${sobrecargado ? 'var(--bad)' : 'var(--lime)'};"></div></div></td>
       </tr>`;
     });
     html += `</tbody></table>
       <p style="font-size:0.72rem; color:var(--mut); margin-top:8px;">
-        * Preasignado: cambios de operario aún sin guardar ("Guardar Reparto"). Asignado/Queda guardado: solo lo ya guardado en el servidor.
-        <b>Proyectado</b>: lo que quedaría por acopiar aplicando tus cambios sin guardar (resta al que le quitas líneas y suma al que se las pones). Recogido: unidades ya pistoleadas hoy.
-        Filas en rojo concentran más faena proyectada: valora reasignar líneas.</p></div>`;
+        * Preasignado: cambios de operario aún sin guardar ("Guardar Reparto"); se restan al que le quitas líneas y se suman al que se las pones.
+        <b>Asignado</b>: faena guardada en el servidor (todas las fechas). <b>Recogido</b>: unidades ya pistoleadas (todas las fechas).
+        <b>Total a acopiar</b> = asignado + preasignado. Filas en rojo concentran más faena: valora reasignar.</p></div>`;
     return html;
-  }
-
-  function calcularCargaPorOperariosWrapper(orders) {
-    return calcularCargaPorOperario(orders);
   }
 
   function renderPedidoRepartoCard(o) {
@@ -1326,6 +1407,11 @@
       ? `<button class="icon-btn" onclick="event.stopPropagation(); openObsModal('Observaciones — Pedido #${o.numero}', '${jsAttr(o.notasPedido)}')" title="Observaciones del pedido">📝 Observaciones</button>`
       : '';
     const msgBlink = esSinLeer(o.numero, '') ? ' btn-msg-unread' : '';
+
+    // D-227: conservar el pedido desplegado al re-renderizar Reparto (no cerrar
+    // la tarjeta al volver de Carga o al actualizar).
+    const cardKey = `${o.serie}_${o.numero}`;
+    const cardAbierta = repartoPedidoAbierto === cardKey;
 
     let lineasHtml = (o.lineas || []).map((l, idx) => {
       const lineNum = l.posicion || (idx + 1);
@@ -1361,20 +1447,29 @@
         if (nom && nom.trim()) detalleOps[nom.trim()] = parseInt(cant) || 0;
       });
       detalleOpsGlobal[`${o.serie}_${o.numero}_${lineNum}`] = detalleOps;
-      const cogidoAsignado = (l.operarioAsignado && detalleOps[l.operarioAsignado] !== undefined)
-        ? detalleOps[l.operarioAsignado]
+
+      // D-227: el cambio sin guardar manda sobre lo guardado al re-renderizar,
+      // para que el desplegable y "Cogido Op." sean congruentes con el contador
+      // "N cambios sin guardar" (antes se perdía visualmente al volver a Reparto).
+      const pedidoKey = `${o.serie}_${o.numero}`;
+      const cambioPendiente = (cambiosFaenaPendientes[pedidoKey] || {})[String(lineNum)];
+      const operarioEfectivo = (cambioPendiente !== undefined)
+        ? (cambioPendiente.email || '')
+        : (l.operarioAsignadoEmail || '');
+
+      const cogidoAsignado = (operarioEfectivo && detalleOps[operarioEfectivo] !== undefined)
+        ? detalleOps[operarioEfectivo]
         : Object.values(detalleOps).reduce((a, b) => a + b, 0);
 
       let opOptions = '<option value="">-- Sin asignar --</option>';
       operariosList.forEach(op => {
         if (!op.activo) return;
         // D-185: asignacion SIEMPRE por email (unico); el nombre es solo etiqueta
-        const sel = ((l.operarioAsignadoEmail || '') === op.email) ? 'selected' : '';
+        const sel = ((operarioEfectivo || '') === op.email) ? 'selected' : '';
         opOptions += `<option value="${escHtml(op.email)}" ${sel}>${escHtml(op.nombre)}</option>`;
       });
 
       const huella = l.huellaDigital || String(lineNum);
-      mapaPosicionHuella[`${o.serie}_${o.numero}_${lineNum}`] = l.huellaDigital || '';
       const infoBtn = (l.observaciones || '').trim()
         ? `<button class="icon-btn" onclick="openObsModal('Observaciones línea ${lineNum} — Ref ${jsAttr(l.referencia)}', '${jsAttr(l.observaciones)}')" title="${escHtml(l.observaciones)}">📝 Info</button>`
         : '';
@@ -1395,7 +1490,7 @@
               <td id="cogido_${o.serie}_${o.numero}_${lineNum}" style="font-weight:700; color:var(--warn);">${cogidoAsignado || '—'}</td>
               <td style="font-size:0.78rem; font-weight:700; color:var(--blue);">${encargadoPick}</td>
               <td>
-                <select style="width:120px; font-size:0.78rem;" data-pedido="${o.serie}_${o.numero}" data-linea="${lineNum}" onchange="cambiarOperarioFaena(this)">
+                <select style="width:120px; font-size:0.78rem;" data-pedido="${o.serie}_${o.numero}" data-linea="${lineNum}" data-huella="${escHtml(huella)}" data-pendientes="${l.pendientes}" data-acopiado="${l.acopiado}" data-origen="${escHtml(l.operarioAsignadoEmail || '')}" onchange="cambiarOperarioFaena(this)">
                   ${opOptions}
                 </select>
               </td>
@@ -1409,7 +1504,7 @@
     }).join('');
 
     return `
-          <div class="card reparto-bloque" style="margin-bottom: 16px; border-color: var(--line);">
+          <div class="card reparto-bloque${cardAbierta ? ' abierto' : ''}" style="margin-bottom: 16px; border-color: var(--line);">
             <div class="card-header reparto-hdr" style="cursor:pointer;" onclick="toggleRepartoOrder('${o.serie}_${o.numero}')">
               <div>
                 <div class="order-id">📦 Pedido #${o.numero} ${orderRef} ${brandHeader} ${qtyBox}</div>
@@ -1419,11 +1514,11 @@
               <div style="display:flex; gap:8px; align-items:center;">
                 ${obsBtn}
                 <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="event.stopPropagation(); openChatModal('${o.numero}', '')" style="padding:4px 8px; font-size:0.75rem;">💬 Mensajes</button>
-                <span style="font-size:0.85rem; color:var(--lime); font-weight:700;">▼ Líneas</span>
+                <span id="arrow_${cardKey}" style="font-size:0.85rem; color:var(--lime); font-weight:700;">${cardAbierta ? '▲ Líneas' : '▼ Líneas'}</span>
               </div>
             </div>
 
-            <div id="reparto_lines_${o.serie}_${o.numero}" style="display:none; margin-top:12px; border-top:1px solid var(--line); padding-top:10px; overflow-x:auto;">
+            <div id="reparto_lines_${cardKey}" style="display:${cardAbierta ? 'block' : 'none'}; margin-top:12px; border-top:1px solid var(--line); padding-top:10px; overflow-x:auto;">
               <table>
                 <thead>
                   <tr>
@@ -1471,12 +1566,18 @@
     if (abrir) {
       el.style.display = 'block';
       card.classList.add('abierto');
+      repartoPedidoAbierto = key;
       if (arrow) arrow.textContent = '▲ Líneas';
+    } else {
+      repartoPedidoAbierto = null;
+      if (arrow) arrow.textContent = '▼ Líneas';
     }
   }
 
   let cambiosFaenaPendientes = {};
   let detalleOpsGlobal = {};
+  let repartoPedidoAbierto = null;
+  let cargaOpsGlobal = null;
   function actualizarContadorPendientes() {
     const el = document.getElementById('contadorPendientes');
     if (!el) return;
@@ -1494,7 +1595,15 @@
     const linea = sel.getAttribute('data-linea');
     const operario = sel.value;
     if (!cambiosFaenaPendientes[pedido]) cambiosFaenaPendientes[pedido] = {};
-    cambiosFaenaPendientes[pedido][linea] = operario;
+    // D-228: se guarda todo el contexto de la línea para poder preasignar faena
+    // de distintas fechas de carga y calcular la carga global al guardar.
+    cambiosFaenaPendientes[pedido][linea] = {
+      email: operario,
+      huella: sel.getAttribute('data-huella') || '',
+      pendientes: parseInt(sel.getAttribute('data-pendientes') || '0', 10) || 0,
+      acopiado: parseInt(sel.getAttribute('data-acopiado') || '0', 10) || 0,
+      origen: sel.getAttribute('data-origen') || ''
+    };
     const cell = document.getElementById(`cogido_${pedido}_${linea}`);
     if (cell && operario) {
       const det = (detalleOpsGlobal[`${pedido}_${linea}`] || {})[operario];
@@ -1507,45 +1616,37 @@
   }
 
   function refrescarTablaCarga() {
-    if (window._cargaOrders) {
+    if (cargaOpsGlobal) {
       const cont = document.getElementById('cargaContainer');
-      if (cont) cont.innerHTML = renderTablaCargaOperarios(window._cargaOrders);
+      if (cont) cont.innerHTML = renderTablaCargaOperarios(cargaOpsGlobal);
     }
   }
 
   async function loadCarga() {
     if (!operariosList.length) await loadOperarios();
-    const el = document.getElementById('filterDateCarga');
-    if (!el.value && selectedDate) el.value = selectedDate;
     try {
-      const res = await fetch(`/api/manager/orders?fecha=${el.value}&estado=todos&k=${MANAGER_KEY}`);
+      const res = await fetch(`/api/manager/carga?k=${MANAGER_KEY}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const orders = (await res.json()).pedidos || [];
-      window._cargaOrders = orders;
-      document.getElementById('cargaContainer').innerHTML = renderTablaCargaOperarios(orders);
+      const data = await res.json();
+      cargaOpsGlobal = data.operarios || [];
+      document.getElementById('cargaContainer').innerHTML = renderTablaCargaOperarios(cargaOpsGlobal);
     } catch (e) {
       console.error(e);
       document.getElementById('cargaContainer').innerHTML = '<div style="color:var(--bad); text-align:center; padding:20px;">Error al cargar la carga de operarios.</div>';
     }
   }
 
-  function selectFechaCarga(fecha) {
-    document.getElementById('filterDateCarga').value = fecha;
-    loadCarga();
-  }
-
   async function guardarRepartoFaena() {
     const cambios = [];
     Object.entries(cambiosFaenaPendientes).forEach(([pedidoKey, lineas]) => {
-      Object.entries(lineas).forEach(([linea, operario]) => {
-        // linea es la posición visual; necesitamos la huella real de esa línea
-        const huella = posicionAHuella(pedidoKey, linea);
+      Object.entries(lineas).forEach(([linea, c]) => {
+        if (!c || c.email === undefined) return;
         cambios.push({
           pedido_id: pedidoKey.split('_').pop(),
-          linea_huella: huella,
+          linea_huella: c.huella || String(linea),
           // D-185: asignacion por EMAIL (unico); el nombre se resuelve en servidor
-          operario_email: operario || '',
-          operario_nombre: (operariosList.find(op => op.email === operario) || {}).nombre || ''
+          operario_email: c.email || '',
+          operario_nombre: (operariosList.find(op => op.email === c.email) || {}).nombre || ''
         });
       });
     });
@@ -1565,6 +1666,7 @@
         alert(`✅ Reparto guardado: ${data.guardadas} asignación(es) registradas${data.borradas ? `, ${data.borradas} desasignada(s)` : ''}.`);
         cambiosFaenaPendientes = {};
         renderReparto();
+        loadCarga();
         actualizarContadorPendientes();
       } else {
         alert("Error al guardar el reparto: " + (data.detail || res.status));
@@ -1575,19 +1677,10 @@
     }
   }
 
-  // Mapa posición -> huella construido durante el render del reparto
-  let mapaPosicionHuella = {};
-  function posicionAHuella(pedidoKey, posicion) {
-    return (mapaPosicionHuella[`${pedidoKey}_${posicion}`]) || String(posicion);
-  }
-
   function selectFechaReparto(fecha) {
-    const nPedidos = Object.keys(cambiosFaenaPendientes).length;
-    if (nPedidos > 0 && !confirm(`Hay cambios de reparto sin guardar en ${nPedidos} pedido(s).\nAl cambiar de fecha se DESCARTARÁN.\n\n¿Continuar?`)) {
-      return;
-    }
-    if (nPedidos > 0) cambiosFaenaPendientes = {};
-    actualizarContadorPendientes();
+    // D-228: los cambios sin guardar se conservan al cambiar de fecha (se puede
+    // preasignar toda la faena prevista, se cargue el día que se cargue).
+    repartoPedidoAbierto = null;
     document.getElementById('filterDateReparto').value = fecha;
     renderDateChipsReparto();
     renderReparto();
