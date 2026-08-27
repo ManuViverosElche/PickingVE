@@ -55,7 +55,8 @@ data class ColegaFaena(
     val nombre: String,
     val email: String,
     val rol: String,
-    val lineasPendientes: Int
+    val familia: String = "",
+    val lineasPendientes: Int = 0
 )
 
 data class FaenaUiState(
@@ -68,7 +69,9 @@ data class FaenaUiState(
     val debeCambiarPassword: Boolean = false,
     val ayudaDe: ColegaFaena? = null,
     val colegasDisponibles: List<ColegaFaena> = emptyList(),
-    val totalPlantas: Int = 0
+    val totalPlantas: Int = 0,
+    /** Catálogo sector -> descripción, para mostrar NOMBRES nunca códigos. */
+    val sectoresDesc: Map<String, String> = emptyMap()
 ) {
     companion object {
         const val CAPACIDAD_DEFECTO = 300
@@ -83,9 +86,19 @@ class FaenaDashboardViewModel(
     private val maquinaria = MutableStateFlow(repository.maquinariaActual())
     private val colegas = MutableStateFlow<List<ColegaFaena>>(emptyList())
     private val permisosAyuda = MutableStateFlow<Set<String>>(emptySet())
+    private val sectores = MutableStateFlow<Map<String, String>>(emptyMap())
 
     init {
         refrescarPerfil()
+        cargarSectores()
+    }
+
+    private fun cargarSectores() {
+        viewModelScope.launch {
+            sectores.value = repository.sectoresList()
+                .associate { it.id to it.descripcion }
+                .filterValues { it.isNotBlank() }
+        }
     }
 
     fun refrescarPerfil() {
@@ -120,27 +133,79 @@ class FaenaDashboardViewModel(
     private fun refrescarColegas() {
         val miEmail = repository.emailFaena().trim()
         viewModelScope.launch {
-            val listaEnc = repository.encargadosLocales().filter { it.activo }
             val listaOp = repository.operariosLocales()
+
+            // D-235: modo ayuda SOLO entre operarios que comparten ALGUNA familia
+            // de maquinaria con el logueado. Un operario puede llevar VARIAS
+            // maquinarias (lista separada por comas), por lo que tiene varias
+            // familias y le salen más colegas. Los encargados no aparecen (no
+            // acopian planta).
+            val famMap = runCatching {
+                PickingApiClient().managerMaquinarias()
+                    .filter { it.activo }
+                    .associate { normalizarMaquinaria(it.nombre) to it.familia.trim() }
+                    .filterValues { it.isNotBlank() }
+            }.getOrDefault(emptyMap())
+            val miMaquina = when (repository.tipoSesion()) {
+                PickingRepository.TIPO_OPERARIO -> repository.currentOperario()?.maquinaria.orEmpty()
+                else -> repository.maquinariaActual()
+            }
+            val miFamilias = familiasDe(famMap, miMaquina)
+
             val todos = buildList {
-                listaEnc.forEach { e ->
-                    add(ColegaFaena(nombre = e.nombre, email = e.email, rol = "ENCARGADO", lineasPendientes = 0))
-                }
                 listaOp.forEach { o ->
-                    add(
-                        ColegaFaena(
-                            nombre = "${o.nombre} ${o.apellidos}".trim(),
-                            email = o.email,
-                            rol = "OPERARIO" + if (o.maquinaria.isNotBlank()) " · ${o.maquinaria}" else "",
-                            lineasPendientes = 0
+                    val fams = familiasDe(famMap, o.maquinaria)
+                    // Sin catálogo de familias (sin red) ambos conjuntos están vacíos
+                    // y se muestran todos (degradación natural para no bloquear el
+                    // modo ayuda). Con catálogo disponible, solo si comparten familia.
+                    val comparteFamilia =
+                        if (miFamilias.isEmpty() && fams.isEmpty()) true
+                        else fams.any { it in miFamilias }
+                    if (comparteFamilia) {
+                        add(
+                            ColegaFaena(
+                                nombre = "${o.nombre} ${o.apellidos}".trim(),
+                                email = o.email,
+                                rol = "OPERARIO" + if (o.maquinaria.isNotBlank()) " · ${o.maquinaria}" else "",
+                                familia = fams.sorted().joinToString(" · ")
+                            )
                         )
-                    )
+                    }
                 }
             }
                 .filter { !it.email.equals(miEmail, ignoreCase = true) }
                 .distinctBy { it.email.lowercase() }
             colegas.value = todos
         }
+    }
+
+    private fun normalizarMaquinaria(s: String): String =
+        s.lowercase(Locale.getDefault())
+            .replace(Regex("[áàäâ]"), "a")
+            .replace(Regex("[éèëê]"), "e")
+            .replace(Regex("[íìïî]"), "i")
+            .replace(Regex("[óòöô]"), "o")
+            .replace(Regex("[úùüû]"), "u")
+            .replace("ñ", "n")
+            .trim()
+
+    private fun familiaDe(famMap: Map<String, String>, maquinaria: String): String? {
+        if (maquinaria.isBlank()) return null
+        val n = normalizarMaquinaria(maquinaria)
+        famMap[n]?.let { return it }
+        return famMap.entries
+            .firstOrNull { n.contains(it.key) }
+            ?.value
+    }
+
+    /** D-235: familias de maquinaria del operario (maquinaria puede ser varias, separadas por coma). */
+    private fun familiasDe(famMap: Map<String, String>, maquinaria: String): Set<String> {
+        if (maquinaria.isBlank()) return emptySet()
+        return maquinaria.split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .mapNotNull { familiaDe(famMap, it) }
+            .toSet()
     }
 
     fun activarAyuda(colega: ColegaFaena?) {
@@ -190,6 +255,66 @@ class FaenaDashboardViewModel(
         }
     }
 
+    /**
+     * D-233: acopio directo desde "Mi faena". El operario dice cuántas plantas
+     * ha cogido de la línea y se registra como acopio normal (offline-first).
+     */
+    fun acopiarCantidad(linea: FaenaLinea, cantidad: Int, onResultado: (Boolean, String) -> Unit) {
+        if (cantidad <= 0) {
+            onResultado(false, "Indica cuántas plantas has cogido")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val numero = repository.nextPickingNumber(linea.orderId)
+                repository.createRecord(
+                    orderId = linea.orderId,
+                    pickingNumber = numero,
+                    pickingType = "I",
+                    orderLineId = linea.line.orderLineId,
+                    scannedEan = null,
+                    ocrRawText = null,
+                    originalProductId = linea.line.productId,
+                    actualProductId = linea.line.productId,
+                    liters = null,
+                    measure = null,
+                    caliber = null,
+                    batchQty = cantidad
+                )
+                subirPendientesBestEffort()
+                onResultado(true, "Acopiadas $cantidad · ${linea.line.productName}")
+            } catch (e: Exception) {
+                onResultado(false, "No se pudo registrar el acopio: ${Errores.traducir(e)}")
+            }
+        }
+    }
+
+    /** D-233: cerrar la línea desde "Mi faena" (no hay más planta que acopiar). */
+    fun cerrarLineaFaena(
+        line: OrderLineEntity,
+        cantidadFaltante: Int,
+        motivo: String,
+        texto: String,
+        onResultado: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.cerrarLinea(line, motivo, texto, cantidadFaltante)
+                onResultado(true, "Línea cerrada")
+            } catch (e: Exception) {
+                onResultado(false, "No se pudo cerrar la línea: ${Errores.traducir(e)}")
+            }
+        }
+    }
+
+    private suspend fun subirPendientesBestEffort() {
+        try {
+            repository.uploadPendingRegistros(PickingApiClient())
+        } catch (e: Exception) {
+            // Sin red: la compensación se sube en el siguiente ciclo
+        }
+    }
+
     /** Concede al colega las líneas seleccionadas de MI faena visible (D-169). */
     fun concederAyuda(lineas: List<Pair<String, String>>, ayudanteEmail: String, onListo: () -> Unit) {
         viewModelScope.launch {
@@ -212,15 +337,17 @@ class FaenaDashboardViewModel(
         repository.observeOrdersConLineas(),
         ayudaDe,
         maquinaria,
+        sectores,
         combine(colegas, permisosAyuda) { c, p -> c to p }
-    ) { pedidos, ayuda, mq, extra ->
-        construirEstado(pedidos, ayuda, mq, extra.first, extra.second)
+    ) { pedidos, ayuda, mq, sectoresMap, extra ->
+        construirEstado(pedidos, ayuda, mq, sectoresMap, extra.first, extra.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FaenaUiState())
 
     private fun construirEstado(
         pedidos: List<OrderConLineas>,
         ayuda: ColegaFaena?,
         mq: String,
+        sectoresMap: Map<String, String>,
         candidatosColegas: List<ColegaFaena>,
         permisos: Set<String>
     ): FaenaUiState {
@@ -301,7 +428,10 @@ class FaenaDashboardViewModel(
                         l.line.sectorAcopio.ifBlank { l.line.sectorDesc }.ifBlank { "Sin sector" }
                     }
                     val sectores = porSector.entries
-                        .map { (nombre, ls) -> FaenaSector(nombre, ls.sumOf { it.pendiente }, ls) }
+                        .map { (clave, ls) ->
+                            val nombre = sectoresMap[clave] ?: clave
+                            FaenaSector(nombre, ls.sumOf { it.pendiente }, ls)
+                        }
                         .sortedWith(
                             compareByDescending<FaenaSector> { esUltraEn(it) }
                                 .thenByDescending { it.plantasPendientes }
@@ -335,7 +465,8 @@ class FaenaDashboardViewModel(
             debeCambiarPassword = debeCambiarPass,
             ayudaDe = ayuda,
             colegasDisponibles = candidatosColegas,
-            totalPlantas = totalPlantas
+            totalPlantas = totalPlantas,
+            sectoresDesc = sectoresMap
         )
     }
 

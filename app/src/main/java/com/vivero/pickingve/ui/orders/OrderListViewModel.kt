@@ -86,6 +86,10 @@ class OrderListViewModel(
             combine(allOrders, _searchQuery) { list, query -> list to query },
             availableDays, _selectedDays, _assignedFincas, _selectedFincas
         ) { base, avail, days, fincas, sel ->
+            val isSuperuser = repository.currentEncargado()?.rol == "SUPERUSUARIO"
+            if (!isSuperuser && fincas.isEmpty()) {
+                return@combine emptyList()
+            }
             val (list, query) = base
             val availSet = avail.toSet()
             val effective = days.filter { it in availSet }.distinct()
@@ -153,7 +157,7 @@ class OrderListViewModel(
                 reconcileSelection(fincas)
                 val selected = _selectedFincas.value
                 val desde = LocalDate.now().toString()
-                val hasta = LocalDate.now().plusDays(8).toString()
+                val hasta = LocalDate.now().plusDays(21).toString()
                 val result = repository.syncFromApi(
                     api = api,
                     desde = desde,
