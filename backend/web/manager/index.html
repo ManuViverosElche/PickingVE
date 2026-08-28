@@ -5,42 +5,85 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>PickingVE — Panel de Control y Operativa de Pedidos</title>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('pickingve-theme');
+      if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  })();
+</script>
 <style>
+  /* ===== Paleta unificada PickingVE (D-237): mismo token set en logística e inventario ===== */
   :root {
+    --bg: #f4f9f8; --card: #ffffff; --card2: #eef7f5; --line: #b8d8d3;
+    --txt: #17282a; --mut: #3d565a;
+    --primary: #0c3a3f; --on-primary: #ffffff; --primary-soft: #025C65;
+    --accent: #35b8ac; --accent-soft: #a7ece2;
+    --ok: #2e7d32; --ok-bg: #e3f2e6; --ok-bd: rgba(46,125,50,0.4);
+    --warn: #a06a10; --warn-bg: #fdf3e0; --warn-bd: rgba(160,106,16,0.4);
+    --bad: #962622; --bad-soft: #962622; --bad-bg: #f7e3e2; --bad-bd: rgba(150,38,34,0.4);
+    --info: #1565c0; --info-bg: #e3edfb; --info-bd: rgba(21,101,192,0.35);
+    --ring: rgba(53,184,172,0.25);
+    --shadow-sm: 0 2px 6px rgba(12,58,63,0.10);
+    --shadow-lg: 0 6px 18px rgba(12,58,63,0.16);
+    --r: 12px;
+    /* Alias compatibilidad (legacy JS) */
+    --lime: var(--primary); --lime2: var(--primary-soft); --blue: var(--info);
+  }
+  [data-theme="dark"] {
     --bg: #071a1e; --card: #0c262b; --card2: #103238; --line: #1c4a51;
-    --txt: #e8f4f2; --mut: #8fb0ac; --lime: #42c9bd; --lime2: #a7ece2;
-    --warn: #e0a13c; --bad: #e05a4e; --blue: #7fd0e0; --r: 12px;
+    --txt: #e8f4f2; --mut: #8fb0ac;
+    --primary: #42c9bd; --on-primary: #062325; --primary-soft: #a7ece2;
+    --accent: #35b8ac; --accent-soft: #a7ece2;
+    --ok: #7ecf8a; --ok-bg: rgba(66,201,189,0.12); --ok-bd: rgba(66,201,189,0.5);
+    --warn: #e0a13c; --warn-bg: rgba(224,161,60,0.15); --warn-bd: rgba(224,161,60,0.5);
+    --bad: #e05a4e; --bad-soft: #ff9e95; --bad-bg: rgba(224,90,78,0.12); --bad-bd: rgba(224,90,78,0.5);
+    --info: #7fd0e0; --info-bg: rgba(127,208,224,0.15); --info-bd: rgba(127,208,224,0.4);
+    --ring: rgba(66,201,189,0.25);
+    --shadow-sm: 0 2px 6px rgba(0,0,0,0.4);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+    /* Alias compatibilidad (legacy JS) */
+    --lime: var(--primary); --lime2: var(--primary-soft); --blue: var(--info);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--txt); font-family: system-ui, -apple-system, sans-serif; line-height: 1.5; padding: 16px; }
   .wrap { max-width: 1250px; margin: 0 auto; }
-  
+
+  /* ===== Toggle tema (sol/luna) ===== */
+  .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; font-size: 1.15rem; border-radius: 50%; background: var(--card2); color: var(--txt); border: 1px solid var(--line); cursor: pointer; transition: all 0.2s; }
+  .theme-toggle:hover { border-color: var(--primary); transform: translateY(-1px); }
+  .theme-toggle .icon-moon { display: none; }
+  .theme-toggle .icon-sun { display: inline; }
+  [data-theme="dark"] .theme-toggle .icon-moon { display: inline; }
+  [data-theme="dark"] .theme-toggle .icon-sun { display: none; }
+
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; flex-wrap: wrap; gap: 10px; }
-  h1 { font-size: 1.45rem; font-weight: 800; color: var(--lime); display: flex; align-items: center; gap: 8px; }
-  .controls { display: flex; gap: 10px; flex-wrap: wrap; }
+  h1 { font-size: 1.45rem; font-weight: 800; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   input, select { background: var(--card); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; }
-  button { background: var(--lime); color: #062325; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 0.88rem; transition: background 0.15s; }
-  button:hover { background: var(--lime2); }
+  button { background: var(--primary); color: var(--on-primary); border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 0.88rem; transition: background 0.15s; }
+  button:hover { background: var(--primary-soft); }
   button.btn-sec { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
   button.btn-sec:hover { background: var(--line); }
 
   .nav-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .nav-tab { border-radius: 20px; padding: 7px 16px; font-size: 0.88rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--mut); cursor: pointer; }
-  .nav-tab.active { background: var(--card2); color: var(--lime); border-color: var(--lime); outline: 2px solid var(--lime); outline-offset: 1px; }
+  .nav-tab.active { background: var(--card2); color: var(--primary); border-color: var(--primary); outline: 2px solid var(--ring); outline-offset: 1px; }
 
   .filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; background: var(--card); padding: 12px; border-radius: var(--r); border: 1px solid var(--line); align-items: center; }
 
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .chip { border-radius: 20px; padding: 6px 13px; font-size: 0.8rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--txt); cursor: pointer; transition: transform 0.1s; }
-  .chip:hover { border-color: var(--lime); transform: translateY(-1px); }
-  .chip-activo { outline: 2px solid var(--lime2); outline-offset: 1px; border-color: var(--lime2) !important; }
-  .chip-pendiente { background: rgba(127,208,224,0.15); color: var(--blue); border-color: rgba(127,208,224,0.4); }
-  .chip-cargado { background: rgba(224,161,60,0.18); color: var(--warn); border-color: rgba(224,161,60,0.5); }
-  .chip-enviado { background: rgba(66,201,189,0.18); color: var(--lime); border-color: rgba(66,201,189,0.5); }
+  .chip:hover { border-color: var(--primary); transform: translateY(-1px); }
+  .chip-activo { outline: 2px solid var(--accent-soft); outline-offset: 1px; border-color: var(--accent-soft) !important; }
+  .chip-pendiente { background: var(--info-bg); color: var(--info); border-color: var(--info-bd); }
+  .chip-cargado { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-bd); }
+  .chip-enviado { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-bd); }
 
   .finca-group { margin-bottom: 22px; }
-  .finca-title { font-size: 1.15rem; font-weight: 700; color: var(--blue); margin-bottom: 10px; border-left: 4px solid var(--blue); padding-left: 8px; }
-  
+  .finca-title { font-size: 1.15rem; font-weight: 700; color: var(--info); margin-bottom: 10px; border-left: 4px solid var(--info); padding-left: 8px; }
+
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 14px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; position: relative; transition: border-color 0.2s; }
   .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 10px; }
@@ -50,18 +93,18 @@
   .client-name { color: var(--mut); font-size: 0.85rem; }
 
   .badge { font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; white-space: nowrap; }
-  .b-blue { background: rgba(127,208,224,0.15); color: var(--blue); border: 1px solid rgba(127,208,224,0.4); }
-  .b-yellow { background: rgba(224,161,60,0.15); color: var(--warn); border: 1px solid rgba(224,161,60,0.4); }
-  .b-green { background: rgba(66,201,189,0.15); color: var(--lime); border: 1px solid rgba(66,201,189,0.4); }
+  .b-blue { background: var(--info-bg); color: var(--info); border: 1px solid var(--info-bd); }
+  .b-yellow { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-bd); }
+  .b-green { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-bd); }
 
-  .card-sin_acopiar { border-color: rgba(127,208,224,0.4); background: var(--card); }
-  .card-en_proceso { border-color: rgba(224,161,60,0.55); background: rgba(224,161,60,0.06); }
-  .card-camion_asignado { border-color: rgba(127,208,224,0.8); background: rgba(127,208,224,0.08); }
-  .card-enviado { border-color: rgba(66,201,189,0.7); background: rgba(66,201,189,0.08); }
+  .card-sin_acopiar { border-color: var(--info-bd); background: var(--card); }
+  .card-en_proceso { border-color: var(--warn-bd); background: var(--warn-bg); }
+  .card-camion_asignado { border-color: var(--info); background: var(--info-bg); }
+  .card-enviado { border-color: var(--ok-bd); background: var(--ok-bg); }
 
   .progress-box { margin: 8px 0; background: var(--card2); border-radius: 8px; padding: 7px 10px; }
   .progress-bar-bg { background: var(--line); height: 7px; border-radius: 4px; overflow: hidden; margin-top: 4px; }
-  .progress-bar-fill { background: var(--lime); height: 100%; transition: width 0.3s; }
+  .progress-bar-fill { background: var(--accent); height: 100%; transition: width 0.3s; }
   .progress-text { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--mut); }
 
   .card-actions { display: flex; gap: 6px; margin-top: 10px; }
@@ -73,36 +116,36 @@
   .modal-content { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); width: 100%; max-width: 820px; max-height: 92vh; overflow-y: auto; padding: 18px; }
   .modal-preview-content { max-width: 980px; width: 95vw; height: 92vh; display: flex; flex-direction: column; padding: 14px; }
   .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
-  .modal-header h2 { font-size: 1.15rem; color: var(--lime); }
+  .modal-header h2 { font-size: 1.15rem; color: var(--primary); }
   .close-btn { background: none; color: var(--bad); font-size: 1.3rem; cursor: pointer; padding: 0 6px; border: none; }
-  .close-btn:hover { color: #ff9e95; }
+  .close-btn:hover { color: var(--bad-soft); }
   table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
   th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
   th { color: var(--mut); text-transform: uppercase; font-size: 0.7rem; }
-  .alert-box { background: rgba(224,90,78,0.2); border: 1px solid var(--bad); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem; color: #ff9e95; }
+  .alert-box { background: var(--bad-bg); border: 1px solid var(--bad); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem; color: var(--bad-soft); }
 
   .preview-frame { width: 100%; flex: 1; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-height: 480px; }
 
   /* Histórico Drawer */
   .hist-section { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 0.82rem; }
-  .hist-title { font-weight: 700; color: var(--blue); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .hist-title { font-weight: 700; color: var(--info); margin-bottom: 6px; display: flex; justify-content: space-between; }
 
   /* ===== D-71: Cabecera fija (no scrollea) en TODAS las pestañas ===== */
   .app-header { position: sticky; top: 0; z-index: 950; background: var(--bg); padding-top: 4px; }
   .app-header .nav-tabs-wrap { position: sticky; top: 64px; z-index: 940; background: var(--bg); padding: 10px 0; }
-  .filters-sticky { position: sticky; top: 118px; z-index: 930; box-shadow: 0 6px 14px rgba(0,0,0,0.35); }
+  .filters-sticky { position: sticky; top: 118px; z-index: 930; box-shadow: var(--shadow-lg); }
   body { padding-top: 8px; }
 
   /* D-194: pedido desplegado en reparto — su cabecera queda ANCLADA justo debajo de la cabecera general del panel (no scrollea), con flecha rotatoria; las lineas se recorren con el scroll normal de la pagina. */
-  .reparto-bloque.abierto .card-header { position: sticky; top: 122px; z-index: 945; background: var(--card2, #14343a); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); border-bottom: 2px solid var(--lime); }
+  .reparto-bloque.abierto .card-header { position: sticky; top: 122px; z-index: 945; background: var(--card2); border-radius: 10px; box-shadow: var(--shadow-lg); border-bottom: 2px solid var(--primary); }
 
   /* ===== Animaciones de aviso (parpadeo) ===== */
   @keyframes blinkSoft { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
-  @keyframes blinkRedCorp { 0%,100% { background: rgba(150,38,34,0.35); color: #ff9e95; border-color: #c03a30; box-shadow: 0 0 8px rgba(224,90,78,0.5); } 50% { background: rgba(150,38,34,0.08); color: #e05a4e; border-color: rgba(224,90,78,0.35); box-shadow: none; } }
+  @keyframes blinkRedCorp { 0%,100% { background: var(--bad-bg); color: var(--bad-soft); border-color: var(--bad); box-shadow: 0 0 8px var(--ring); } 50% { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-bd); box-shadow: none; } }
   .blink-prio { animation: blinkSoft 1s ease-in-out infinite; }
-  .badge-noprio { background: transparent; border: 1px solid rgba(224,90,78,0.45); color: #ff9e95; animation: blinkSoft 1s ease-in-out infinite; }
+  .badge-noprio { background: transparent; border: 1px solid var(--bad-bd); color: var(--bad-soft); animation: blinkSoft 1s ease-in-out infinite; }
   /* D-193: NO PRIORITARIO = rojo corporativo parpadeante */
-  .badge-prio-roja { background: #962622; color: #ffffff; border: 1px solid #b23a30; font-weight: 700; animation: blinkSoft 1.2s ease-in-out infinite; }
+  .badge-prio-roja { background: var(--bad); color: var(--on-primary); border: 1px solid var(--bad); font-weight: 700; animation: blinkSoft 1.2s ease-in-out infinite; }
   .marca-linea-aviso { color: var(--warn); font-weight: 700; animation: blinkSoft 1s ease-in-out infinite; }
   .btn-msg-unread { animation: blinkRedCorp 1s ease-in-out infinite !important; }
 
@@ -110,16 +153,16 @@
   .pwd-wrap { position: relative; display: flex; align-items: center; width: 100%; }
   .pwd-wrap input { width: 100%; padding-right: 40px !important; }
   .eye-btn { position: absolute; right: 4px; background: none; border: none; cursor: pointer; font-size: 1.05rem; padding: 3px 7px; color: var(--mut); z-index: 5; }
-  .eye-btn:hover { color: var(--lime); background: rgba(66,201,189,0.1); }
+  .eye-btn:hover { color: var(--primary); background: var(--ok-bg); }
 
   /* ===== Configuración: secciones a ancho completo, desplegables ===== */
-  .cfg-section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,0.2); }
-  .cfg-section-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; cursor: pointer; user-select: none; background: rgba(16,50,56,0.5); transition: background 0.15s; }
-  .cfg-section-head:hover { background: rgba(28,74,81,0.55); }
-  .cfg-section-head h3 { font-size: 1.02rem; color: var(--lime); display: flex; gap: 9px; align-items: center; }
+  .cfg-section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  .cfg-section-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; cursor: pointer; user-select: none; background: var(--card2); transition: background 0.15s; }
+  .cfg-section-head:hover { background: var(--accent-soft); }
+  .cfg-section-head h3 { font-size: 1.02rem; color: var(--primary); display: flex; gap: 9px; align-items: center; }
   .cfg-section-head .cfg-count { font-size: 0.72rem; color: var(--mut); font-weight: 700; }
   .cfg-chevron { transition: transform 0.2s; color: var(--mut); font-size: 0.95rem; }
-  .cfg-section.open .cfg-chevron { transform: rotate(90deg); color: var(--lime); }
+  .cfg-section.open .cfg-chevron { transform: rotate(90deg); color: var(--primary); }
   .cfg-section-body { display: none; padding: 14px 18px 18px; border-top: 1px solid var(--line); }
   .cfg-section.open .cfg-section-body { display: block; }
   .cfg-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
@@ -128,42 +171,42 @@
   .cfg-table-wrap { overflow-x: hidden; }
   .cfg-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; }
   .cfg-table th { text-align: left; text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.06em; color: var(--mut); padding: 8px 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); overflow: hidden; text-overflow: ellipsis; }
-  .cfg-table td { padding: 9px 8px; border-bottom: 1px solid rgba(28,74,81,0.45); vertical-align: middle; word-wrap: break-word; overflow-wrap: anywhere; }
-  .cfg-table tr:hover td { background: rgba(66,201,189,0.05); }
-  .avatar { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.78rem; color: #062325; background: linear-gradient(135deg, var(--lime), var(--blue)); margin-right: 8px; flex-shrink: 0; }
+  .cfg-table td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; word-wrap: break-word; overflow-wrap: anywhere; }
+  .cfg-table tr:hover td { background: var(--ok-bg); }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.78rem; color: var(--on-primary); background: linear-gradient(135deg, var(--primary), var(--info)); margin-right: 8px; flex-shrink: 0; }
   .person-cell { display: flex; align-items: center; }
   .pill { display: inline-block; font-size: 0.68rem; font-weight: 700; border-radius: 20px; padding: 2px 9px; border: 1px solid var(--line); color: var(--mut); white-space: nowrap; }
-  .pill-ok { color: var(--lime); border-color: rgba(66,201,189,0.5); background: rgba(66,201,189,0.12); }
-  .pill-off { color: #ff9e95; border-color: rgba(224,90,78,0.5); background: rgba(224,90,78,0.12); }
+  .pill-ok { color: var(--ok); border-color: var(--ok-bd); background: var(--ok-bg); }
+  .pill-off { color: var(--bad-soft); border-color: var(--bad-bd); background: var(--bad-bg); }
   .icon-btn { background: var(--card2); border: 1px solid var(--line); color: var(--txt); cursor: pointer; border-radius: 8px; padding: 5px 9px; font-size: 0.82rem; transition: all 0.15s; }
-  .icon-btn:hover { border-color: var(--lime); color: var(--lime); transform: translateY(-1px); }
-  .icon-btn.danger:hover { border-color: var(--bad); color: #ff9e95; }
-  .btn-primary-modern { background: linear-gradient(135deg, var(--lime), #2ea99e); color: #062325; border: none; border-radius: 10px; padding: 8px 16px; font-weight: 800; cursor: pointer; font-size: 0.85rem; box-shadow: 0 2px 8px rgba(66,201,189,0.25); }
+  .icon-btn:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-1px); }
+  .icon-btn.danger:hover { border-color: var(--bad); color: var(--bad-soft); }
+  .btn-primary-modern { background: linear-gradient(135deg, var(--primary), var(--accent)); color: var(--on-primary); border: none; border-radius: 10px; padding: 8px 16px; font-weight: 800; cursor: pointer; font-size: 0.85rem; box-shadow: var(--shadow-sm); }
   .btn-primary-modern:hover { filter: brightness(1.1); }
 
   /* ===== Modales de formulario profesionales ===== */
   .modal-content.modern { max-width: 560px; padding: 0; overflow: hidden; }
-  .mform-head { padding: 16px 22px; border-bottom: 1px solid var(--line); background: rgba(16,50,56,0.5); display: flex; justify-content: space-between; align-items: center; }
-  .mform-head h2 { font-size: 1.1rem; color: var(--lime); }
+  .mform-head { padding: 16px 22px; border-bottom: 1px solid var(--line); background: var(--card2); display: flex; justify-content: space-between; align-items: center; }
+  .mform-head h2 { font-size: 1.1rem; color: var(--primary); }
   .mform-head p { font-size: 0.78rem; color: var(--mut); margin-top: 2px; }
   .mform-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; max-height: 62vh; overflow-y: auto; }
   .field label { display: block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mut); margin-bottom: 5px; }
   .field input, .field select { width: 100%; padding: 10px 12px; border-radius: 10px; background: var(--card2); border: 1px solid var(--line); color: var(--txt); font-size: 0.9rem; transition: border-color 0.15s, box-shadow 0.15s; }
-  .field input:focus, .field select:focus { outline: none; border-color: var(--lime); box-shadow: 0 0 0 3px rgba(66,201,189,0.15); }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
   .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .chips-select { display: flex; flex-wrap: wrap; gap: 7px; }
   .chip-sel { cursor: pointer; user-select: none; border-radius: 18px; padding: 5px 13px; font-size: 0.78rem; font-weight: 700; border: 1px solid var(--line); background: var(--card2); color: var(--mut); transition: all 0.12s; }
-  .chip-sel.on { background: rgba(66,201,189,0.18); border-color: var(--lime); color: var(--lime2); }
-  .mform-foot { padding: 14px 22px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; background: rgba(7,26,30,0.6); }
+  .chip-sel.on { background: var(--ok-bg); border-color: var(--primary); color: var(--primary-soft); }
+  .mform-foot { padding: 14px 22px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; background: var(--card2); }
 
   /* ===== Tabla comparativa de carga por operario (D-74) ===== */
   .carga-box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; }
-  .carga-box h3 { color: var(--blue); font-size: 1rem; margin-bottom: 10px; }
+  .carga-box h3 { color: var(--info); font-size: 1rem; margin-bottom: 10px; }
   .carga-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.84rem; }
   .carga-table th { text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.05em; color: var(--mut); padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
-  .carga-table td { padding: 8px 8px; border-bottom: 1px solid rgba(28,74,81,0.4); word-wrap: break-word; overflow-wrap: anywhere; }
+  .carga-table td { padding: 8px 8px; border-bottom: 1px solid var(--line); word-wrap: break-word; overflow-wrap: anywhere; }
   .carga-num { font-weight: 800; font-variant-numeric: tabular-nums; }
-  .sobrecarga { color: #ff9e95 !important; }
+  .sobrecarga { color: var(--bad-soft) !important; }
 </style>
 </head>
 <body>
@@ -172,6 +215,9 @@
     <header>
       <h1>🌿 PickingVE — Panel Operativo de Pedidos</h1>
       <div class="controls">
+        <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema (claro/oscuro)" aria-label="Cambiar tema claro u oscuro">
+          <span class="icon-sun">☀️</span><span class="icon-moon">🌙</span>
+        </button>
         <button onclick="refreshCurrentView()">🔄 Actualizar</button>
       </div>
     </header>
@@ -206,7 +252,7 @@
       <span style="font-size:0.8rem; color:var(--mut); font-weight:700;">Filtrar Estado:</span>
       <button id="stActivos" class="chip" onclick="setFilterEstado('activos')">⭐ Activos</button>
       <button id="stPendientes" class="chip chip-pendiente" onclick="setFilterEstado('pendientes')">⏳ Pendientes</button>
-      <button id="stAcopiados" class="chip" onclick="setFilterEstado('acopiados')" style="background:rgba(66,201,189,0.15); color:var(--lime); border-color:rgba(66,201,189,0.5);">📦 Acopiados</button>
+      <button id="stAcopiados" class="chip" onclick="setFilterEstado('acopiados')" style="background:var(--ok-bg); color:var(--ok); border-color:var(--ok-bd);">📦 Acopiados</button>
       <button id="stCargados" class="chip chip-cargado" onclick="setFilterEstado('cargados')">🚛 Cargados</button>
       <button id="stEnviados" class="chip chip-enviado" onclick="setFilterEstado('enviados')">✅ Enviados</button>
       <button id="stTodos" class="chip chip-activo" onclick="setFilterEstado('todos')">📋 Todos</button>
@@ -513,7 +559,7 @@
     <div id="modalAlerts"></div>
     <div id="modalBody"></div>
     <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
-      <button id="btnVerPunteoModal" onclick="" style="background:var(--lime); color:#062325;">📄 Punteo</button>
+      <button id="btnVerPunteoModal" onclick="" style="background:var(--primary); color:var(--on-primary);">📄 Punteo</button>
       <button id="btnVerDetalleModal" onclick="" class="btn-sec">📋 Detalle Pistoleo</button>
       <button id="btnVerControlModal" onclick="" class="btn-sec">📊 Control Acopio</button>
       <a id="btnDescargarPdfModal" href="#" target="_blank" class="button" style="text-decoration:none; padding:8px 14px; font-weight:700; border-radius:8px; font-size:0.88rem; background:var(--card2); color:var(--txt); border:1px solid var(--line); display:inline-block;">⬇️ Descargar PDF</a>
@@ -567,6 +613,12 @@
 </div>
 
 <script>
+  function toggleTheme() {
+    const html = document.documentElement;
+    const cur = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', cur);
+    try { localStorage.setItem('pickingve-theme', cur); } catch (e) {}
+  }
   const MANAGER_KEY = "manager-panel-2026";
   let allOrdersData = [];
   let fechasData = [];
@@ -1374,7 +1426,7 @@
       const total = f.asignado + f.preasignado;
       const sobrecargado = total >= maxTot * 0.75 && total > 0;
       const preaTxt = f.preasignado > 0 ? `<span style="color:var(--warn);">+${f.preasignado}</span>` : (f.preasignado < 0 ? `<span style="color:var(--bad);">${f.preasignado}</span>` : '');
-      html += `<tr style="${sobrecargado ? 'background:rgba(224,90,78,0.07);' : ''}">
+      html += `<tr style="${sobrecargado ? 'background:var(--bad-bg);' : ''}">
         <td><b>${escHtml(f.nombre)}</b></td>
         <td style="font-size:0.74rem; color:var(--mut);">${escHtml(f.maquinaria || '—')}</td>
         <td class="carga-num" style="text-align:right;">${f.asignado}</td>
@@ -1433,9 +1485,9 @@
 
       let rowStyle = '';
       if (l.marcado) {
-        rowStyle = 'border: 2px solid #e0a13c !important; background: rgba(224,161,60,0.08);';
+        rowStyle = 'border: 2px solid var(--warn) !important; background: var(--warn-bg);';
       } else if (prioTxt === 'PRIORITARIO') {
-        rowStyle = 'background: rgba(224,161,60,0.04);';
+        rowStyle = 'background: var(--warn-bg);';
       }
 
       const fullOp = l.operarios || '—';
@@ -1715,7 +1767,7 @@
       let html = '';
       msgs.forEach(m => {
         const esOficina = m.rol === 'OFICINA' || m.rol === 'ADMIN';
-        const bg = esOficina ? 'rgba(66,201,189,0.15)' : 'rgba(127,208,224,0.15)';
+        const bg = esOficina ? 'var(--ok-bg)' : 'var(--info-bg)';
         const align = esOficina ? 'margin-left:auto;' : 'margin-right:auto;';
         html += `
           <div style="background:${bg}; border-radius:8px; padding:8px 12px; max-width:85%; ${align} font-size:0.85rem;">
@@ -1932,7 +1984,7 @@
           badgeHtml = '<span class="badge b-green">✅ Enviado</span>';
           cardClass = 'card-enviado';
         } else if (o.estado === 'camion_asignado') {
-          badgeHtml = '<span class="badge b-blue" style="background:rgba(127,208,224,0.3)">🚛 Camión Asignado</span>';
+          badgeHtml = '<span class="badge b-blue" style="background:var(--info-bg)">🚛 Camión Asignado</span>';
           cardClass = 'card-camion_asignado';
         } else if (o.estado === 'en_proceso') {
           badgeHtml = '<span class="badge b-yellow">⚙️ En Proceso</span>';
@@ -1966,7 +2018,7 @@
               </div>
             </div>
             <div class="card-actions">
-              <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">👁️ Informe Punteo</button>
+              <button onclick="verInformePunteo('${o.numero}')" style="background:var(--primary); color:var(--on-primary);">👁️ Informe Punteo</button>
               <button class="btn-sec" onclick="openOrderDetails('${o.serie}', '${o.numero}')">🔍 Detalle</button>
               ${obsBtn}
               <button class="btn-sec${msgBlink}" data-unread-key="${o.numero}" onclick="openChatModal('${o.numero}', '')">💬 Mensajes</button>
@@ -2040,7 +2092,7 @@
         const btns = ['pendiente', 'impresa', 'encolada'].map(st =>
           `<button onclick="marcarEtiquetaDia('${st}', '${p.pedido}', '${e.referencia}', '${e.litraje}', '${e.sector}')"
              style="padding:2px 7px; font-size:0.68rem; border-radius:6px; border:1px solid var(--line);
-             background:${e.estado === st ? 'var(--lime)' : 'var(--card2)'}; color:${e.estado === st ? '#062325' : 'var(--txt)'};">${st}</button>`
+              background:${e.estado === st ? 'var(--primary)' : 'var(--card2)'}; color:${e.estado === st ? 'var(--on-primary)' : 'var(--txt)'};">${st}</button>`
         ).join(' ');
         html += `<tr>
           <td style="color:var(--blue); font-weight:700;">${e.referencia}</td>
@@ -2162,7 +2214,7 @@
           </div>
           <div class="card-actions" style="flex-wrap:wrap;">
             <button onclick="toggleHistDetalle('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">📋 Desplegar Pistoleo / Carga</button>
-            <button onclick="verInformePunteo('${o.numero}')" style="background:var(--lime); color:#062325;">📄 Punteo</button>
+            <button onclick="verInformePunteo('${o.numero}')" style="background:var(--primary); color:var(--on-primary);">📄 Punteo</button>
             <button onclick="verInformeDesglose('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">🔍 Desglose</button>
           </div>
           <div id="histDetalle_${o.numero}" style="display:none; margin-top:10px;"></div>
