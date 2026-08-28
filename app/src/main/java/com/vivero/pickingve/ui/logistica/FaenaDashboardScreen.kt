@@ -1,6 +1,11 @@
 ﻿package com.vivero.pickingve.ui.logistica
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,25 +20,31 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Agriculture
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -48,18 +59,25 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vivero.pickingve.data.local.entities.OrderLineEntity
+import com.vivero.pickingve.ui.picking.CierreLineaDialog
+import com.vivero.pickingve.ui.theme.BrandAmber
+import com.vivero.pickingve.ui.theme.BrandRed
 import com.vivero.pickingve.ui.theme.MarkedBorderColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,41 +85,43 @@ import com.vivero.pickingve.ui.theme.MarkedBorderColor
 fun FaenaDashboardScreen(
     viewModel: FaenaDashboardViewModel,
     onBack: () -> Unit,
+    onCambiarModo: () -> Unit = {},
     onOpenPedido: (String) -> Unit,
-    onOpenGestion: () -> Unit = {},
     onLogout: () -> Unit = {}
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var mostrarAyuda by remember { mutableStateOf(false) }
     var mostrarConceder by remember { mutableStateOf(false) }
     var fincaAbierta by remember { mutableStateOf<String?>(null) }
+    var cambioHecho by remember { mutableStateOf(false) }
+    var cambioPassGuardando by remember { mutableStateOf(false) }
+    var cambioPassError by remember { mutableStateOf<String?>(null) }
+    var lineaAcopio by remember { mutableStateOf<FaenaLinea?>(null) }
+    var cerrandoLinea by remember { mutableStateOf<FaenaLinea?>(null) }
+    var acopioGuardando by remember { mutableStateOf(false) }
+    var acopioError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Mi faena") },
                 navigationIcon = {
-                    if (state.esOperario) {
-                        IconButton(onClick = onLogout) {
-                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Salir")
-                        }
-                    } else {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
-                        }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
                     }
                 },
                 actions = {
-                    if (state.esSuperusuario && !state.esOperario) {
-                        IconButton(onClick = onOpenGestion) {
-                            Icon(
-                                Icons.Filled.AdminPanelSettings,
-                                contentDescription = "Gestión de faena"
-                            )
+                    // D-209: volver al selector de modo sin cerrar sesion.
+                    if (!state.esOperario) {
+                        IconButton(onClick = onCambiarModo) {
+                            Icon(Icons.Filled.SwapHoriz, contentDescription = "Cambiar modo")
                         }
                     }
                     IconButton(onClick = { viewModel.refrescarPerfil(); mostrarConceder = true }) {
                         Icon(Icons.Filled.Groups, contentDescription = "Ayuda entre operarios")
+                    }
+                    IconButton(onClick = onLogout) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Salir")
                     }
                 }
             )
@@ -137,6 +157,15 @@ fun FaenaDashboardScreen(
                         }
                     }
                 }
+            }
+
+            // D-237: filtro por finca de procedencia de planta.
+            if (state.fincasDisponibles.isNotEmpty()) {
+                FiltroFincaRow(
+                    fincas = state.fincasDisponibles,
+                    seleccionada = state.fincaFiltro,
+                    onSeleccion = { viewModel.filtrarPorFinca(it) }
+                )
             }
 
             if (state.dias.isEmpty()) {
@@ -185,11 +214,18 @@ fun FaenaDashboardScreen(
                             FaenaFincaCard(
                                 finca = finca,
                                 maquinaria = state.maquinaria,
+                                sectoresDesc = state.sectoresDesc,
                                 expandida = fincaAbierta == clave,
                                 onToggle = {
                                     fincaAbierta = if (fincaAbierta == clave) null else clave
                                 },
-                                onOpenPedido = onOpenPedido
+                                onLineaClick = { linea ->
+                                    if (state.esOperario) {
+                                        if (linea.pendiente > 0) lineaAcopio = linea
+                                    } else {
+                                        onOpenPedido(linea.orderId)
+                                    }
+                                }
                             )
                         }
                     }
@@ -224,11 +260,62 @@ fun FaenaDashboardScreen(
         )
     }
 
-    if (state.debeCambiarPassword) {
+    if (state.debeCambiarPassword && !cambioHecho) {
         CambioPasswordObligatorioDialog(
+            guardando = cambioPassGuardando,
+            error = cambioPassError,
             onAceptar = { actual, nueva ->
-                viewModel.cambiarPassword(actual, nueva) { _, _ -> }
+                cambioPassGuardando = true
+                cambioPassError = null
+                viewModel.cambiarPassword(actual, nueva) { ok, msg ->
+                    cambioPassGuardando = false
+                    if (ok) {
+                        cambioHecho = true
+                    } else {
+                        cambioPassError = msg
+                    }
+                }
             }
+        )
+    }
+
+    lineaAcopio?.let { linea ->
+        AcopioLineaDialog(
+            linea = linea,
+            sectoresDesc = state.sectoresDesc,
+            guardando = acopioGuardando,
+            error = acopioError,
+            onRegistrar = { qty ->
+                acopioGuardando = true
+                acopioError = null
+                viewModel.acopiarCantidad(linea, qty) { ok, msg ->
+                    acopioGuardando = false
+                    if (ok) {
+                        lineaAcopio = null
+                    } else {
+                        acopioError = msg
+                    }
+                }
+            },
+            onCerrarLinea = {
+                cerrandoLinea = linea
+                lineaAcopio = null
+            },
+            onDismiss = { if (!acopioGuardando) lineaAcopio = null }
+        )
+    }
+
+    cerrandoLinea?.let { linea ->
+        CierreLineaDialog(
+            line = linea.line,
+            pendiente = linea.pendiente,
+            onConfirmar = { motivo, texto ->
+                viewModel.cerrarLineaFaena(linea.line, linea.pendiente, motivo, texto) { ok, _ ->
+                    cerrandoLinea = null
+                    if (!ok) acopioError = "No se pudo cerrar la línea"
+                }
+            },
+            onDismiss = { cerrandoLinea = null }
         )
     }
 }
@@ -289,12 +376,42 @@ private fun CabeceraPerfil(state: FaenaUiState) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+private fun FiltroFincaRow(
+    fincas: List<String>,
+    seleccionada: String?,
+    onSeleccion: (String?) -> Unit
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(vertical = 2.dp)
+    ) {
+        item(key = "todas") {
+            FilterChip(
+                selected = seleccionada == null,
+                onClick = { onSeleccion(null) },
+                label = { Text("Todas") }
+            )
+        }
+        items(fincas, key = { it }) { finca ->
+            FilterChip(
+                selected = seleccionada == finca,
+                onClick = { onSeleccion(finca) },
+                label = { Text(finca) }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun FaenaFincaCard(
     finca: FaenaFinca,
     maquinaria: String,
+    sectoresDesc: Map<String, String>,
     expandida: Boolean,
     onToggle: () -> Unit,
-    onOpenPedido: (String) -> Unit
+    onLineaClick: (FaenaLinea) -> Unit
 ) {
     Card(
         onClick = onToggle,
@@ -325,35 +442,51 @@ private fun FaenaFincaCard(
                 )
             }
 
+            // D-237: chips resumen de pedidos con planta en esta finca.
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.padding(top = 8.dp)
             ) {
-                finca.sectores.forEach { sector ->
+                finca.pedidos.forEach { pedido ->
+                    val ultra = FaenaDashboardViewModel.esUltraEnPedidoPublic(pedido)
                     Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = RoundedCornerShape(6.dp)
+                        color = if (ultra) BrandRed else MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(8.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            if (sector.lineas.any { l -> FaenaDashboardViewModel.esUltra(l) }) {
+                            if (ultra) {
                                 Icon(
                                     Icons.Filled.CheckCircle,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(13.dp)
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
                                 )
-                                Text(" ", style = MaterialTheme.typography.labelMedium)
+                                Spacer(Modifier.width(4.dp))
                             }
                             Text(
-                                "${sector.sector} · ${sector.plantasPendientes}",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                "Pedido ${pedido.orderId}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (ultra) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
                             )
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                color = if (ultra) Color.White.copy(alpha = 0.2f)
+                                else MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    "${pedido.plantasPendientes}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (ultra) Color.White else MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -361,21 +494,12 @@ private fun FaenaFincaCard(
 
             AnimatedVisibility(visible = expandida) {
                 Column(modifier = Modifier.padding(top = 10.dp)) {
-                    HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
-                    finca.sectores.forEach { sector ->
-                        Text(
-                            text = "Sector ${sector.sector}" +
-                                if (sector.lineas.any { it.esAyuda }) " · (ayuda)" else "",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                    finca.pedidos.forEach { pedido ->
+                        FaenaPedidoCard(
+                            pedido = pedido,
+                            sectoresDesc = sectoresDesc,
+                            onLineaClick = onLineaClick
                         )
-                        sector.lineas.forEach { faenaLinea ->
-                            FaenaLineaRow(
-                                linea = faenaLinea,
-                                onClick = { onOpenPedido(faenaLinea.orderId) }
-                            )
-                        }
                     }
                 }
             }
@@ -383,70 +507,227 @@ private fun FaenaFincaCard(
     }
 }
 
+/** D-237: cabecera de pedido estilo picking + sus líneas, dentro de una finca de procedencia. */
 @Composable
-private fun FaenaLineaRow(linea: FaenaLinea, onClick: () -> Unit) {
+private fun FaenaPedidoCard(
+    pedido: FaenaPedido,
+    sectoresDesc: Map<String, String>,
+    onLineaClick: (FaenaLinea) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Pedido ${pedido.orderId}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "${pedido.plantasPendientes} plantas",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (pedido.clienteDisplay.isNotBlank()) {
+                Text(
+                    text = pedido.clienteDisplay,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (pedido.fincaCarga.isNotBlank() || pedido.sectorCarga.isNotBlank()) {
+                Text(
+                    text = "Carga: ${listOf(
+                        pedido.fincaCarga.ifBlank { null }?.let { "finca $it" },
+                        pedido.sectorCarga.ifBlank { null }?.let { "sector $it" }
+                    ).filterNotNull().joinToString(" · ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (pedido.marcaPedido.isNotBlank()) {
+                Text(
+                    text = "Marca: ${pedido.marcaPedido}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            val pendientes = pedido.lineas.filter { it.pendiente > 0 }
+            val completas = pedido.lineas.filter { it.pendiente <= 0 }
+            pendientes.forEach { faenaLinea ->
+                FaenaLineaRow(
+                    linea = faenaLinea,
+                    sectoresDesc = sectoresDesc,
+                    onClick = { onLineaClick(faenaLinea) }
+                )
+            }
+            if (completas.isNotEmpty()) {
+                Text(
+                    text = "Completadas",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                )
+                completas.forEach { faenaLinea ->
+                    FaenaLineaRow(
+                        linea = faenaLinea,
+                        sectoresDesc = sectoresDesc,
+                        onClick = { onLineaClick(faenaLinea) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FaenaLineaRow(
+    linea: FaenaLinea,
+    sectoresDesc: Map<String, String>,
+    onClick: () -> Unit
+) {
     val ultra = FaenaDashboardViewModel.esUltra(linea)
+    val completa = linea.pendiente <= 0
+    val parcial = !completa && (linea.line.requestedQty - linea.pendiente) > 0
+    val sectorNombre = sectoresDesc[linea.line.sectorAcopio] ?: linea.line.sectorDesc
+    val cogidas = maxOf(linea.line.pickedQty, linea.line.acopiadoServidor)
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = if (ultra) {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
-            } else {
-                MaterialTheme.colorScheme.surface
+            containerColor = when {
+                completa -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                ultra -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                else -> MaterialTheme.colorScheme.surface
             }
         ),
-        border = if (linea.line.marcado) BorderStroke(2.dp, MarkedBorderColor) else null
+        border = when {
+            completa -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            linea.line.marcado -> BorderStroke(2.dp, MarkedBorderColor)
+            else -> null
+        }
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = linea.clienteDisplay,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    text = linea.line.productName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = "Pedido ${linea.orderId}",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    text = "${linea.pendiente} uds",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (completa) MaterialTheme.colorScheme.primary
+                    else if (ultra) BrandRed else MaterialTheme.colorScheme.primary
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = linea.line.productId,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (linea.line.litrajeDesc.isNotBlank()) {
                     Text(
-                        text = "${linea.line.productName} (${linea.line.productId})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = listOfNotNull(
-                            linea.line.litrajeDesc.takeIf { it.isNotBlank() },
-                            linea.marcaEfectiva.takeIf { it.isNotBlank() }?.let { "Marca $it" },
-                            if (linea.line.marcado) "MARCADA" else null
-                        ).joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "· ${linea.line.litrajeDesc}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
+                if (sectorNombre.isNotBlank()) {
+                    Text(
+                        text = "· $sectorNombre",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (linea.line.marcado) {
+                    Text(
+                        text = "· MARCADA",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MarkedBorderColor
+                    )
+                }
+            }
+            if (linea.line.observaciones.isNotBlank()) {
                 Text(
-                    text = "${linea.pendiente} uds",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (ultra) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    text = "📝 ${linea.line.observaciones}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
+            }
+            if (linea.line.prioridad.isNotBlank()) {
+                PrioBadgeFaena(prioridad = linea.line.prioridad)
+            }
+            // D-237: estado de cogida TOTAL / PARCIAL.
+            when {
+                completa -> {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.padding(top = 6.dp)
+                    ) {
+                        Text(
+                            "COGIDA (${cogidas}/${linea.line.requestedQty})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+                parcial -> {
+                    Surface(
+                        color = BrandAmber.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.padding(top = 6.dp)
+                    ) {
+                        Text(
+                            "PARCIAL (cogidas ${linea.line.requestedQty - linea.pendiente}/${linea.line.requestedQty})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = BrandAmber,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
             }
             LinearProgressIndicator(
                 progress = {
                     val total = linea.line.requestedQty.coerceAtLeast(1)
-                    (linea.pendiente.toFloat() / total).coerceIn(0f, 1f)
+                    val hecho = (cogidas.toFloat() / total).coerceIn(0f, 1f)
+                    hecho
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -454,6 +735,148 @@ private fun FaenaLineaRow(linea: FaenaLinea, onClick: () -> Unit) {
             )
         }
     }
+}
+
+/** D-233: PRIORITARIO parpadea en rojo corporativo; NO PRIORITARIO lleva otra etiqueta. */
+@Composable
+private fun PrioBadgeFaena(prioridad: String) {
+    when (prioridad.trim().uppercase()) {
+        "PRIORITARIO" -> {
+            val transition = rememberInfiniteTransition(label = "prioFaena")
+            val alpha by transition.animateFloat(
+                initialValue = 0.4f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                label = "prioFaenaAlpha"
+            )
+            Surface(
+                color = BrandRed,
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .alpha(alpha)
+                    .padding(top = 6.dp)
+            ) {
+                Text(
+                    "PRIORITARIO",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+        "NO PRIORITARIO" -> {
+            Surface(
+                color = BrandAmber.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                Text(
+                    "NO PRIORITARIO",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BrandAmber,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AcopioLineaDialog(
+    linea: FaenaLinea,
+    sectoresDesc: Map<String, String>,
+    guardando: Boolean,
+    error: String?,
+    onRegistrar: (Int) -> Unit,
+    onCerrarLinea: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var cantidad by remember(linea) { mutableStateOf("") }
+    val qty = cantidad.toIntOrNull()
+    val sectorNombre = sectoresDesc[linea.line.sectorAcopio] ?: linea.line.sectorDesc
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Acopiar") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = linea.line.productName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = buildString {
+                        append("Pedido ${linea.orderId}")
+                        append(" · ${linea.line.productId}")
+                        if (linea.line.litrajeDesc.isNotBlank()) append(" · ${linea.line.litrajeDesc}")
+                        if (sectorNombre.isNotBlank()) append(" · $sectorNombre")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Faltan ${linea.pendiente} plantas por acopiar",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (error != null) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                OutlinedTextField(
+                    value = cantidad,
+                    onValueChange = { cantidad = it.filter(Char::isDigit).take(4) },
+                    label = { Text("Plantas cogidas") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    enabled = !guardando,
+                    isError = cantidad.isNotBlank() && (qty == null || qty <= 0),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (qty != null && qty > linea.pendiente) {
+                    Text(
+                        text = "⚠ Coges más de lo pendiente (quedan ${linea.pendiente})",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                TextButton(
+                    onClick = onCerrarLinea,
+                    enabled = !guardando,
+                    modifier = Modifier.align(Alignment.Start)
+                ) {
+                    Text("No encuentro más plantas · Cerrar línea", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { qty?.let(onRegistrar) },
+                enabled = qty != null && qty > 0 && !guardando
+            ) {
+                if (guardando) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (guardando) "Guardando…" else "Registrar acopio")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !guardando) { Text("Cancelar") }
+        }
+    )
 }
 
 @Composable
@@ -485,7 +908,16 @@ private fun AyudaDialog(
                         FilterChip(
                             selected = actual?.email == colega.email,
                             onClick = { onSeleccion(colega) },
-                            label = { Text("${colega.nombre} · ${colega.rol}") },
+                            label = {
+                                Text(
+                                    buildString {
+                                        append(colega.nombre)
+                                        append(" · ")
+                                        append(colega.rol)
+                                        if (colega.familia.isNotBlank()) append(" · ${colega.familia}")
+                                    }
+                                )
+                            },
                             modifier = Modifier.padding(vertical = 2.dp)
                         )
                     }
@@ -550,8 +982,8 @@ private fun ConcederAyudaDialog(
                     )
                     state.dias.forEach { dia ->
                         dia.fincas.forEach { finca ->
-                            finca.sectores.forEach { sector ->
-                                sector.lineas.forEach { fl ->
+                            finca.pedidos.forEach { pedido ->
+                                pedido.lineas.forEach { fl ->
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
@@ -581,7 +1013,7 @@ private fun ConcederAyudaDialog(
                             val colega = colegaSeleccionado ?: return@Button
                             val todas = state.dias
                                 .flatMap { it.fincas }
-                                .flatMap { it.sectores }
+                                .flatMap { it.pedidos }
                                 .flatMap { it.lineas }
                             val lineas = seleccionadas.mapNotNull { id ->
                                 todas.firstOrNull { it.line.orderLineId == id }
@@ -598,7 +1030,7 @@ private fun ConcederAyudaDialog(
                     }
                 }
                 if (state.ayudaDe != null) {
-                    TextButton(onClick = { onVerFaenaDe(state.ayudaDe!!) }) {
+                    TextButton(onClick = { onVerFaenaDe(state.ayudaDe) }) {
                         Text("Ya me han concedido ayuda: ver mi modo ayuda activo")
                     }
                 }
@@ -611,11 +1043,17 @@ private fun ConcederAyudaDialog(
 }
 
 @Composable
-private fun CambioPasswordObligatorioDialog(    onAceptar: (actual: String, nueva: String) -> Unit
+private fun CambioPasswordObligatorioDialog(
+    guardando: Boolean,
+    error: String?,
+    onAceptar: (actual: String, nueva: String) -> Unit
 ) {
     var actual by remember { mutableStateOf("") }
     var nueva by remember { mutableStateOf("") }
     var repetir by remember { mutableStateOf("") }
+    var verActual by remember { mutableStateOf(false) }
+    var verNueva by remember { mutableStateOf(false) }
+    var verRepetir by remember { mutableStateOf(false) }
     val valida = nueva.length >= 4 && nueva == repetir
 
     AlertDialog(
@@ -629,36 +1067,82 @@ private fun CambioPasswordObligatorioDialog(    onAceptar: (actual: String, nuev
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (error != null) {
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 OutlinedTextField(
                     value = actual,
                     onValueChange = { actual = it },
                     label = { Text("Contraseña actual/provisional") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
+                    visualTransformation = if (verActual) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                    enabled = !guardando,
+                    trailingIcon = {
+                        IconButton(onClick = { verActual = !verActual }) {
+                            Icon(
+                                imageVector = if (verActual) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (verActual) "Ocultar contraseña" else "Mostrar contraseña",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 )
                 OutlinedTextField(
                     value = nueva,
                     onValueChange = { nueva = it },
                     label = { Text("Contraseña nueva") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
+                    visualTransformation = if (verNueva) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                    enabled = !guardando,
+                    trailingIcon = {
+                        IconButton(onClick = { verNueva = !verNueva }) {
+                            Icon(
+                                imageVector = if (verNueva) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (verNueva) "Ocultar contraseña" else "Mostrar contraseña",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 )
                 OutlinedTextField(
                     value = repetir,
                     onValueChange = { repetir = it },
                     label = { Text("Repite la contraseña nueva") },
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (verRepetir) VisualTransformation.None else PasswordVisualTransformation(),
                     singleLine = true,
-                    isError = repetir.isNotBlank() && repetir != nueva
+                    enabled = !guardando,
+                    isError = repetir.isNotBlank() && repetir != nueva,
+                    trailingIcon = {
+                        IconButton(onClick = { verRepetir = !verRepetir }) {
+                            Icon(
+                                imageVector = if (verRepetir) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (verRepetir) "Ocultar contraseña" else "Mostrar contraseña",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 )
             }
         },
         confirmButton = {
             Button(
                 onClick = { onAceptar(actual, nueva) },
-                enabled = valida && actual.isNotBlank()
+                enabled = valida && actual.isNotBlank() && !guardando
             ) {
-                Text("Guardar")
+                if (guardando) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (guardando) "Guardando…" else "Guardar")
             }
         }
     )

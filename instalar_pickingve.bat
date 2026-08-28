@@ -227,24 +227,55 @@ bigquery:
     Step "7/9 Programando sincronizacion automatica"
     $runSync = Join-Path $connectorDir "scripts\run_sync.ps1"
     $action  = "-NoProfile -ExecutionPolicy Bypass -File `"$runSync`""
-    function New-SyncTask($name, $startHour, $intervalMin, $durHours, $dataset){
-        $trg = New-ScheduledTaskTrigger -Daily -At ("{0:00}:00" -f $startHour)
-        $trg.RepetitionInterval = [TimeSpan]::FromMinutes($intervalMin)
-        $trg.RepetitionDuration = [TimeSpan]::FromHours($durHours)
-        $act = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($action + " -Dataset $dataset") -WorkingDirectory $Root
-        $set = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
-        Register-ScheduledTask -TaskName $name -Trigger $trg -Action $act -Settings $set -Force -ErrorAction Stop | Out-Null
-        Ok "$name -> $dataset cada $intervalMin min desde las $($startHour):00"
+    $user    = "$env:USERDOMAIN\$env:USERNAME"
+    $hoy     = Get-Date -Format "yyyy-MM-dd"
+
+    function New-SyncTaskXml($name, $startHour, $intervalMin, $durHours, $dataset){
+        # schtasks + XML: metodo universal (Register-ScheduledTask falla en
+        # algunos Windows 10 al setear RepetitionInterval)
+        $rep = ""
+        if ($intervalMin -gt 0) {
+            $rep = "<Repetition><Interval>PT$($intervalMin)M</Interval><Duration>PT$($durHours)H</Duration><StopAtDurationEnd>true</StopAtDurationEnd></Repetition>"
+        }
+        $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>$($hoy)T$($startHour):00:00</StartBoundary>
+      $rep
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><UserId>$user</UserId><LogonType>InteractiveToken</LogonType></Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>powershell.exe</Command><Arguments>$action -Dataset $dataset</Arguments><WorkingDirectory>$Root</WorkingDirectory></Exec>
+  </Actions>
+</Task>
+"@
+        $xmlFile = Join-Path $env:TEMP "$name.xml"
+        [IO.File]::WriteAllText($xmlFile, $xml, (New-Object Text.UnicodeEncoding))
+        schtasks /Create /F /TN $name /XML $xmlFile | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "schtasks devolvio $LASTEXITCODE para $name" }
     }
+
     try {
-        New-SyncTask "PickingVE-Sync-Produccion" 8 30 13 "GestionComercialVE"
-        New-SyncTask "PickingVE-Sync-Analytics"  5 1440 1  "Analytics"
+        New-SyncTaskXml "PickingVE-Sync-Produccion" 8 30 13 "GestionComercialVE"
+        Ok "Produccion -> GestionComercialVE cada 30 min (08:00-21:00)"
+        New-SyncTaskXml "PickingVE-Sync-Analytics" 5 0 0 "Analytics"
+        Ok "Analytics -> diario a las 05:00"
     } catch {
-        Warn " Register-ScheduledTask fallo ($($_.Exception.Message)); probando schtasks..."
-        schtasks /Create /F /TN "PickingVE-Sync-Produccion" /SC MINUTE /MO 30 /TR "powershell.exe $action -Dataset GestionComercialVE" | Out-Null
-        schtasks /Create /F /TN "PickingVE-Sync-Analytics"  /SC DAILY /ST 05:00 /TR "powershell.exe $action -Dataset Analytics"       | Out-Null
-        if ($LASTEXITCODE -eq 0) { Ok "Tareas creadas con schtasks" }
-        else { Warn " No se pudieron crear tareas automaticas (podras hacerlas a mano; no bloquea)." }
+        Fail ("No se pudieron crear las tareas automaticas: " + $_.Exception.Message)
+        Warn " Podras crearlas a mano; no bloquea la instalacion ni el menu manual."
     }
 
     # ---------- 8. Acceso directo ----------

@@ -455,7 +455,7 @@ def build_punteo_pdf(
     peso = 0.0
 
     empleados = sorted(
-        {_nombre_corto(d.get("empleado_nombre")) for d in datos["detalle"] if d.get("empleado_nombre")}
+        {_nombre_corto(d.get("empleado_nombre")) for d in datos["detalle"] if d.get("empleado_nombre") and not d.get("es_operario")}
     )
     empleado_txt = ", ".join(empleados) or "Pendiente de pistoleo"
     partes_set = {(d.get("picking_tipo"), d.get("picking_numero")) for d in datos["detalle"]}

@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
@@ -68,6 +69,8 @@ import java.util.Locale
 @Composable
 fun OrderListScreen(
     viewModel: OrderListViewModel,
+    mostrarFaena: Boolean = true,
+    onBack: () -> Unit = {},
     onOrderSelected: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFaena: () -> Unit,
@@ -114,9 +117,25 @@ fun OrderListScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Pedidos") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
                 actions = {
-                    IconButton(onClick = onOpenFaena) {
-                        Icon(Icons.Filled.Checklist, contentDescription = "Mi faena")
+                    if (mostrarFaena) {
+                        IconButton(onClick = onOpenFaena) {
+                            Icon(Icons.Filled.Checklist, contentDescription = "Mi faena")
+                        }
+                    }
+                    if (pendingUploadCount > 0) {
+                        IconButton(onClick = { viewModel.uploadNow() }) {
+                            Icon(
+                                Icons.Filled.Sync,
+                                contentDescription = "Subir $pendingUploadCount pendientes",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                     if (syncState.syncing) {
                         Box(modifier = Modifier.padding(horizontal = 16.dp)) {

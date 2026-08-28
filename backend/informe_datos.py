@@ -36,6 +36,22 @@ def _num(v):
         return 0.0
 
 
+def _role_email_set(bq_client, project: str, picking_dataset: str, table: str) -> set[str]:
+    """Emails (en minusculas) de una tabla de personas (encargados/operarios)."""
+    emails: set[str] = set()
+    try:
+        rows = bq_client.query(
+            f"SELECT email FROM `{project}.{picking_dataset}.{table}` WHERE email IS NOT NULL AND email != ''"
+        ).result()
+        for r in rows:
+            em = str(r.get("email") or "").strip().lower()
+            if em:
+                emails.add(em)
+    except Exception:
+        pass
+    return emails
+
+
 def _fmt_num(v: float) -> str:
     """Numero sin decimales inutiles: 50.0 -> '50', 50.5 -> '50,5'."""
     if abs(v - round(v)) < 1e-9:
@@ -99,6 +115,7 @@ def _load_datos(
     # 4) Detalle de cada evento del pistoleo (primero: alimenta partes y sustituciones)
     detalle_sql = f"""
         SELECT r.picking_numero, r.picking_tipo, r.fecha_hora, r.empleado_nombre,
+               r.empleado_email,
                r.ean_escaneado, r.ocr_texto, r.ref_original, r.ref_servida,
                r.sustituido, r.litros, r.medida, r.calibre, r.cantidad_partida,
                l.POSICION_PEDIDO AS POSICION, l.REFERENCIA_ARTICULO AS REF_LINEA,
@@ -134,8 +151,15 @@ def _load_datos(
         ORDER BY picking_numero, picking_tipo
     """
     partes = [dict(r) for r in bq_client.query(partes_sql, job_config=jc).result()]
+    encargado_emails = _role_email_set(bq_client, project, picking_dataset, "encargados")
+    operario_emails = _role_email_set(bq_client, project, picking_dataset, "operarios")
+    for r in detalle:
+        em = str(r.get("empleado_email") or "").strip().lower()
+        r["es_operario"] = bool(em and em in operario_emails and em not in encargado_emails)
     empleados_por_parte: dict[tuple, set] = {}
     for r in detalle:
+        if r.get("es_operario"):
+            continue
         key = (r.get("picking_numero"), r.get("picking_tipo"))
         name = r.get("empleado_nombre")
         if name:

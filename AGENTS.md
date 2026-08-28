@@ -26,6 +26,7 @@ App Android (Kotlin, Jetpack Compose) de picking offline-first para viveros/camp
 - Compila con: `gradlew.bat assembleDebug` (Gradle 8.7, JDK del Android Studio en `C:\Program Files\Android\Android Studio\jbr`).
 - APK: `apks/PickingVE-debug-<versionName>.apk` (carpeta fija `apks/` en la raíz; el build la copia automáticamente cada vez). Usar SIEMPRE el más reciente de la carpeta, no fijar versión en la documentación (evita referencias obsoletas).
 - Documentación: `docs/` (SPECS, ARCHITECTURE, DATA_MODEL, BIGQUERY_STEPS, GOVERNANCE).
+- **Marca corporativa (D-203)**: los logos oficiales de Viveros Elche viven en `Documentacion/Logos/` (4 variantes PNG 2000px: logo completo trans/con borde y sin palmera trans/con borde). Es la FUENTE DE LA VERDAD para cualquier asset de marca: no inventar ni buscar logos en el histórico git — copiar desde ahí. El login usa `VIVEROS ELCHE-LOGO-trans.png` (copiado a `res/drawable/logo_viveros.png`) y el icono del launcher se genera recortando la palmera de ese mismo logo (sin texto: ilegible en tamaño icono).
 
 ## Reglas
 - **Offline-first**: la UI solo lee Room DB; la red (BigQuery REST, Telegram) es asíncrona.

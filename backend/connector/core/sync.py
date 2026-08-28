@@ -5,6 +5,9 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from . import access_client, bigquery_client, transform
 
+# Anio mas antiguo que interesa cargar en el historico (decision del usuario)
+MIN_ANIO_HISTORICO = 2020
+
 
 def build_logger(settings: dict) -> logging.Logger:
     level = getattr(logging, settings["logging"].get("level", "INFO").upper())
@@ -38,6 +41,8 @@ def load(client, table_cfg: dict, df: pd.DataFrame, dataset: str, logger: loggin
     table_id = f"{project}.{dataset}.{table_cfg['name']}"
     if table_cfg.get("merge_key"):
         rows = bigquery_client.load_merge(client, table_cfg, df, table_id)
+    elif table_cfg.get("append"):
+        rows = bigquery_client.load_append(client, table_cfg, df, table_id)
     else:
         rows = bigquery_client.load_full(client, table_cfg, df, table_id)
     logger.info("Cargadas %d filas en %s", rows, table_id)
@@ -63,6 +68,135 @@ def filter_for_dataset(tables: list[dict], dataset: str, settings: dict) -> list
     if dataset != production:
         return tables
     return [t for t in tables if not t.get("only_analytics")]
+
+
+def discover_history_dbs(settings: dict) -> list[tuple[int, str]]:
+    """Descubre las bases historicas junto al fichero actual del NAS.
+
+    Patron ESTRICTO sobre el nombre: 014<aaaa>.accdb (operativa) y
+    B14<aaaa>.accdb (contabilidad, existe desde 2026). Excluye backups,
+    copias ('Copia de...', '_Backup'), ficheros corruptos (MAL*) y otras
+    series no solicitadas (001*, 015*, XD1*, FactuSOL*).
+    Devuelve [(anio, ruta_absoluta)] sin la base operativa en curso.
+    """
+    import glob
+    import os
+    import re
+
+    cur = os.path.abspath(settings["access"]["db_path"])
+    folder = os.path.dirname(cur)
+    patron = re.compile(r"^(?:014|B14)(\d{4})\.accdb$", re.IGNORECASE)
+    found: list[tuple[int, str]] = []
+    for f in glob.glob(os.path.join(folder, "*.accdb")):
+        m = patron.match(os.path.basename(f))
+        if not m:
+            continue
+        fa = os.path.abspath(f)
+        if fa == cur:
+            continue
+        found.append((int(m.group(1)), fa))
+    return sorted(set(found))
+
+
+def sync_historical(client, tables: list[dict], dataset: str, logger: logging.Logger, settings: dict) -> dict:
+    """Historico multi-anio con estrategia del usuario (D-18):
+
+      - Anios CERRADOS (<= actual-2): se cargan UNA sola vez; un registro de
+        control (HIST_CONTROL) evita repetir trabajo que nunca cambia.
+      - Anio ANTERIOR y ACTUAL (+ su base B14): se REFRESCAN en cada ejecucion,
+        borrando antes sus filas (DELETE WHERE ANIO) para que sea idempotente.
+
+    Las tablas destino son HIST_<tabla> en el dataset indicado, con columna ANIO.
+    """
+    results: dict[str, int] = {}
+    hist_tables = [t for t in tables if t.get("hist")]
+    if not hist_tables:
+        logger.error("--historical: ninguna tabla marcada con hist: true")
+        return results
+
+    dbs = discover_history_dbs(settings)
+    if not dbs:
+        logger.warning("--historical: no se han encontrado ficheros 014*/B14* validos junto a %s",
+                       settings["access"]["db_path"])
+        return results
+
+    from datetime import datetime
+
+    anio_actual = datetime.now().year
+    limite_cerrados = anio_actual - 2  # <= limite => cerrado, carga unica
+
+    control_id = f"{client.project}.{dataset}.HIST_CONTROL"
+    client.query(
+        f"CREATE TABLE IF NOT EXISTS `{control_id}` ("
+        "db_file STRING, anio INT64, filas INT64, cargado_en TIMESTAMP)"
+    ).result()
+
+    ya_cargados = {
+        r["db_file"]
+        for r in client.query(f"SELECT db_file FROM `{control_id}`").result()
+    }
+
+    total_filas = 0
+    for anio, path in sorted(dbs):
+        if anio < MIN_ANIO_HISTORICO:
+            logger.info("=== %s: anterior a %d, SE OMITE ===", path, MIN_ANIO_HISTORICO)
+            continue
+        es_reciente = anio >= anio_actual - 1
+        etiqueta = "RECIENTE" if es_reciente else "CERRADO"
+        if not es_reciente and path.lower() in ya_cargados:
+            logger.info("=== %s %s: ya cargada antes, SE OMITE ===", etiqueta, path)
+            continue
+        logger.info("=== Historico %d (%s) %s ===", anio, etiqueta, path)
+
+        s_year = {**settings, "access": {**settings["access"], "db_path": path}}
+        filas_fichero = 0
+        try:
+            with access_client.open_connection(s_year) as conn:
+                for base_cfg in hist_tables:
+                    schema = list(base_cfg["schema"])
+                    if not any(f["name"] == "ANIO" for f in schema):
+                        schema.append({"name": "ANIO", "type": "INTEGER", "mode": "NULLABLE",
+                                       "description": "Año de la base de origen"})
+                    cfg = {
+                        **base_cfg,
+                        "name": f"HIST_{base_cfg['name']}",
+                        "merge_key": None,
+                        "append": True,
+                        "schema": schema,
+                    }
+                    table_id = f"{client.project}.{dataset}.{cfg['name']}"
+                    # Idempotencia: borra las filas de este anio antes de reinsertar
+                    try:
+                        client.query(f"DELETE FROM `{table_id}` WHERE ANIO = {anio}").result()
+                    except Exception:
+                        pass  # tabla aun no existe
+                    try:
+                        df = extract(conn, cfg, logger)
+                    except Exception as exc:
+                        logger.warning("  %s ausente o ilegible en %s: %s", base_cfg["name"], path, exc)
+                        continue
+                    df["ANIO"] = anio
+                    df = transform_df(df, cfg, logger)
+                    filas = load(client, cfg, df, dataset, logger)
+                    results[cfg["name"]] = results.get(cfg["name"], 0) + filas
+                    filas_fichero += filas
+        except Exception as exc:
+            logger.error("No se pudo procesar %s: %s", path, exc)
+            continue
+
+        client.query(
+            f"DELETE FROM `{control_id}` WHERE db_file = @f"
+            .replace("@f", f"'{path.lower().replace(chr(39), chr(39)*2)}'")
+        ).result()
+        client.query(
+            f"INSERT INTO `{control_id}` (db_file, anio, filas, cargado_en) "
+            f"VALUES ('{path.lower().replace(chr(39), chr(39)*2)}', {anio}, {filas_fichero}, CURRENT_TIMESTAMP())"
+        ).result()
+        total_filas += filas_fichero
+        logger.info("  -> %d filas registradas en HIST_CONTROL", filas_fichero)
+
+    logger.info("Historico completado: %d filas nuevas/refrescadas", total_filas)
+    return results
 
 
 def sync_all(client, conn, tables: list[dict], dataset: str, logger: logging.Logger, settings: dict) -> dict:

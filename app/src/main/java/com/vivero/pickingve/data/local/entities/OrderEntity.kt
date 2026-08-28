@@ -57,6 +57,7 @@ data class OrderLineEntity(
     val acopiadoServidor: Int = 0, // Unidades subidas a BigQuery por cualquier dispositivo (otras tabletas incluidas)
     val fincaAcopio: String = "", // FINCA_RELEVADA: finca real donde está la planta (si difiere de la teórica)
     val sectorAcopio: String = "", // SECTOR_RELEVADO: sector real donde está la planta
+    val fincaArticulo: String = "", // FINCA_ARTICULO: finca de procedencia de la planta (artículo)
     val operarioEmail: String = "", // Reparto D-72: email del operario asignado a esta línea
     val operarioNombre: String = "", // Reparto D-72: nombre del operario asignado
     val motivoCierre: String = "", // Código del motivo al cerrar la línea sin completar (SIN_STOCK, ...)

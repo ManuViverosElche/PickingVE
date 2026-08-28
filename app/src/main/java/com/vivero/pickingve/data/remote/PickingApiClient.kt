@@ -405,4 +405,134 @@ class PickingApiClient(
             contentType(ContentType.Application.Json)
             setBody(RepartoGuardarRequest(asignaciones))
         }.body<RepartoGuardarResponse>()
+
+    // ---- D-213: panel manager (superusuario) ----
+
+    suspend fun managerHistoricoFechas(): List<ManagerFecha> =
+        client.get("$baseUrl/manager/historico") {
+            auth()
+        }.body<ManagerFechasResponse>().fechas
+
+    suspend fun managerHistoricoDia(fecha: String): ManagerHistoricoDiaResponse =
+        client.get("$baseUrl/manager/historico") {
+            auth()
+            url.parameters.append("fecha", fecha)
+        }.body<ManagerHistoricoDiaResponse>()
+
+    suspend fun managerHistoricoDetalle(numero: String): ManagerHistoricoDetalleResponse =
+        client.get("$baseUrl/manager/historico/$numero") {
+            auth()
+        }.body<ManagerHistoricoDetalleResponse>()
+
+    suspend fun managerEtiquetasDia(fecha: String, estado: String = "todos"): ManagerEtiquetasResponse =
+        client.get("$baseUrl/manager/etiquetas/dia") {
+            auth()
+            url.parameters.append("fecha", fecha)
+            url.parameters.append("estado", estado)
+        }.body<ManagerEtiquetasResponse>()
+
+    // ---- D-216: configuracion de maquinarias y familias ----
+
+    suspend fun managerMaquinarias(): List<MaquinariaItem> =
+        client.get("$baseUrl/manager/maquinarias") {
+            auth()
+        }.body<MaquinariasResponse>().maquinarias
+
+    suspend fun managerGuardarMaquinaria(body: MaquinariaBody) {
+        client.post("$baseUrl/manager/maquinarias") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.body<OkResponse>()
+    }
+
+    suspend fun managerEliminarMaquinaria(id: String) {
+        client.post("$baseUrl/manager/maquinarias/eliminar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("id" to id))
+        }.body<OkResponse>()
+    }
+
+    suspend fun managerFamilias(): List<FamiliaItem> =
+        client.get("$baseUrl/manager/maquinarias-familias") {
+            auth()
+        }.body<FamiliasResponse>().familias
+
+    suspend fun managerGuardarFamilia(body: MaquinariaBody) {
+        client.post("$baseUrl/manager/maquinarias-familias") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.body<OkResponse>()
+    }
+
+    suspend fun managerEliminarFamilia(id: String) {
+        client.post("$baseUrl/manager/maquinarias-familias/eliminar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("id" to id))
+        }.body<OkResponse>()
+    }
+
+    /** D-217: informes HTML del panel (control, detalle, desglose, etiquetas del dia). */
+    suspend fun managerInformeHtml(ruta: String): String =
+        client.get("$baseUrl/manager/$ruta") {
+            auth()
+        }.body<String>()
+
+    // ---- D-218: Inventario ----
+
+    suspend fun inventarioFincas(): ApiInvFincasResponse =
+        client.get("$baseUrl/inventario/fincas") {
+            auth()
+        }.body<ApiInvFincasResponse>()
+
+    suspend fun inventarioStockVersion(): ApiInvVersion =
+        client.get("$baseUrl/inventario/stock/version") {
+            auth()
+        }.body<ApiInvVersion>()
+
+    suspend fun inventarioStock(finca: String): ApiInvStockResponse =
+        client.get("$baseUrl/inventario/stock") {
+            auth()
+            url.parameters.append("finca", finca)
+        }.body<ApiInvStockResponse>()
+
+    suspend fun inventarioUpload(registros: List<ApiInvRegistro>): ApiInvUploadResponse =
+        client.post("$baseUrl/inventario/upload") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(ApiInvUploadBody(registros))
+        }.body<ApiInvUploadResponse>()
+
+    suspend fun inventarioCompensar(recordIds: List<String>) {
+        client.post("$baseUrl/inventario/compensar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(ApiInvCompensaBody(recordIds))
+        }
+    }
+
+    suspend fun inventarioBorrar(finca: String? = null, sector: String? = null, desde: String? = null) {
+        client.post("$baseUrl/inventario/borrar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(ApiInvBorrarBody(finca, sector, desde))
+        }
+    }
+
+    suspend fun inventarioCerrar(finca: String, sector: String) {
+        client.post("$baseUrl/inventario/cerrar") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(ApiInvCerrarBody(finca, sector))
+        }
+    }
+
+    suspend fun inventarioProgreso(finca: String): ApiInvProgresoResponse =
+        client.get("$baseUrl/inventario/progreso") {
+            auth()
+            url.parameters.append("finca", finca)
+        }.body<ApiInvProgresoResponse>()
 }

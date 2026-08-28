@@ -22,6 +22,11 @@ class PickingSyncWorker(
             val app = applicationContext as PickingApplication
             val api = PickingApiClient()
             app.pickingRepository.uploadPendingRegistros(api)
+            try {
+                app.inventarioRepository.uploadPendientes(api)
+            } catch (e: Exception) {
+                Log.e("PickingVE", "upload inventario fallo", e)
+            }
             app.pickingRepository.reintentarCierresPendientes(api)
             app.pickingRepository.syncCatalogIfChanged(api)
             app.pickingRepository.syncEncargados(api)

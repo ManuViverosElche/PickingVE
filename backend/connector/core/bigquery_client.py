@@ -63,6 +63,16 @@ def load_full(client, table_cfg, df, table_id) -> int:
     )
 
 
+def load_append(client, table_cfg, df, table_id) -> int:
+    return _load_jsonl(
+        client,
+        df,
+        table_id,
+        bigquery.WriteDisposition.WRITE_APPEND,
+        _schema_fields(table_cfg),
+    )
+
+
 def load_merge(client, table_cfg, df, table_id) -> int:
     ensure_table(client, table_cfg, table_id)
     temp_table_id = f"{table_id}_TEMP"

@@ -1,5 +1,6 @@
 ﻿package com.vivero.pickingve.ui.picking
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vivero.pickingve.data.local.entities.ChatEstadoEntity
@@ -118,6 +119,7 @@ class PickingViewModel(
             try {
                 block()
             } catch (e: Exception) {
+                Log.e("PickingViewModel", "Error en launchSafe", e)
                 lastMessage.value = "$errorMessage: ${Errores.traducir(e)}"
             }
         }

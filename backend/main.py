@@ -3119,7 +3119,24 @@ def eliminar_finca(
             ),
         ).result()
         return {"ok": 1, "ocultada": True}
-    return {"ok": 1}
+    client.query(
+        f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{FINCAS_TABLE}` WHERE finca = @finca",
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("finca", "STRING", finca)]
+        ),
+    ).result()
+    # Si la finca manual se había marcado inventariable, se retira también.
+    try:
+        client.query(
+            f"DELETE FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FINCAS_TABLE}` "
+            f"WHERE UPPER(TRIM(finca)) = UPPER(TRIM(@finca))",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("finca", "STRING", finca)]
+            ),
+        ).result()
+    except Exception:
+        pass
+    return {"ok": 1, "borrada": True}
 
 
 class MaquinariaBody(BaseModel):
@@ -4207,6 +4224,7 @@ def pedidos(
                l.SECTOR_RELEVADO, l.UBICACION_EXTRA, l.PRIORIDAD, l.ACCION_LOGISTICA,
                l.NOTA_LINEA_PEDIDO, l.IMPRIMIR_LINEA, l.MARCADO,
                lt.DESCRIPCION_LITRAJE, st.DESCRIPCION_SECTOR,
+               COALESCE(a.FINCA_ARTICULO, '') AS FINCA_ARTICULO,
                COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
                COALESCE(pn.ULTIMO_PARTE, 0) AS ULTIMO_PARTE
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
@@ -4216,6 +4234,7 @@ def pedidos(
             AND COALESCE(l.IMPRIMIR_LINEA, 0) = 0
             AND COALESCE(l.LINEA_ACTIVA, TRUE) = TRUE
             AND COALESCE(l.UNIDADES_PENDIENTES, 0) > 0
+        LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = l.REFERENCIA_ARTICULO
         LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = l.CODIGO_LITRAJE
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN (
@@ -4315,6 +4334,7 @@ def pedidos(
                     "marca": r.get("MARCA") or "",
                     "fincaRelevada": r.get("FINCA_RELEVADA") or "",
                     "sectorRelevado": r.get("SECTOR_RELEVADO") or "",
+                    "fincaArticulo": r.get("FINCA_ARTICULO") or "",
                     "operarioEmail": r.get("_OPERARIO_EMAIL") or "",
                     "operarioNombre": r.get("_OPERARIO_NOMBRE") or "",
                     "ubicacion": r.get("UBICACION_EXTRA") or "",
@@ -4992,19 +5012,25 @@ def manager_orders(
          LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = l.REFERENCIA_ARTICULO
         LEFT JOIN (
             SELECT order_id, order_line_id,
-                   STRING_AGG(empleado, ', ') AS OPERARIOS,
-                   STRING_AGG(CONCAT(op_email, ':', CAST(uds AS INT64)), ', ') AS DETALLE_OPS,
-                   SUM(uds) AS ACOPIADO
+                   STRING_AGG(empleado, ', ' ORDER BY empleado) AS OPERARIOS,
+                   STRING_AGG(CONCAT(op_email, ':', CAST(uds AS INT64)), ', ' ORDER BY op_email) AS DETALLE_OPS,
+                   SUM(IF(es_encargado, uds, 0)) AS ACOPIADO
             FROM (
                 SELECT order_id, order_line_id,
                        COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido') AS empleado,
                        COALESCE(NULLIF(TRIM(LOWER(empleado_email)), ''),
                                 'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')) AS op_email,
-                       SUM(cantidad_partida) AS uds
+                       SUM(cantidad_partida) AS uds,
+                       (TRIM(COALESCE(empleado_email, '')) = ''
+                        OR LOWER(TRIM(empleado_email)) IN (
+                            SELECT LOWER(email) FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`
+                            WHERE email IS NOT NULL AND email != ''
+                        ))
+                       AS es_encargado
                 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
                 GROUP BY order_id, order_line_id, empleado_nombre, empleado_email
             )
-            GROUP BY order_id, order_line_id, op_email
+            GROUP BY order_id, order_line_id
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
         LEFT JOIN (
             SELECT order_id, SUM(cantidad_partida) AS TOTAL_ACOPIADO
@@ -5018,10 +5044,14 @@ def manager_orders(
         ) pf ON pf.order_id = p.NUMERO_PEDIDO
         LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` rf
             ON rf.pedido_id = p.NUMERO_PEDIDO AND rf.linea_huella = l.HUELLA_DIGITAL
-        WHERE DATE(p.FECHA_CARGA) = @fecha{filtro_sql}
+        WHERE DATE(p.FECHA_CARGA) = @fecha
+          AND p.ESTADO_PEDIDO IN UNNEST(@estados_base){filtro_sql}
         ORDER BY p.NUMERO_PEDIDO DESC, l.POSICION_PEDIDO
     """
-    params = [bigquery.ScalarQueryParameter("fecha", "DATE", target_date.isoformat())]
+    params = [
+        bigquery.ScalarQueryParameter("fecha", "DATE", target_date.isoformat()),
+        bigquery.ArrayQueryParameter("estados_base", "INT64", [1, 3]),
+    ]
     rows = [dict(r) for r in client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
 
     pedidos: dict[str, dict[str, Any]] = {}
@@ -5172,6 +5202,7 @@ def manager_fechas(
             SELECT DISTINCT order_id FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_TABLE}` WHERE picking_tipo = 'F'
         ) pf ON pf.order_id = p.NUMERO_PEDIDO
         WHERE p.FECHA_CARGA IS NOT NULL
+          AND p.ESTADO_PEDIDO IN (1, 3)
         GROUP BY FECHA
         HAVING PENDIENTES > 0 OR DATE(FECHA) >= CURRENT_DATE()
         ORDER BY FECHA
@@ -6039,7 +6070,15 @@ INVENTARIO_REGLAS_SEMILLA = [
 _INVENTARIO_SEMILLA_LEGACY = {("LA FÁBRICA", "A"), ("BORISA", "B")}
 
 
+_last_inventario_ensure: float = 0.0
+INVENTARIO_ENSURE_INTERVAL_SECONDS = 60
+
+
 def _ensure_inventario_tables() -> None:
+    global _last_inventario_ensure
+    if time.time() - _last_inventario_ensure < INVENTARIO_ENSURE_INTERVAL_SECONDS:
+        return
+    _last_inventario_ensure = time.time()
     client.query(
         f"""
         CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FINCAS_TABLE}` (
@@ -6089,6 +6128,11 @@ def _ensure_inventario_tables() -> None:
             fuera_sector BOOL,
             reetiquetar BOOL,
             sin_ean BOOL,
+            label_motivo STRING,
+            incidencia_texto STRING,
+            es_hueco BOOL,
+            modo_inventario STRING,
+            lineal_session_id STRING,
             latitud FLOAT64,
             longitud FLOAT64,
             fecha_hora TIMESTAMP,
@@ -6096,6 +6140,16 @@ def _ensure_inventario_tables() -> None:
             empleado_nombre STRING
         )
         """
+    ).result()
+    # D-240/D-241/D-243/D-244: migración de columnas nuevas (tablas ya existentes).
+    for _col in ["label_motivo", "incidencia_texto", "modo_inventario", "lineal_session_id"]:
+        client.query(
+            f"ALTER TABLE `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_TABLE}` "
+            f"ADD COLUMN IF NOT EXISTS {_col} STRING"
+        ).result()
+    client.query(
+        f"ALTER TABLE `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_TABLE}` "
+        f"ADD COLUMN IF NOT EXISTS es_hueco BOOL"
     ).result()
     client.query(
         f"""
@@ -6134,9 +6188,16 @@ def _ensure_inventario_tables() -> None:
                COALESCE(st.DESCRIPCION_SECTOR, d.sector, '') AS sectorDesc,
                d.ean_escaneado, d.ocr_texto, d.ref_articulo,
                COALESCE(lt.DESCRIPCION_LITRAJE, d.litraje, '') AS litraje,
-               d.sector_etiqueta, d.nombre_planta, d.cantidad,
+               d.sector_etiqueta,
+               COALESCE(ste.DESCRIPCION_SECTOR, d.sector_etiqueta, '') AS sectorEtiquetaDesc,
+               d.nombre_planta, d.cantidad,
                d.fuera_sector, d.reetiquetar, d.sin_ean,
-               d.latitud, d.longitud, d.fecha_hora,
+               COALESCE(d.label_motivo, '') AS label_motivo,
+               COALESCE(d.incidencia_texto, '') AS incidencia_texto,
+                COALESCE(d.es_hueco, FALSE) AS es_hueco,
+                COALESCE(d.modo_inventario, 'ESTANDAR') AS modo_inventario,
+                COALESCE(d.lineal_session_id, '') AS lineal_session_id,
+                d.latitud, d.longitud, d.fecha_hora,
                d.empleado_email, d.empleado_nombre
         FROM (
             SELECT p.*, ROW_NUMBER() OVER (PARTITION BY record_id ORDER BY fecha_hora DESC) AS rn
@@ -6148,6 +6209,8 @@ def _ensure_inventario_tables() -> None:
             ON lt.ID_LITRAJE = d.litraje
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st
             ON st.ID_SECTOR = d.sector
+        LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` ste
+            ON ste.ID_SECTOR = d.sector_etiqueta
         WHERE d.rn = 1 AND c.record_id IS NULL
         """
     ).result()
@@ -6170,6 +6233,104 @@ def _inventario_sectores_de_finca(finca: str) -> list[dict[str, Any]]:
             job_config=bigquery.QueryJobConfig(
                 query_parameters=[bigquery.ScalarQueryParameter("finca", "STRING", finca)]
             ),
+        ).result()
+    ]
+
+
+def _inventario_esperado(
+    finca: str,
+    objetivo: Optional[list[str]],
+    litraje_desc: bool = False,
+) -> list[dict[str, Any]]:
+    """Esperado (Factusol) de la finca.
+
+    - Finca CON sectores ([objetivo] no vacio): stock de esos sectores por
+      (sector, ref, litraje), sumando la dimension poda/contenedor (D-240).
+    - Finca SIN sectores (objetivo vacio/None, p.ej. CARREFOUR): el esperado son
+      los articulos cuya FINCA_ARTICULO = finca, sumando su stock en TODAS sus
+      combinaciones (sectores incluidos), agrupado por (ref, litraje) con sector
+      vacio (no separamos por sector en estas fincas).
+    """
+    lit = (
+        "COALESCE(lt.DESCRIPCION_LITRAJE, s.CODIGO_LITRAJE, '')"
+        if litraje_desc
+        else "COALESCE(s.CODIGO_LITRAJE, '')"
+    )
+    if objetivo:
+        params: list[Any] = [
+            bigquery.ArrayQueryParameter("sectores", "STRING", objetivo),
+            bigquery.ScalarQueryParameter("finca", "STRING", finca),
+        ]
+        sql = f"""
+            SELECT sector, litraje, ref,
+                   ANY_VALUE(nombre) AS nombre, ANY_VALUE(ean) AS ean,
+                   SUM(stock) AS stock
+            FROM (
+                SELECT s.CODIGO_SECTOR AS sector,
+                       {lit} AS litraje,
+                       s.REFERENCIA_ARTICULO AS ref,
+                       COALESCE(a.DESCRIPCION_ARTICULO, '') AS nombre,
+                       e.CODIGO_EAN AS ean,
+                       s.STOCK_ACTUAL AS stock
+                FROM `{PROJECT}.{DATASET}.STOCK` s
+                JOIN `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FINCAS_TABLE}` f
+                  ON REGEXP_CONTAINS(s.CODIGO_SECTOR, f.prefijo)
+                 AND UPPER(TRIM(f.finca)) = UPPER(@finca)
+                LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = s.REFERENCIA_ARTICULO
+                LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = s.CODIGO_LITRAJE
+                LEFT JOIN (
+                    SELECT REFERENCIA_ARTICULO, CODIGO_LITRAJE, CODIGO_SECTOR,
+                           ANY_VALUE(CODIGO_EAN) AS CODIGO_EAN
+                    FROM `{PROJECT}.{DATASET}.CODIGOS_EAN`
+                    WHERE CODIGO_EAN IS NOT NULL AND CODIGO_EAN != ''
+                    GROUP BY 1, 2, 3
+                ) e ON e.REFERENCIA_ARTICULO = s.REFERENCIA_ARTICULO
+                   AND COALESCE(e.CODIGO_LITRAJE, '') = COALESCE(s.CODIGO_LITRAJE, '')
+                   AND COALESCE(e.CODIGO_SECTOR, '') = COALESCE(s.CODIGO_SECTOR, '')
+                WHERE s.CODIGO_SECTOR IN UNNEST(@sectores)
+            )
+            -- D-240: sumar esperado por (sector, ref, litraje) para no
+            -- desglosar la misma planta en dos filas (dimension poda/contenedor).
+            GROUP BY sector, litraje, ref
+            HAVING stock <> 0
+            ORDER BY sector, ref, litraje
+        """
+    else:
+        params = [bigquery.ScalarQueryParameter("finca", "STRING", finca)]
+        sql = f"""
+            SELECT '' AS sector, litraje, ref,
+                   ANY_VALUE(nombre) AS nombre, ANY_VALUE(ean) AS ean,
+                   SUM(stock) AS stock
+            FROM (
+                SELECT {lit} AS litraje,
+                       s.REFERENCIA_ARTICULO AS ref,
+                       COALESCE(a.DESCRIPCION_ARTICULO, '') AS nombre,
+                       e.CODIGO_EAN AS ean,
+                       s.STOCK_ACTUAL AS stock
+                FROM `{PROJECT}.{DATASET}.STOCK` s
+                JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = s.REFERENCIA_ARTICULO
+                LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = s.CODIGO_LITRAJE
+                LEFT JOIN (
+                    SELECT REFERENCIA_ARTICULO, CODIGO_LITRAJE, CODIGO_SECTOR,
+                           ANY_VALUE(CODIGO_EAN) AS CODIGO_EAN
+                    FROM `{PROJECT}.{DATASET}.CODIGOS_EAN`
+                    WHERE CODIGO_EAN IS NOT NULL AND CODIGO_EAN != ''
+                    GROUP BY 1, 2, 3
+                ) e ON e.REFERENCIA_ARTICULO = s.REFERENCIA_ARTICULO
+                   AND COALESCE(e.CODIGO_LITRAJE, '') = COALESCE(s.CODIGO_LITRAJE, '')
+                   AND COALESCE(e.CODIGO_SECTOR, '') = COALESCE(s.CODIGO_SECTOR, '')
+                WHERE UPPER(TRIM(a.FINCA_ARTICULO)) = UPPER(TRIM(@finca))
+            )
+            -- Finca sin sectores: una fila por referencia+litraje con su stock total.
+            GROUP BY litraje, ref
+            HAVING stock <> 0
+            ORDER BY ref, litraje
+        """
+    return [
+        dict(r)
+        for r in client.query(
+            sql,
+            job_config=bigquery.QueryJobConfig(query_parameters=params),
         ).result()
     ]
 
@@ -6255,7 +6416,9 @@ def inventario_fincas(
             sectores_out.append({
                 "id": sid,
                 "descripcion": s["descripcion"],
-                "cerrado": key in cerrados_set,
+                # Un sector solo esta cerrado si se ha inventariado (1+ registros)
+                # Y ademas se cerro: sin inventario no puede estar cerrado.
+                "cerrado": key in cerrados_set and key in con_registros_set,
                 "tieneInventario": key in con_registros_set,
                 "asignado": len(operarios) > 0,
                 "operarios": operarios,
@@ -6264,6 +6427,9 @@ def inventario_fincas(
             "finca": f_upper,
             "prefijo": pref,
             "sectores": sectores_out,
+            "operarios": faena_por_sector.get((f_upper, ""), []),
+            "tieneInventario": any(k[0] == f_upper for k in con_registros_set),
+            "cerrado": bool(sectores_out) and all(s["cerrado"] for s in sectores_out),
         })
     out = {"fincas": fincas}
     _cache_set(cache_key, out)
@@ -6388,45 +6554,13 @@ def inventario_stock(
     """Stock esperado (Factusol) por referencia+litraje para los sectores de la finca."""
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
-    sectores = [str(s["ID_SECTOR"]) for s in _inventario_sectores_de_finca(finca)]
+    todos = [str(s["ID_SECTOR"]) for s in _inventario_sectores_de_finca(finca)]
     if sector:
-        sectores = [s for s in sectores if s == sector]
-    if not sectores:
-        return {"finca": finca, "filas": []}
-    params: list[Any] = [bigquery.ArrayQueryParameter("sectores", "STRING", sectores)]
-    filtro_sector = ""
-    if sector:
-        filtro_sector = "AND s.CODIGO_SECTOR = @sector"
-        params.append(bigquery.ScalarQueryParameter("sector", "STRING", sector))
-    sql = f"""
-        SELECT s.CODIGO_SECTOR AS sector,
-               COALESCE(s.CODIGO_LITRAJE, '') AS litraje,
-               s.REFERENCIA_ARTICULO AS ref,
-               COALESCE(a.DESCRIPCION_ARTICULO, '') AS nombre,
-               e.CODIGO_EAN AS ean,
-               s.STOCK_ACTUAL AS stock
-        FROM `{PROJECT}.{DATASET}.STOCK` s
-        JOIN `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FINCAS_TABLE}` f
-          ON REGEXP_CONTAINS(s.CODIGO_SECTOR, f.prefijo)
-         AND UPPER(TRIM(f.finca)) = UPPER(@finca)
-        LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = s.REFERENCIA_ARTICULO
-        LEFT JOIN (
-            SELECT REFERENCIA_ARTICULO, CODIGO_LITRAJE, CODIGO_SECTOR,
-                   ANY_VALUE(CODIGO_EAN) AS CODIGO_EAN
-            FROM `{PROJECT}.{DATASET}.CODIGOS_EAN`
-            WHERE CODIGO_EAN IS NOT NULL AND CODIGO_EAN != ''
-            GROUP BY 1, 2, 3
-        ) e ON e.REFERENCIA_ARTICULO = s.REFERENCIA_ARTICULO
-           AND COALESCE(e.CODIGO_LITRAJE, '') = COALESCE(s.CODIGO_LITRAJE, '')
-           AND COALESCE(e.CODIGO_SECTOR, '') = COALESCE(s.CODIGO_SECTOR, '')
-        WHERE s.STOCK_ACTUAL <> 0 {filtro_sector}
-        ORDER BY s.CODIGO_SECTOR, ref, litraje
-    """
-    params.insert(0, bigquery.ScalarQueryParameter("finca", "STRING", finca))
-    rows = [
-        dict(r)
-        for r in client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
-    ]
+        objetivo = [s for s in todos if s == sector]
+        if not objetivo:
+            return {"finca": finca, "filas": []}
+    else:
+        objetivo = todos
     filas = [
         {
             "sector": str(r["sector"]),
@@ -6436,7 +6570,7 @@ def inventario_stock(
             "ean": str(r["ean"] or ""),
             "stock": float(r["stock"] or 0),
         }
-        for r in rows
+        for r in _inventario_esperado(finca, objetivo or None)
     ]
     return {"finca": finca, "filas": filas}
 
@@ -6455,6 +6589,11 @@ class RegistroInventario(BaseModel):
     fuera_sector: bool = False
     reetiquetar: bool = False
     sin_ean: bool = False
+    label_motivo: str = Field(default="", max_length=128)
+    incidencia_texto: str = Field(default="", max_length=500)
+    es_hueco: bool = False
+    modo_inventario: str = Field(default="ESTANDAR", max_length=16)
+    lineal_session_id: str = Field(default="", max_length=64)
     latitud: Optional[float] = Field(default=None, ge=-90, le=90)
     longitud: Optional[float] = Field(default=None, ge=-180, le=180)
     fecha_hora: str = Field(min_length=1, max_length=64)
@@ -6714,7 +6853,7 @@ def inventario_progreso(
                    MAX(latitud) AS latitud, MAX(longitud) AS longitud,
                    MAX(fecha_hora) AS ultima
             FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
-            WHERE finca = @finca {filtro_sector}
+            WHERE finca = @finca {filtro_sector} AND NOT es_hueco
             GROUP BY sector, ref, litraje
             """,
             job_config=bigquery.QueryJobConfig(query_parameters=params),
@@ -6724,7 +6863,10 @@ def inventario_progreso(
         dict(r)
         for r in client.query(
             f"""
-            SELECT sector, SUM(cantidad) AS total, COUNTIF(fuera_sector) AS fuera
+            SELECT sector,
+                   SUM(CASE WHEN NOT es_hueco THEN cantidad ELSE 0 END) AS total,
+                   COUNTIF(fuera_sector AND NOT es_hueco) AS fuera,
+                   COUNTIF(es_hueco) AS huecos
             FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
             WHERE finca = @finca {filtro_sector}
             GROUP BY sector
@@ -6747,7 +6889,12 @@ def inventario_progreso(
             for r in rows
         ],
         "resumen": [
-            {"sector": str(r["sector"]), "total": float(r["total"] or 0), "fuera": int(r["fuera"] or 0)}
+            {
+                "sector": str(r["sector"]),
+                "total": float(r["total"] or 0),
+                "fuera": int(r["fuera"] or 0),
+                "huecos": int(r["huecos"] or 0),
+            }
             for r in resumen_rows
         ],
     }
@@ -6760,33 +6907,10 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
     desc_map = {str(s["ID_SECTOR"]): str(s["DESCRIPCION_SECTOR"] or "") for s in sectores_info}
     objetivo = [sector] if sector and sector in todos else todos
 
-    # Esperado (Factusol)
-    params_e: list[Any] = [
-        bigquery.ArrayQueryParameter("sectores", "STRING", objetivo),
-        bigquery.ScalarQueryParameter("finca", "STRING", finca),
-    ]
-    esperado_rows = [
-        dict(r)
-        for r in client.query(
-            f"""
-            SELECT s.CODIGO_SECTOR AS sector,
-                   COALESCE(lt.DESCRIPCION_LITRAJE, s.CODIGO_LITRAJE, '') AS litraje,
-                   s.REFERENCIA_ARTICULO AS ref,
-                   COALESCE(a.DESCRIPCION_ARTICULO, '') AS nombre,
-                   s.STOCK_ACTUAL AS stock
-            FROM `{PROJECT}.{DATASET}.STOCK` s
-            JOIN `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FINCAS_TABLE}` f
-              ON REGEXP_CONTAINS(s.CODIGO_SECTOR, f.prefijo)
-             AND UPPER(TRIM(f.finca)) = UPPER(@finca)
-            LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = s.REFERENCIA_ARTICULO
-            LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = s.CODIGO_LITRAJE
-            WHERE s.STOCK_ACTUAL <> 0
-              AND s.CODIGO_SECTOR IN UNNEST(@sectores)
-            ORDER BY s.CODIGO_SECTOR, ref, litraje
-            """,
-            job_config=bigquery.QueryJobConfig(query_parameters=params_e),
-        ).result()
-    ]
+    # Esperado (Factusol): por sectores si la finca los tiene; si es una finca
+    # sin sectores (CARREFOUR...) por FINCA_ARTICULO sumando todas sus
+    # combinaciones (D-259).
+    esperado_rows = _inventario_esperado(finca, objetivo or None, litraje_desc=True)
 
     # Contado compartido
     params_c: list[Any] = [bigquery.ScalarQueryParameter("finca", "STRING", finca)]
@@ -6803,10 +6927,25 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         for r in client.query(
             f"""
             SELECT sector, ref_articulo AS ref, COALESCE(litraje, '') AS litraje,
-                   SUM(cantidad) AS contado, COUNT(*) AS eventos
+                   SUM(cantidad) AS contado, COUNT(*) AS eventos,
+                   ANY_VALUE(COALESCE(nombre_planta, '')) AS nombre
             FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
-            WHERE finca = @finca {filtro_sectores} {filtro_desde}
+            WHERE finca = @finca {filtro_sectores} {filtro_desde} AND NOT es_hueco
             GROUP BY sector, ref, litraje
+            """,
+            job_config=bigquery.QueryJobConfig(query_parameters=params_c),
+        ).result()
+    ]
+
+    # D-243: huecos libres del modo lineal (no cuentan como planta).
+    huecos_rows = [
+        dict(r)
+        for r in client.query(
+            f"""
+            SELECT sector, COUNT(*) AS huecos
+            FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
+            WHERE finca = @finca {filtro_sectores} {filtro_desde} AND es_hueco
+            GROUP BY sector
             """,
             job_config=bigquery.QueryJobConfig(query_parameters=params_c),
         ).result()
@@ -6817,15 +6956,21 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         dict(r)
         for r in client.query(
             f"""
-            SELECT record_id, sector, ref_articulo AS ref, COALESCE(litraje, '') AS litraje,
+            SELECT record_id, sector, sectorDesc,
+                   ref_articulo AS ref, COALESCE(litraje, '') AS litraje,
                    COALESCE(sector_etiqueta, '') AS sector_etiqueta,
+                   COALESCE(sectorEtiquetaDesc, '') AS sectorEtiquetaDesc,
                    COALESCE(nombre_planta, '') AS nombre, cantidad,
                    fuera_sector, reetiquetar, sin_ean,
+                   COALESCE(label_motivo, '') AS label_motivo,
+                   COALESCE(incidencia_texto, '') AS incidencia_texto,
+                   es_hueco, modo_inventario,
                    ean_escaneado, ocr_texto, latitud, longitud, fecha_hora,
                    COALESCE(empleado_nombre, '') AS empleado
             FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
             WHERE finca = @finca {filtro_sectores} {filtro_desde}
               AND (fuera_sector OR reetiquetar OR sin_ean)
+              AND NOT es_hueco
             ORDER BY fecha_hora DESC
             LIMIT 1000
             """,
@@ -6838,21 +6983,23 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         dict(r)
         for r in client.query(
             f"""
-            SELECT record_id, sector, ref_articulo AS ref, COALESCE(litraje, '') AS litraje,
-                   COALESCE(sector_etiqueta, '') AS sector_etiqueta,
-                   COALESCE(nombre_planta, '') AS nombre, cantidad,
-                   fuera_sector, reetiquetar, sin_ean,
-                   latitud, longitud, fecha_hora,
-                   COALESCE(empleado_nombre, '') AS empleado
-            FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
-            WHERE finca = @finca {filtro_sectores} {filtro_desde}
-              AND latitud IS NOT NULL AND longitud IS NOT NULL
-            ORDER BY fecha_hora DESC
-            LIMIT 2000
-            """,
-            job_config=bigquery.QueryJobConfig(query_parameters=params_c),
-        ).result()
-    ]
+             SELECT record_id, sector, ref_articulo AS ref, COALESCE(litraje, '') AS litraje,
+                    COALESCE(sector_etiqueta, '') AS sector_etiqueta,
+                    COALESCE(nombre_planta, '') AS nombre, cantidad,
+                    fuera_sector, reetiquetar, sin_ean,
+                    COALESCE(lineal_session_id, '') AS lineal_session_id,
+                    latitud, longitud, fecha_hora,
+                    COALESCE(empleado_nombre, '') AS empleado
+             FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
+             WHERE finca = @finca {filtro_sectores} {filtro_desde}
+               AND latitud IS NOT NULL AND longitud IS NOT NULL
+               AND NOT es_hueco
+             ORDER BY fecha_hora ASC
+             LIMIT 2000
+             """,
+             job_config=bigquery.QueryJobConfig(query_parameters=params_c),
+         ).result()
+     ]
 
     puntos_gps = []
     for r in gps_rows:
@@ -6882,6 +7029,7 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
             "litraje": lit,
             "nombre": str(r["nombre"] or ""),
             "cantidad": float(r["cantidad"] or 0),
+            "linealSessionId": str(r.get("lineal_session_id") or ""),
             "latitud": float(r["latitud"]),
             "longitud": float(r["longitud"]),
             "fechaHora": str(r["fecha_hora"]).replace("T", " ")[:19] if r.get("fecha_hora") else "",
@@ -6893,16 +7041,20 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
     esperado: dict[tuple[str, str, str], dict[str, Any]] = {}
     for r in esperado_rows:
         key = (str(r["sector"]), str(r["ref"]), str(r["litraje"] or ""))
-        esperado[key] = {
-            "sector": key[0],
-            "sectorDesc": desc_map.get(key[0], ""),
-            "ref": key[1],
-            "litraje": key[2],
-            "nombre": str(r["nombre"] or ""),
-            "esperado": float(r["stock"] or 0),
-            "contado": 0.0,
-            "eventos": 0,
-        }
+        acc = esperado.get(key)
+        if acc is None:
+            esperado[key] = {
+                "sector": key[0],
+                "sectorDesc": desc_map.get(key[0], ""),
+                "ref": key[1],
+                "litraje": key[2],
+                "nombre": str(r["nombre"] or ""),
+                "esperado": 0.0,
+                "contado": 0.0,
+                "eventos": 0,
+            }
+            acc = esperado[key]
+        acc["esperado"] += float(r["stock"] or 0)
     for r in contado_rows:
         key = (str(r["sector"]), str(r["ref"]), str(r["litraje"] or ""))
         fila = esperado.setdefault(
@@ -6920,6 +7072,8 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         )
         fila["contado"] += float(r["contado"] or 0)
         fila["eventos"] += int(r["eventos"] or 0)
+        if not fila["nombre"] and r.get("nombre"):
+            fila["nombre"] = str(r["nombre"])
     lineas = sorted(esperado.values(), key=lambda f: (f["sector"], f["ref"], f["litraje"]))
     for f in lineas:
         dif = f["contado"] - f["esperado"]
@@ -6936,7 +7090,9 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         return {
             "recordId": str(r["record_id"]),
             "sector": str(r["sector"]),
+            "sectorDesc": str(r.get("sectorDesc") or r["sector"]),
             "sectorEtiqueta": str(r["sector_etiqueta"] or ""),
+            "sectorEtiquetaDesc": str(r.get("sectorEtiquetaDesc") or r.get("sector_etiqueta") or ""),
             "ref": str(r["ref"] or ""),
             "litraje": str(r["litraje"] or ""),
             "nombre": str(r["nombre"] or ""),
@@ -6944,6 +7100,10 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
             "fueraSector": bool(r["fuera_sector"]),
             "reetiquetar": bool(r["reetiquetar"]),
             "sinEan": bool(r["sin_ean"]),
+            "motivo": str(r.get("label_motivo") or ""),
+            "incidenciaTexto": str(r.get("incidencia_texto") or ""),
+            "esHueco": bool(r.get("es_hueco") or False),
+            "modoInventario": str(r.get("modo_inventario") or "ESTANDAR"),
             "fechaHora": str(r["fecha_hora"]).replace("T", " ")[:19] if r.get("fecha_hora") else "",
             "empleado": str(r["empleado"] or ""),
             "latitud": (float(r["latitud"]) if r.get("latitud") is not None else None),
@@ -6969,6 +7129,14 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         for r in detalle_rows
         if (r["reetiquetar"] or r["sin_ean"]) and not r["fuera_sector"]
     ]
+    huecos = [
+        {
+            "sector": str(r["sector"] or ""),
+            "sectorDesc": desc_map.get(str(r["sector"] or ""), ""),
+            "huecos": int(r["huecos"] or 0),
+        }
+        for r in huecos_rows
+    ]
     return {
         "generado": datetime.now(timezone.utc).isoformat(),
         "finca": finca,
@@ -6988,6 +7156,7 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         "lineas": lineas,
         "fueraSector": fuera,
         "etiquetas": etiquetas,
+        "huecos": huecos,
         "puntosGps": puntos_gps,
     }
 
@@ -7154,7 +7323,7 @@ def inventario_partes(
 
 class InventarioFaenaBody(BaseModel):
     finca: str = Field(min_length=1, max_length=64)
-    sector: str = Field(min_length=1, max_length=32)
+    sector: str = Field(default="", max_length=32)
     operarios: list[str] = Field(default_factory=list, max_length=50)
 
 
@@ -7165,23 +7334,48 @@ def inventario_operarios(
 ):
     _verify_inventario_key(k, x_api_key)
     _ensure_operarios_table()
-    rows = _query(
+    _ensure_encargados_table()
+    result = []
+    ops = _query(
         f"""
         SELECT email, nombre, modo, activo
         FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`
-        ORDER BY nombre
         """
     )
-    return {"operarios": [
-        {
+    for r in ops:
+        if r.get("activo") is False:
+            continue
+        modo = str(r.get("modo") or "ACOPIO")
+        if modo not in ("INVENTARIO", "AMBAS"):
+            continue
+        result.append({
             "email": str(r.get("email") or ""),
             "nombre": str(r.get("nombre") or r.get("email") or ""),
-            "modo": str(r.get("modo") or "ACOPIO"),
-            "activo": r.get("activo") is not False,
-        }
-        for r in rows
-        if r.get("activo") is not False
-    ]}
+            "modo": modo,
+            "rol": "INVENTARIO" if modo == "INVENTARIO" else "ACOPIO",
+            "activo": True,
+        })
+    encs = _query(
+        f"""
+        SELECT email, nombre, modo, activo
+        FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`
+        """
+    )
+    for r in encs:
+        if r.get("activo") is False:
+            continue
+        modo = str(r.get("modo") or "PICKING")
+        if modo not in ("INVENTARIO", "AMBAS"):
+            continue
+        result.append({
+            "email": str(r.get("email") or ""),
+            "nombre": str(r.get("nombre") or r.get("email") or ""),
+            "modo": modo,
+            "rol": "ENCARGADO",
+            "activo": True,
+        })
+    result.sort(key=lambda x: (x["nombre"] or "").lower())
+    return {"operarios": result}
 
 
 @app.get("/api/inventario/faena")
@@ -7206,6 +7400,55 @@ def inventario_faena_get(
     return {"faena": [dict(r) for r in rows]}
 
 
+def _faena_operario_map() -> dict[str, str]:
+    """email(minusculas) -> nombre de operarios y encargados para la faena."""
+    op_map: dict[str, str] = {}
+    for r in _query(
+        f"SELECT email, nombre FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`"
+    ):
+        em = str(r.get("email") or "").strip().lower()
+        if em:
+            op_map[em] = str(r.get("nombre") or r.get("email") or "")
+    for r in _query(
+        f"SELECT email, nombre FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`"
+    ):
+        em = str(r.get("email") or "").strip().lower()
+        if em and em not in op_map:
+            op_map[em] = str(r.get("nombre") or r.get("email") or "")
+    return op_map
+
+
+def _faena_delete(sql: str, params: list) -> None:
+    """Borra filas de faena reintentando si BigQuery devuelve el error de
+    'streaming buffer' (filas recien insertadas por streaming no se pueden
+    borrar hasta que el buffer se descarga, normalmente en segundos)."""
+    from google.api_core.exceptions import BadRequest
+
+    for _i in range(4):
+        try:
+            client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
+            return
+        except BadRequest as e:
+            if "streaming buffer" not in str(e):
+                raise
+            time.sleep(3)
+
+
+def _faena_filas_de(op_map: dict[str, str], finca: str, sector: str, operarios: list[str]) -> list[dict[str, Any]]:
+    filas = []
+    for email in operarios:
+        em = str(email).strip().lower()
+        if em in op_map:
+            filas.append({
+                "finca": finca.upper(),
+                "sector": sector,
+                "operario_email": email,
+                "operario_nombre": op_map[em],
+                "creado_en": datetime.now(timezone.utc).isoformat(),
+            })
+    return filas
+
+
 @app.post("/api/inventario/faena")
 def inventario_faena_post(
     body: InventarioFaenaBody,
@@ -7215,32 +7458,19 @@ def inventario_faena_post(
 ):
     _verify_inventario_key(k, x_api_key)
     _ensure_inventario_tables()
-    client.query(
+    _faena_delete(
         f"""
         DELETE FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FAENA_TABLE}`
         WHERE UPPER(TRIM(finca)) = UPPER(TRIM(@finca)) AND sector = @sector
         """,
-        job_config=bigquery.QueryJobConfig(query_parameters=[
+        [
             bigquery.ScalarQueryParameter("finca", "STRING", body.finca),
             bigquery.ScalarQueryParameter("sector", "STRING", body.sector),
-        ]),
-    ).result()
+        ],
+    )
     if body.operarios:
-        ops = _query(
-            f"SELECT email, nombre FROM `{PROJECT}.{PICKING_DATASET}.{OPERARIOS_TABLE}`"
-        )
-        op_map = {str(o["email"]).lower(): str(o.get("nombre") or o["email"]) for o in ops}
-        filas = []
-        for email in body.operarios:
-            em = str(email).lower()
-            if em in op_map:
-                filas.append({
-                    "finca": body.finca.upper(),
-                    "sector": body.sector,
-                    "operario_email": email,
-                    "operario_nombre": op_map[em],
-                    "creado_en": datetime.now(timezone.utc).isoformat(),
-                })
+        op_map = _faena_operario_map()
+        filas = _faena_filas_de(op_map, body.finca, body.sector, body.operarios)
         if filas:
             errors = client.insert_rows_json(
                 f"{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FAENA_TABLE}", filas
@@ -7251,22 +7481,67 @@ def inventario_faena_post(
     return {"ok": True, "asignados": len(body.operarios)}
 
 
+class InventarioFaenaBulkBody(BaseModel):
+    asignaciones: list[InventarioFaenaBody] = Field(default_factory=list, max_length=500)
+
+
+@app.post("/api/inventario/faena/bulk")
+def inventario_faena_bulk(
+    body: InventarioFaenaBulkBody,
+    request: Request,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    """Guarda el reparto de inventario COMPLETO de golpe: borra la faena de
+    todas las fincas recibidas y reinserta las asignaciones marcadas."""
+    _verify_inventario_key(k, x_api_key)
+    _ensure_inventario_tables()
+    fincas = list({a.finca.strip().upper() for a in body.asignaciones if a.finca.strip()})
+    if not fincas:
+        return {"ok": True, "asignados": 0, "fincas": 0}
+    _faena_delete(
+        f"""
+        DELETE FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FAENA_TABLE}`
+        WHERE UPPER(TRIM(finca)) IN UNNEST(@fincas)
+        """,
+        [bigquery.ArrayQueryParameter("fincas", "STRING", fincas)],
+    )
+    op_map = _faena_operario_map()
+    total = 0
+    for a in body.asignaciones:
+        filas = _faena_filas_de(op_map, a.finca, a.sector, a.operarios)
+        if filas:
+            errors = client.insert_rows_json(
+                f"{PROJECT}.{PICKING_DATASET}.{INVENTARIO_FAENA_TABLE}", filas
+            )
+            if errors:
+                raise HTTPException(status_code=500, detail=str(errors[:5]))
+        total += len(filas)
+    _fincas_cache.pop("inv_fincas", None)
+    return {"ok": True, "asignados": total, "fincas": len(fincas)}
+
+
 @app.get("/api/inventario/fechas")
 def inventario_fechas(
-    finca: str = Query(...),
+    finca: Optional[str] = Query(None, description="Finca concreta (opcional: si se omite, fechas de cualquier finca)"),
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
     _verify_inventario_key(k, x_api_key)
     _ensure_inventario_tables()
+    params: list[Any] = []
+    where = ""
+    if finca:
+        where = "WHERE UPPER(TRIM(finca)) = UPPER(TRIM(@finca))"
+        params.append(bigquery.ScalarQueryParameter("finca", "STRING", finca))
     rows = client.query(
         f"""
         SELECT DISTINCT SUBSTR(CAST(fecha_hora AS STRING), 1, 10) AS fecha
         FROM `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_VIEW}`
-        WHERE UPPER(TRIM(finca)) = UPPER(TRIM(@finca))
+        {where}
         ORDER BY fecha DESC
         """,
-        job_config=bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("finca", "STRING", finca)]),
+        job_config=bigquery.QueryJobConfig(query_parameters=params),
     ).result()
     return {"fechas": [str(r["fecha"]) for r in rows]}
 
@@ -7276,6 +7551,13 @@ def inventario_web(k: Optional[str] = Query(default=None)):
     if k != INVENTARIO_WEB_TOKEN:
         raise HTTPException(404, "Not found")
     return FileResponse(os.path.join(INVENTARIO_WEB_DIR, "index.html"))
+
+
+@app.get("/inventario/prototipo")
+def inventario_prototipo(k: Optional[str] = Query(default=None)):
+    if k != INVENTARIO_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(INVENTARIO_WEB_DIR, "prototipo.html"))
 
 
 @app.get("/inventario/logo_viveros_sin_palmera.png")

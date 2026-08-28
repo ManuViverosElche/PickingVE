@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prototipo · Mapa simulado al centímetro · LA FÁBRICA S52</title>
+<style>
+  :root {
+    --verde: #025C65;
+    --verde-claro: #35b8ac;
+    --rojo: #962622;
+    --ambar: #D9A404;
+    --fondo: #F4F7F6;
+    --card: #ffffff;
+    --texto: #12333a;
+    --mut: #5c7778;
+    --borde: #d8e6e3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+    padding: 20px;
+  }
+  h1 { font-size: 20px; color: var(--verde); font-weight: 800; }
+  .subtitulo { color: var(--mut); font-size: 13px; margin-top: 4px; }
+  .resumen {
+    display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0;
+  }
+  .kpi {
+    background: var(--card); border: 1px solid var(--borde);
+    border-radius: 12px; padding: 12px 18px; flex: 1; min-width: 150px;
+  }
+  .kpi .num { font-size: 26px; font-weight: 800; color: var(--verde); font-variant: tabular-nums; }
+  .kpi .lbl { font-size: 12px; color: var(--mut); }
+  .kpi.rojo .num { color: var(--rojo); }
+  .kpi.ambar .num { color: var(--ambar); }
+  .paneles { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .paneles { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card); border: 1px solid var(--borde);
+    border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(2,92,101,.08);
+  }
+  .panel h2 { font-size: 15px; color: var(--verde); font-weight: 800; margin-bottom: 2px; }
+  .panel .nota { font-size: 12px; color: var(--mut); margin-bottom: 10px; }
+  .panel canvas { width: 100%; border-radius: 8px; background: #f0f7f5; }
+  .leyenda { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--texto); }
+  .leyenda .item { display: flex; align-items: center; gap: 6px; }
+  .leyenda .chip { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+  .leyenda .chip.linea { width: 22px; height: 4px; border-radius: 2px; }
+  .pie { margin-top: 16px; font-size: 12px; color: var(--mut); line-height: 1.5; }
+  .badge { display:inline-block; background: var(--verde); color:#fff; border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight:700; margin-left: 8px; vertical-align: middle;}
+</style>
+</head>
+<body>
+
+<h1>Mapa de inventario: GPS real vs. Simulado al centímetro</h1>
+<div class="subtitulo">LA FÁBRICA · Sector 52 (A21) · Modo LINEAL · Operario: Manuel · 28/08/2026 13:42–13:45 · 1 lineal completado</div>
+
+<div class="resumen">
+  <div class="kpi"><div class="num">48</div><div class="lbl">Registros del lineal</div></div>
+  <div class="kpi rojo"><div class="num">3</div><div class="lbl">Coordenadas GPS distintas (36 registros solapados)</div></div>
+  <div class="kpi ambar"><div class="num">24 m</div><div class="lbl">Longitud A→B (aproximada)</div></div>
+  <div class="kpi"><div class="num">≈50 cm</div><div class="lbl">Separación simulada entre plantas</div></div>
+</div>
+
+<div class="paneles">
+  <!-- Panel izquierdo: GPS real -->
+  <div class="panel">
+    <h2>① Mapa GPS real (el que ya funciona)</h2>
+    <div class="nota">48 puntos geolocalizados. Los bloques inicial y final se solapan porque el GPS no diferencia centímetros.</div>
+    <canvas id="real" width="600" height="300"></canvas>
+    <div class="leyenda">
+      <div class="item"><span class="chip" style="background:#025C65"></span> 12 plantas en A</div>
+      <div class="item"><span class="chip" style="background:#35b8ac"></span> 12 plantas interpoladas</div>
+      <div class="item"><span class="chip" style="background:#962622"></span> 24 plantas en B</div>
+    </div>
+  </div>
+
+  <!-- Panel derecho: simulado -->
+  <div class="panel">
+    <h2>② Mapa simulado al centímetro (propuesta)<span class="badge">NUEVO</span></h2>
+    <div class="nota">Los 48 registros se reparten por orden cronológico entre A y B: cada planta a ~50 cm, huecos incluidos.</div>
+    <canvas id="sim" width="600" height="300"></canvas>
+    <div class="leyenda">
+      <div class="item"><span class="chip" style="background:#025C65"></span> Planta (11317-FA-26 · 170L)</div>
+      <div class="item"><span class="chip" style="border:2px dashed #D9A404; background:transparent"></span> Hueco libre</div>
+      <div class="item"><span class="chip linea" style="background:#025C65"></span> Sentido de barrido A→B</div>
+    </div>
+  </div>
+</div>
+
+<div class="pie">
+  <b>Cómo se lee:</b> arriba, la geolocalización real (útil para ver la dispersión general de la finca).
+  Abajo, la reconstrucción lineal: cada registro del pistoleo (por orden de escaneo) ocupa su posición física
+  dentro del bancal A→B, sin solapamientos. El primer registro (13:42:15) es un <b>hueco libre</b> y se dibuja
+  como anillo discontinuo; el resto son plantas del contenedor 170L. El siguiente lineal de este sector se simularía
+  en sentido B→A (ida y vuelta), respetando el orden real de escaneo.
+</div>
+
+<script>
+// ---- Datos reales extraídos de BigQuery (pickingve.inventario_registros_v) ----
+// finca=LA FÁBRICA, sector=A21 (S52), modo LINEAL, 28/08/2026, operario Manuel.
+// h = hora local, hueco = es_hueco, lat/lng = coordenadas reales guardadas.
+const DATOS = [
+  {h:"13:42:15",hueco:true, lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:21",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:24",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:27",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:30",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:33",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:36",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:39",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:42",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:45",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:49",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:42:52",            lat:38.3165319,                    lng:-0.818706},
+  {h:"13:43:08",            lat:38.316535484615386,            lng:-0.8187267461538462},
+  {h:"13:43:12",            lat:38.31653906923077,             lng:-0.8187474923076924},
+  {h:"13:43:15",            lat:38.316542653846156,            lng:-0.8187682384615385},
+  {h:"13:43:18",            lat:38.31654623846154,             lng:-0.8187889846153846},
+  {h:"13:43:21",            lat:38.316549823076926,            lng:-0.8188097307692308},
+  {h:"13:43:24",            lat:38.31655340769231,             lng:-0.818830476923077},
+  {h:"13:43:27",            lat:38.31655699230769,             lng:-0.818851223076923},
+  {h:"13:43:31",            lat:38.316560576923074,            lng:-0.8188719692307692},
+  {h:"13:43:35",            lat:38.31656416153846,             lng:-0.8188927153846154},
+  {h:"13:43:38",            lat:38.316567746153844,            lng:-0.8189134615384616},
+  {h:"13:43:41",            lat:38.31657133076923,             lng:-0.8189342076923076},
+  {h:"13:43:44",            lat:38.316574915384614,            lng:-0.8189549538461538},
+  {h:"13:43:58",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:01",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:04",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:07",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:10",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:13",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:16",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:19",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:22",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:25",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:27",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:30",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:41",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:45",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:48",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:50",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:53",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:56",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:44:59",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:45:02",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:45:06",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:45:09",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:45:12",            lat:38.3165785,                    lng:-0.8189757},
+  {h:"13:45:15",            lat:38.3165785,                    lng:-0.8189757},
+];
+
+// Punto A (primera coordenada) y punto B (última coordenada) del lineal.
+const A = { lat: DATOS[0].lat, lng: DATOS[0].lng };
+const B = { lat: DATOS[DATOS.length-1].lat, lng: DATOS[DATOS.length-1].lng };
+
+// ---- Panel 1: mapa GPS real (zoom al bounding box del lineal) ----
+(function () {
+  const cv = document.getElementById('real');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const pad = 50;
+
+  const lats = DATOS.map(d => d.lat), lngs = DATOS.map(d => d.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+
+  function proj(lat, lng) {
+    const x = pad + (lng - minLng) / (maxLng - minLng || 1e-9) * (W - 2*pad);
+    const y = H - pad - (lat - minLat) / (maxLat - minLat || 1e-9) * (H - 2*pad);
+    return [x, y];
+  }
+
+  ctx.clearRect(0,0,W,H);
+  // cuadrícula
+  ctx.strokeStyle = '#d8e6e3'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const gx = pad + i*(W-2*pad)/4;
+    ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke();
+    const gy = pad + i*(H-2*pad)/4;
+    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke();
+  }
+
+  // A y B
+  const [ax,ay] = proj(A.lat, A.lng);
+  const [bx,by] = proj(B.lat, B.lng);
+
+  // bloques solapados: agrupar coordenadas por redondeo a 6 decimales
+  const grupos = new Map();
+  DATOS.forEach(d => {
+    const k = d.lat.toFixed(6) + '|' + d.lng.toFixed(6);
+    if (!grupos.has(k)) grupos.set(k, { lat:d.lat, lng:d.lng, n:0, huecos:0 });
+    grupos.get(k).n++;
+    if (d.hueco) grupos.get(k).huecos++;
+  });
+
+  // dibujar nube según densidad (tamaño del círculo ∝ nº de registros)
+  [...grupos.values()].forEach(g => {
+    const [x,y] = proj(g.lat, g.lng);
+    const r = 8 + g.n * 1.6;
+    const color = g.n > 20 ? '#962622' : (g.n > 10 ? '#025C65' : '#35b8ac');
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle = color; ctx.globalAlpha = 0.75; ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(g.n, x, y);
+  });
+
+  // etiquetas A y B
+  ctx.font = 'bold 13px system-ui'; ctx.textAlign='center';
+  ctx.fillStyle = '#025C65'; ctx.fillText('A · inicio (13:42:15)', ax, ay - 24);
+  ctx.fillStyle = '#962622'; ctx.fillText('B · fin (13:45:15)', bx, by - 24);
+  ctx.fillStyle = '#5c7778'; ctx.font='11px system-ui';
+  ctx.fillText('Δlat ≈ 5 m · Δlng ≈ 24 m', W/2, H - 8);
+})();
+
+// ---- Panel 2: mapa simulado al centímetro (interpolación lineal A→B) ----
+(function () {
+  const cv = document.getElementById('sim');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const padL = 46, padR = 46, top = 40, bottom = 84;
+  const n = DATOS.length;
+
+  const laneY = top + (H - top - bottom) / 2;
+  const x0 = padL, x1 = W - padR;
+  const span = x1 - x0;
+
+  function simPos(i) {
+    // t = i/(n-1): el primero cae en A, el último en B. Huecos incluidos.
+    const t = n <= 1 ? 0 : i / (n - 1);
+    const lat = A.lat + (B.lat - A.lat) * t;
+    const lng = A.lng + (B.lng - A.lng) * t;
+    return { x: x0 + t * span, lat, lng };
+  }
+
+  ctx.clearRect(0,0,W,H);
+
+  // flecha de sentido A→B
+  ctx.strokeStyle = '#d8e6e3'; ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(x0, laneY); ctx.lineTo(x1, laneY); ctx.stroke();
+
+  // banda del bancal
+  ctx.strokeStyle = '#025C65'; ctx.lineWidth = 5; ctx.globalAlpha = 0.25;
+  ctx.beginPath(); ctx.moveTo(x0, laneY); ctx.lineTo(x1, laneY); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // flecha direccional
+  ctx.fillStyle = '#025C65'; ctx.strokeStyle = '#025C65'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  const midX = x0 + span*0.5;
+  ctx.moveTo(midX - 12, laneY - 14); ctx.lineTo(midX + 6, laneY - 14); ctx.lineTo(midX, laneY - 22); ctx.closePath(); ctx.fill();
+
+  // marcadores por registro
+  DATOS.forEach((d, i) => {
+    const { x } = simPos(i);
+    const y = laneY;
+    if (d.hueco) {
+      // anillo discontinuo ámbar
+      ctx.strokeStyle = '#D9A404'; ctx.lineWidth = 3; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2);
+      ctx.fillStyle = '#025C65'; ctx.fill();
+    }
+    // número pequeño bajo el punto (espaciado) 
+    ctx.fillStyle = '#5c7778'; ctx.font = '9px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    if (i % 3 === 0) ctx.fillText(i+1, x, laneY + 10);
+  });
+
+  // marcadores A / B destacados
+  ctx.setLineDash([]);
+  [[x0,'A', '#025C65'],[x1,'B','#962622']].forEach(([xp, lb, col]) => {
+    ctx.beginPath(); ctx.arc(xp, laneY, 8, 0, Math.PI*2);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = col; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText(lb, xp, laneY - 22);
+    ctx.fillStyle = '#5c7778'; ctx.font = '11px system-ui';
+    ctx.fillText(xp === x0 ? '13:42:15' : '13:45:15', xp, laneY + 22);
+  });
+
+  // flecha de sentido sobre la banda
+  ctx.fillStyle = '#025C65';
+  ctx.beginPath();
+  ctx.moveTo(x0 + span*0.5 - 10, laneY - 30);
+  ctx.lineTo(x0 + span*0.5 + 10, laneY - 30);
+  ctx.lineTo(x0 + span*0.5, laneY - 38);
+  ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 12px system-ui'; ctx.fillStyle = '#025C65'; ctx.textAlign='center';
+  ctx.fillText('Sentido de barrido A→B (por orden de escaneo)', x0 + span*0.5, laneY - 46);
+
+  // escala de distancia (simulada)
+  const metros = 24; // aprox A→B
+  ctx.font = '11px system-ui'; ctx.fillStyle = '#5c7778';
+  ctx.textAlign = 'left';
+  ctx.fillText('0 m (A)', x0, H - 26);
+  ctx.textAlign = 'right';
+  ctx.fillText('≈ 24 m (B)', x1, H - 26);
+  ctx.strokeStyle = '#5c7778'; ctx.lineWidth = 1; ctx.setLineDash([2,3]);
+  ctx.beginPath(); ctx.moveTo(x0, H - 20); ctx.lineTo(x1, H - 20); ctx.stroke();
+  ctx.setLineDash([]);
+  for (let m = 0; m <= 24; m += 4) {
+    const t = m / 24;
+    const x = x0 + t * span;
+    ctx.beginPath(); ctx.moveTo(x, H - 24); ctx.lineTo(x, H - 16); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.fillStyle = '#5c7778';
+    ctx.fillText(m + 'm', x, H - 40);
+  }
+  // separación por planta
+  ctx.fillStyle = '#025C65'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText('48 registros repartidos → separación ≈ 50 cm', x0, top - 16);
+})();
+</script>
+</body>
+</html>

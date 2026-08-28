@@ -70,8 +70,19 @@ class LoginViewModel(
     }
 
     /**
-     * D-192: login unificado — el usuario escribe SU USUARIO (encargado) o su
-     * EMAIL (operario) y la app detecta el tipo probando ambas tablas.
+     * D-233: al cerrar sesión, limpia el estado del login. Sin esto, `success`
+     * seguía a true tras un login y LoginScreen volvía a entrar solo (el cierre
+     * de sesión "recargaba" la pantalla pero no salía).
+     */
+    fun reset() {
+        _state.value = LoginUiState()
+        cargarUsuarios()
+    }
+
+    /**
+     * D-192/D-201: login unificado por email — la app detecta el tipo probando
+     * ambas tablas. D-200: feedback inmediato (loading real) y registro FCM
+     * fuera del camino critico para no ralentizar el acceso.
      */
     fun login(seleccion: String, password: String) {
         if (password.isBlank()) {
@@ -79,43 +90,58 @@ class LoginViewModel(
             return
         }
         viewModelScope.launch {
-            val esOperario = seleccion.startsWith(PREFIJO_OPERARIO)
-            val clave = when {
-                seleccion.startsWith(PREFIJO_OPERARIO) -> seleccion.removePrefix(PREFIJO_OPERARIO)
-                seleccion.startsWith(PREFIJO_ENCARGADO) -> seleccion.removePrefix(PREFIJO_ENCARGADO)
-                else -> seleccion
-            }
-            // D-192: si el texto parece email, probar primero como operario
-            val orden: List<Int> = if (esOperario || clave.contains("@")) listOf(1, 0) else listOf(0, 1)
-            var errorRed: String? = null
-            for (tipo in orden) {
-                if (tipo == 1) {
-                    val local = repository.loginOperarioLocal(clave, password)
-                    if (local != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
-                    val remoto = try {
-                        repository.loginOperarioRemoto(api, clave, password)
-                    } catch (e: Exception) {
-                        Log.e("PickingVE", "loginOperarioRemoto excepcion: ${e.javaClass.name}: ${e.message}", e)
-                        errorRed = Errores.traducir(e)
-                        null
-                    }
-                    if (remoto != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
-                } else {
-                    val local = repository.loginEncargadoLocal(clave, password)
-                    if (local != null) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
-                    val remoto = try {
-                        repository.loginEncargadoRemoto(api, clave, password)
-                    } catch (e: Exception) {
-                        Log.e("PickingVE", "loginEncargadoRemoto excepcion: ${e.javaClass.name}: ${e.message}", e)
-                        errorRed = Errores.traducir(e)
-                        false
-                    }
-                    if (remoto) { registrarTokenPush(); _state.value = LoginUiState(success = true); return@launch }
+            _state.value = _state.value.copy(loading = true, error = null)
+            try {
+                val esOperario = seleccion.startsWith(PREFIJO_OPERARIO)
+                val clave = when {
+                    seleccion.startsWith(PREFIJO_OPERARIO) -> seleccion.removePrefix(PREFIJO_OPERARIO)
+                    seleccion.startsWith(PREFIJO_ENCARGADO) -> seleccion.removePrefix(PREFIJO_ENCARGADO)
+                    else -> seleccion
                 }
+                // D-192: si el texto parece email, probar primero como operario
+                val orden: List<Int> =
+                    if (esOperario || clave.contains("@")) listOf(1, 0) else listOf(0, 1)
+                var errorRed: String? = null
+                bucle@ for (tipo in orden) {
+                    if (tipo == 1) {
+                        val local = repository.loginOperarioLocal(clave, password)
+                        if (local != null) { exito(); return@launch }
+                        val remoto = try {
+                            repository.loginOperarioRemoto(api, clave, password)
+                        } catch (e: Exception) {
+                            Log.e("PickingVE", "loginOperarioRemoto excepcion: ${e.javaClass.name}: ${e.message}", e)
+                            errorRed = mensajeLogin(e)
+                            break@bucle
+                        }
+                        if (remoto != null) { exito(); return@launch }
+                    } else {
+                        val local = repository.loginEncargadoLocal(clave, password)
+                        if (local != null) { exito(); return@launch }
+                        val remoto = try {
+                            repository.loginEncargadoRemoto(api, clave, password)
+                        } catch (e: Exception) {
+                            Log.e("PickingVE", "loginEncargadoRemoto excepcion: ${e.javaClass.name}: ${e.message}", e)
+                            errorRed = mensajeLogin(e)
+                            break@bucle
+                        }
+                        if (remoto) { exito(); return@launch }
+                    }
+                }
+                _state.value = _state.value.copy(error = errorRed ?: "Usuario o contraseña incorrectos")
+            } finally {
+                _state.value = _state.value.copy(loading = false)
             }
-            _state.value = _state.value.copy(error = errorRed ?: "Usuario o contraseña incorrectos")
         }
     }
+
+    private fun exito() {
+        // D-200: el token push se registra en segundo plano; no bloquea entrar.
+        viewModelScope.launch { registrarTokenPush() }
+        _state.value = LoginUiState(success = true)
+    }
+
+    private fun mensajeLogin(e: Exception): String =
+        if (Errores.esErrorDeRed(e)) Errores.SIN_CONEXION_LOGIN else Errores.traducir(e)
 
     private suspend fun registrarTokenPush() {
         try {

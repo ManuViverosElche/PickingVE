@@ -1,54 +1,39 @@
 package com.vivero.pickingve.ui.mode
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vivero.pickingve.ui.inventario.InvInicioScreen
+import com.vivero.pickingve.ui.inventario.InvPantallaScreen
+import com.vivero.pickingve.ui.inventario.InvSectorScreen
+import com.vivero.pickingve.ui.inventario.InvViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Punto de entrada del modulo de inventario (D-219): encadena la selección de
+ * finca y sector con la pantalla de pistoleo, según el estado del ViewModel.
+ */
 @Composable
-fun InventarioScreen(onBack: (() -> Unit)?) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Inventario") },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
-                        }
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("Modo inventario", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "En desarrollo",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+fun InventarioScreen(
+    viewModel: InvViewModel,
+    onBack: (() -> Unit)?,
+    onLogout: () -> Unit = {}
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    when {
+        state.sectorSeleccionado != null -> InvPantallaScreen(
+            viewModel = viewModel,
+            onBack = { viewModel.volverASeleccionSector() },
+            onLogout = onLogout
+        )
+        state.fincaSeleccionada != null -> InvSectorScreen(
+            viewModel = viewModel,
+            onBack = { viewModel.volverAFincas() },
+            onLogout = onLogout
+        )
+        else -> InvInicioScreen(
+            viewModel = viewModel,
+            onBack = onBack,
+            onLogout = onLogout
+        )
     }
 }

@@ -21,6 +21,13 @@ interface EncargadoDao {
     @Query("SELECT * FROM encargados WHERE usuario = :usuario LIMIT 1")
     suspend fun findByUsuario(usuario: String): EncargadoEntity?
 
+    /** D-201: login por email obligatorio; resuelve tambien por email. */
+    @Query(
+        "SELECT * FROM encargados " +
+            "WHERE LOWER(usuario) = LOWER(:valor) OR LOWER(email) = LOWER(:valor) LIMIT 1"
+    )
+    suspend fun findByUsuarioOEmail(valor: String): EncargadoEntity?
+
     @Query("UPDATE encargados SET passwordHash = :hash WHERE usuario = :usuario")
     suspend fun updatePasswordHash(usuario: String, hash: String)
 

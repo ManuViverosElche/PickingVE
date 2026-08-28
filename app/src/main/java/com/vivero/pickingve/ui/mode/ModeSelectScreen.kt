@@ -26,6 +26,9 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ModeSelectScreen(
     encargadoNombre: String,
+    mostrarFaena: Boolean = true,
+    mostrarPanel: Boolean = false,
+    onPanel: () -> Unit = {},
     onPicking: () -> Unit,
     onInventario: () -> Unit,
     onLogistica: () -> Unit = {},
@@ -51,11 +54,23 @@ fun ModeSelectScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text("Selecciona el modo de trabajo", style = MaterialTheme.typography.titleMedium)
-            Button(
-                onClick = onLogistica,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Mi faena (logística)")
+            // D-208: "Mi faena" oculta para SUPERUSUARIO sin rol de operario activo.
+            if (mostrarFaena) {
+                Button(
+                    onClick = onLogistica,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Mi faena (logística)")
+                }
+            }
+            // D-213: panel de logistica (paridad con el panel web) para superusuarios.
+            if (mostrarPanel) {
+                Button(
+                    onClick = onPanel,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Panel de logística")
+                }
             }
             OutlinedButton(
                 onClick = onPicking,

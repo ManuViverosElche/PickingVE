@@ -46,6 +46,11 @@ class PickingFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
         val data = remoteMessage.data
+        // D-207: un usuario nunca se notifica a si mismo sus propios mensajes.
+        val autor = data["autor_email"]?.trim()?.lowercase().orEmpty()
+        val sesion = SettingsRepository(applicationContext).settings.value.operatorEmail
+            .trim().lowercase()
+        if (autor.isNotBlank() && autor == sesion) return
         val title = remoteMessage.notification?.title
             ?: data["title"]
             ?: "PickingVE"

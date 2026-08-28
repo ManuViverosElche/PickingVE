@@ -122,6 +122,17 @@ fun ChatDialog(
     var fotoPendiente by remember { mutableStateOf<Uri?>(null) }
     val tomarFoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { }
     var fotoEnviando by remember { mutableStateOf(false) }
+    var lanzarAlConceder by remember { mutableStateOf<Uri?>(null) }
+    val pedirPermisoCamara = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { concedido ->
+        val uri = lanzarAlConceder
+        lanzarAlConceder = null
+        if (concedido && uri != null) {
+            fotoPendiente = uri
+            tomarFoto.launch(uri)
+        }
+    }
 
     fun lanzarCamara() {
         if (enviando || subiendoFoto) return
@@ -131,8 +142,18 @@ fun ChatDialog(
             "${context.packageName}.fileprovider",
             archivo
         )
-        fotoPendiente = uri
-        tomarFoto.launch(uri)
+        // D-206: sin el permiso CAMERA en runtime, TakePicture crashea
+        // (la app lo declara en el manifest para el escaner).
+        val concedido = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (concedido) {
+            fotoPendiente = uri
+            tomarFoto.launch(uri)
+        } else {
+            lanzarAlConceder = uri
+            pedirPermisoCamara.launch(android.Manifest.permission.CAMERA)
+        }
     }
 
     fun confirmarFoto() {

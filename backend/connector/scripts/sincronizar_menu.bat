@@ -7,8 +7,8 @@ rem Raiz del proyecto = dos niveles por encima de este script (backend\connector
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%\..\..") do set "ROOT=%%~fI"
 
-set "PY=%ROOT%\backend\connector\.venv\Scripts\python.exe"
-set "SYNC=%ROOT%\backend\connector\scripts\sync_all.py"
+set "PY=%ROOT%\connector\.venv\Scripts\python.exe"
+set "SYNC=%ROOT%\connector\scripts\sync_all.py"
 if not exist "%PY%" set "PY=python"
 
 :menu
@@ -23,18 +23,20 @@ echo   [2] Sincronizar TODO Analytics
 echo   [3] Solo PEDIDOS + LINEA_PEDIDO  (acopio urgente)
 echo   [4] Solo CLIENTE / ARTICULOS / STOCK
 echo   [5] Solo VENCIMIENTOS + COBROS   (morosidad)
-echo   [6] Ver ultimo log de ejecucion
-echo   [7] Salir
+echo   [6] Historico de ventas 2020+ (HIST_* en Analytics)
+echo   [7] Ver ultimo log de ejecucion
+echo   [8] Salir
 echo ------------------------------------------------------------
-set /p OP="Elige una opcion (1-7): "
+set /p OP="Elige una opcion (1-8): "
 
 if "%OP%"=="1" goto full_prod
 if "%OP%"=="2" goto full_ana
 if "%OP%"=="3" goto pedidos
 if "%OP%"=="4" goto maestros
 if "%OP%"=="5" goto morosidad
-if "%OP%"=="6" goto verlog
-if "%OP%"=="7" exit /b 0
+if "%OP%"=="6" goto historico
+if "%OP%"=="7" goto verlog
+if "%OP%"=="8" exit /b 0
 goto menu
 
 :full_prod
@@ -75,11 +77,18 @@ echo === COBROS (Analytics) ===
 "%PY%" "%SYNC%" --table COBROS --dataset Analytics
 goto fin
 
+:historico
+echo.
+echo === Historico de ventas (2020 en adelante, bases 014 y B14) ===
+echo     Los anios cerrados ya cargados se OMITEN automaticamente.
+"%PY%" "%SYNC%" --historical --dataset Analytics
+goto fin
+
 :verlog
 echo.
 set "LASTLOG="
-for /f "delims=" %%F in ('dir /b /o-d "%ROOT%\backend\connector\logs\sync_*.log" 2^>nul') do (
-    if not defined LASTLOG set "LASTLOG=%ROOT%\backend\connector\logs\%%F"
+for /f "delims=" %%F in ('dir /b /o-d "%ROOT%\connector\logs\sync_*.log" 2^>nul') do (
+    if not defined LASTLOG set "LASTLOG=%ROOT%\connector\logs\%%F"
 )
 if not defined LASTLOG (
     echo No hay logs todavia.

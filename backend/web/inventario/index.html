@@ -96,8 +96,8 @@
   .tab-btn.activa { color: var(--primary); border-color: var(--primary); background: var(--card2); outline: 2px solid var(--ring); outline-offset: 1px; }
 
   main { padding: 18px 0 60px; }
-  .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; box-shadow: var(--shadow-sm); }
+  .tarjetas { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 16px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 12px; box-shadow: var(--shadow-sm); min-width: 0; }
   .kpi .t { font-size: 0.7rem; color: var(--mut); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 800; }
   .kpi .v { font-size: 1.5rem; font-weight: 800; margin-top: 2px; color: var(--primary); font-variant-numeric: tabular-nums; }
   .kpi .s { font-size: 0.72rem; color: var(--mut); }
@@ -171,7 +171,8 @@
   .cfg-faena-body { display: none; border-top: 1px solid var(--line); }
   .cfg-faena-scroll { max-height: 360px; overflow-y: auto; padding: 10px 14px; }
   .cfg-faena-sector { margin-bottom: 12px; }
-  .cfg-faena-sector .sec-label { font-weight: 700; font-size: 12px; color: var(--mut); display: block; margin-bottom: 5px; }
+  .cfg-faena-sec-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .cfg-faena-sector .sec-label { font-weight: 700; font-size: 12px; color: var(--mut); }
   .cfg-faena-checklist { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
   .cfg-faena-checklist label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; padding: 4px 9px; border-radius: 6px; background: var(--card2); cursor: pointer; }
   .cfg-faena-checklist label:hover { background: var(--accent-soft); }
@@ -624,7 +625,7 @@
     var tb = document.querySelector("#tbPartes tbody");
     tb.innerHTML = lista.map(function (p) {
       var secText = (p.sectoresDesc && p.sectoresDesc.length) ? p.sectoresDesc.join(", ") : (p.sector || p.sectores || []).join(", ");
-      var sectorParam = p.sector || (p.sectores && p.sectores.length === 1 ? p.sectores[0] : "");
+      var sectorParam = p.sector || (p.sectores && p.sectores.length ? p.sectores[0] : "");
       var onVer = "verParte('" + jsStr(p.finca) + "','" + jsStr(p.fecha) + "','" + jsStr(sectorParam || "") + "')";
       return "<tr><td><b>" + esc(fmtFecha(p.fecha)) + "</b></td><td>" + esc(p.finca) + "</td><td>" + esc(secText) +
         "</td><td>" + esc(p.empleado) + "</td><td>" + esc(fmtDuracion(p.duracion_seg)) + "</td><td>" + fmt(p.total_plantas) +
@@ -713,7 +714,8 @@
       var activas = fincasCache || [];
       if (!activas.length) { cfFaena.innerHTML = '<div class="vacio">Carga las fincas primero.</div>'; return; }
       var inventariables = ops.filter(function (op) { return op.modo === "INVENTARIO" || op.modo === "AMBAS"; });
-      var html = "";
+      var html = '<div style="margin-bottom:12px; display:flex; justify-content:flex-end;">' +
+        '<button class="btn-primary-modern" onclick="guardarFaenaGlobal()">💾 Guardar reparto de inventario</button></div>';
       activas.forEach(function (f, fi) {
         var fid = 'faenafinca-' + fi;
         var sects = f.sectores || [];
@@ -725,21 +727,27 @@
         if (sects.length) {
           sects.forEach(function (s) {
             var opsSel = (s.operarios || []).map(function (o) { return o.email; });
+            var badge = s.cerrado
+              ? '<span class="estado-badge badge-cerrado">&#10003; Cerrado</span>'
+              : (s.tieneInventario
+                ? '<span class="estado-badge badge-abierto">&#9888; Abierto</span>'
+                : (s.asignado ? '<span class="estado-badge badge-asignado">&#128221; Asignado</span>' : ''));
             html += '<div class="cfg-faena-sector">' +
-              '<span class="sec-label">Sector: ' + esc(s.descripcion || s.id) + '</span>' +
+              '<div class="cfg-faena-sec-head"><span class="sec-label">Sector: ' + esc(s.descripcion || s.id) + '</span>' + badge + '</div>' +
               '<div class="cfg-faena-checklist">' + inventariables.map(function (op) {
-                return '<label><input type="checkbox" class="chkFaena" value="' + esc(op.email) + '"' + (opsSel.indexOf(op.email) >= 0 ? " checked" : "") + '> ' + esc(op.nombre) + '</label>';
-              }).join("") + '</div>' +
-              '<button class="btn-guardar" data-finca="' + esc(f.finca) + '" data-sector="' + esc(s.id) + '" onclick="guardarFaena(this)">Guardar</button></div>';
+                return '<label><input type="checkbox" class="chkFaena" value="' + esc(op.email) + '" data-finca="' + esc(f.finca) + '" data-sector="' + esc(s.id) + '"' + (opsSel.indexOf(op.email) >= 0 ? " checked" : "") + '> ' + esc(op.nombre) + '</label>';
+              }).join("") + '</div></div>';
           });
         } else {
           var opsSelF = (f.operarios || []).map(function (o) { return o.email; });
+          var badgeF = f.tieneInventario
+            ? '<span class="estado-badge badge-abierto">&#9888; Abierto</span>'
+            : '';
           html += '<div class="cfg-faena-sector">' +
-            '<span class="sec-label">Sin sectores (finca entera)</span>' +
+            '<div class="cfg-faena-sec-head"><span class="sec-label">Sin sectores (finca entera)</span>' + badgeF + '</div>' +
             '<div class="cfg-faena-checklist">' + inventariables.map(function (op) {
-              return '<label><input type="checkbox" class="chkFaena" value="' + esc(op.email) + '"' + (opsSelF.indexOf(op.email) >= 0 ? " checked" : "") + '> ' + esc(op.nombre) + '</label>';
-            }).join("") + '</div>' +
-            '<button class="btn-guardar" data-finca="' + esc(f.finca) + '" data-sector="" onclick="guardarFaena(this)">Guardar</button></div>';
+              return '<label><input type="checkbox" class="chkFaena" value="' + esc(op.email) + '" data-finca="' + esc(f.finca) + '" data-sector=""' + (opsSelF.indexOf(op.email) >= 0 ? " checked" : "") + '> ' + esc(op.nombre) + '</label>';
+            }).join("") + '</div></div>';
         }
         html += '</div></div></div>';
       });
@@ -759,18 +767,22 @@
     if (chev) chev.style.transform = abrir ? 'rotate(90deg)' : '';
   };
 
-  window.guardarFaena = function (btn) {
-    var finca = btn.getAttribute('data-finca');
-    var sector = btn.getAttribute('data-sector');
-    var block = btn.closest('.cfg-faena-sector');
-    var emails = [];
-    block.querySelectorAll('.chkFaena:checked').forEach(function (c) { emails.push(c.value); });
-    apiPost("/inventario/faena", { finca: finca, sector: sector || "", operarios: emails })
-      .then(function () {
-        alert("Faena guardada (" + emails.length + " operarios).");
+  window.guardarFaenaGlobal = function () {
+    var grupos = {};
+    document.querySelectorAll('#cfgFaenaLista .chkFaena').forEach(function (chk) {
+      var finca = chk.getAttribute('data-finca');
+      var sector = chk.getAttribute('data-sector');
+      var key = finca + '|' + sector;
+      if (!grupos[key]) grupos[key] = { finca: finca, sector: sector, operarios: [] };
+      if (chk.checked) grupos[key].operarios.push(chk.value);
+    });
+    var asignaciones = Object.keys(grupos).map(function (k) { return grupos[k]; });
+    apiPost("/inventario/faena/bulk", { asignaciones: asignaciones })
+      .then(function (res) {
+        alert("Reparto de inventario guardado (" + (res.asignados || 0) + " asignaciones en " + (res.fincas || 0) + " fincas).");
         cargarConfiguracion();
         cargarFincas();
-      }).catch(function (e) { alert("Error al guardar faena: " + e.message); });
+      }).catch(function (e) { alert("Error al guardar el reparto: " + e.message); });
   };
 
   // ---------- Pistoleos agrupados ----------
@@ -929,58 +941,99 @@
     mapaInvInstance = m;
     L.control.layers({ "Mapa (OSM)": osm, "Satélite (Esri)": sat }, {}).addTo(m);
 
-    // Agrupar por coordenada redondeada (5 decimales) para no duplicar puntos
-    var grupos = {};
+    var bounds = [];
+
+    // 1. Separar puntos de modo lineal (agrupados por linealSessionId) y puntos estándar
+    var linealSessions = {};
+    var puntosEstándar = [];
+
     puntos.forEach(function (p) {
-      var key = p.latitud.toFixed(5) + "," + p.longitud.toFixed(5);
-      (grupos[key] = grupos[key] || []).push(p);
+      if (p.linealSessionId && p.linealSessionId.trim() !== "") {
+        (linealSessions[p.linealSessionId] = linealSessions[p.linealSessionId] || []).push(p);
+      } else {
+        puntosEstándar.push(p);
+      }
     });
-    var heatData = [], bounds = [];
-    Object.keys(grupos).forEach(function (key) {
-      var items = grupos[key];
-      var p0 = items[0];
-      var totalCant = items.reduce(function (a, b) { return a + b.cantidad; }, 0);
-      var peor = items.some(function (i) { return i.color === 'rojo'; }) ? 'rojo' : (items.some(function (i) { return i.color === 'amarillo'; }) ? 'amarillo' : 'verde');
-      var intensity = peor === 'rojo' ? 1.0 : (peor === 'amarillo' ? 0.8 : 0.4);
-      heatData.push([p0.latitud, p0.longitud, intensity]);
-      bounds.push([p0.latitud, p0.longitud]);
-    });
-    if (typeof L.heatLayer === 'function') L.heatLayer(heatData, { radius: 20, blur: 12, maxZoom: 21 }).addTo(m);
 
-    Object.keys(grupos).forEach(function (key) {
-      var items = grupos[key];
-      var p0 = items[0];
-      var peor = items.some(function (i) { return i.color === 'rojo'; }) ? 'rojo' : (items.some(function (i) { return i.color === 'amarillo'; }) ? 'amarillo' : 'verde');
-      var colorHex = peor === 'rojo' ? '#962622' : (peor === 'amarillo' ? '#d97706' : '#2e7d32');
-      var totalCant = items.reduce(function (a, b) { return a + b.cantidad; }, 0);
-      var radius = 6 + Math.min(8, Math.floor(Math.sqrt(items.length)));
-      var marker = L.circleMarker([p0.latitud, p0.longitud], { radius: radius, fillColor: colorHex, color: '#fff', weight: 1.5, fillOpacity: 0.95 }).addTo(m);
+    // 2. Renderizar cada sesión lineal de forma independiente (A -> B con polilínea y puntos interpolados)
+    Object.keys(linealSessions).forEach(function (sessionId) {
+      var sesionPuntos = linealSessions[sessionId];
+      sesionPuntos.sort(function (a, b) { return (a.fechaHora || "").localeCompare(b.fechaHora || ""); });
+      
+      var latLngs = sesionPuntos.map(function (p) { return [p.latitud, p.longitud]; });
+      latLngs.forEach(function (ll) { bounds.push(ll); });
 
-      // Articulos distintos en esta coordenada
-      var artMap = {};
-      items.forEach(function (i) {
-        var k = i.ref + "|" + i.litraje;
-        if (!artMap[k]) artMap[k] = { ref: i.ref, nombre: i.nombre, litraje: i.litraje, cant: 0 };
-        artMap[k].cant += i.cantidad;
+      var polyline = L.polyline(latLngs, { color: '#025C65', weight: 4, opacity: 0.85, dashArray: '6, 6' }).addTo(m);
+
+      var pA = sesionPuntos[0];
+      var pB = sesionPuntos[sesionPuntos.length - 1];
+
+      var markerA = L.circleMarker([pA.latitud, pA.longitud], { radius: 8, fillColor: '#2e7d32', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(m);
+      markerA.bindTooltip('<b>Bancal Lineal - INICIO (A)</b><br>Hora: ' + esc(pA.fechaHora) + '<br>Plantas: ' + sesionPuntos.length, { direction: 'top' });
+
+      var markerB = L.circleMarker([pB.latitud, pB.longitud], { radius: 8, fillColor: '#962622', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(m);
+      markerB.bindTooltip('<b>Bancal Lineal - FIN (B)</b><br>Hora: ' + esc(pB.fechaHora) + '<br>Plantas: ' + sesionPuntos.length, { direction: 'top' });
+
+      sesionPuntos.forEach(function (p, idx) {
+        if (idx > 0 && idx < sesionPuntos.length - 1) {
+          var pt = L.circleMarker([p.latitud, p.longitud], { radius: 5, fillColor: '#025C65', color: '#fff', weight: 1, fillOpacity: 0.8 }).addTo(m);
+          pt.bindTooltip('<b>Planta / Registro Lineal</b><br>Ref: ' + esc(p.ref) + ' ' + esc(p.nombre) + '<br>Hora: ' + esc(p.fechaHora), { direction: 'top' });
+        }
       });
-      var listaArticulos = Object.keys(artMap).map(function (k) {
-        var a = artMap[k];
-        return '&nbsp;&nbsp;• <b>' + esc(a.ref) + '</b> ' + esc(a.nombre) + (a.litraje ? ' (' + esc(a.litraje) + ')' : '') + ': ' + fmt(a.cantidad);
-      }).join("<br>");
-      var fechasItems = items.map(function (i) { return i.fechaHora; }).sort();
-      var emp = [];
-      items.forEach(function (i) { if (emp.indexOf(i.empleado) < 0) emp.push(i.empleado); });
-
-      var tooltipHtml = '<div style="font-size:12px; line-height:1.5;">' +
-        '<b>' + items.length + ' escaneos · ' + fmt(totalCant) + ' plantas</b><br>' +
-        '<b>Sector:</b> ' + esc(p0.sectorDesc) + '<br>' +
-        (listaArticulos ? listaArticulos + "<br>" : "") +
-        '<b>Fecha:</b> ' + esc(fmtFecha(fechasItems[0])) + (fechasItems.length > 1 ? ' → ' + esc(fmtFecha(fechasItems[fechasItems.length - 1])) : '') + '<br>' +
-        '<b>Empleados:</b> ' + esc(emp.join(", ")) + '<br>' +
-        '<b>GPS:</b> ' + p0.latitud.toFixed(5) + ', ' + p0.longitud.toFixed(5) +
-        '</div>';
-      marker.bindTooltip(tooltipHtml, { direction: 'top', sticky: true, opacity: 0.95 });
     });
+
+    // 3. Renderizar puntos estándar (clustering / heatmap)
+    if (puntosEstándar.length > 0) {
+      var grupos = {};
+      puntosEstándar.forEach(function (p) {
+        var key = p.latitud.toFixed(5) + "," + p.longitud.toFixed(5);
+        (grupos[key] = grupos[key] || []).push(p);
+      });
+      var heatData = [];
+      Object.keys(grupos).forEach(function (key) {
+        var items = grupos[key];
+        var p0 = items[0];
+        var peor = items.some(function (i) { return i.color === 'rojo'; }) ? 'rojo' : (items.some(function (i) { return i.color === 'amarillo'; }) ? 'amarillo' : 'verde');
+        var intensity = peor === 'rojo' ? 1.0 : (peor === 'amarillo' ? 0.8 : 0.4);
+        heatData.push([p0.latitud, p0.longitud, intensity]);
+        bounds.push([p0.latitud, p0.longitud]);
+      });
+      if (typeof L.heatLayer === 'function') L.heatLayer(heatData, { radius: 20, blur: 12, maxZoom: 21 }).addTo(m);
+
+      Object.keys(grupos).forEach(function (key) {
+        var items = grupos[key];
+        var p0 = items[0];
+        var peor = items.some(function (i) { return i.color === 'rojo'; }) ? 'rojo' : (items.some(function (i) { return i.color === 'amarillo'; }) ? 'amarillo' : 'verde');
+        var colorHex = peor === 'rojo' ? '#962622' : (peor === 'amarillo' ? '#d97706' : '#2e7d32');
+        var totalCant = items.reduce(function (a, b) { return a + b.cantidad; }, 0);
+        var radius = 6 + Math.min(8, Math.floor(Math.sqrt(items.length)));
+        var marker = L.circleMarker([p0.latitud, p0.longitud], { radius: radius, fillColor: colorHex, color: '#fff', weight: 1.5, fillOpacity: 0.95 }).addTo(m);
+
+        var artMap = {};
+        items.forEach(function (i) {
+          var k = i.ref + "|" + i.litraje;
+          if (!artMap[k]) artMap[k] = { ref: i.ref, nombre: i.nombre, litraje: i.litraje, cant: 0 };
+          artMap[k].cant += i.cantidad;
+        });
+        var listaArticulos = Object.keys(artMap).map(function (k) {
+          var a = artMap[k];
+          return '&nbsp;&nbsp;• <b>' + esc(a.ref) + '</b> ' + esc(a.nombre) + (a.litraje ? ' (' + esc(a.litraje) + ')' : '') + ': ' + fmt(a.cantidad);
+        }).join("<br>");
+        var fechasItems = items.map(function (i) { return i.fechaHora; }).sort();
+        var emp = [];
+        items.forEach(function (i) { if (emp.indexOf(i.empleado) < 0) emp.push(i.empleado); });
+
+        var tooltipHtml = '<div style="font-size:12px; line-height:1.5;">' +
+          '<b>' + items.length + ' escaneos · ' + fmt(totalCant) + ' plantas</b><br>' +
+          '<b>Sector:</b> ' + esc(p0.sectorDesc) + '<br>' +
+          (listaArticulos ? listaArticulos + "<br>" : "") +
+          '<b>Fecha:</b> ' + esc(fmtFecha(fechasItems[0])) + (fechasItems.length > 1 ? ' → ' + esc(fmtFecha(fechasItems[fechasItems.length - 1])) : '') + '<br>' +
+          '<b>Empleados:</b> ' + esc(emp.join(", ")) + '<br>' +
+          '<b>GPS:</b> ' + p0.latitud.toFixed(5) + ', ' + p0.longitud.toFixed(5) +
+          '</div>';
+        marker.bindTooltip(tooltipHtml, { direction: 'top', sticky: true, opacity: 0.95 });
+      });
+    }
 
     if (bounds.length > 0) m.fitBounds(L.latLngBounds(bounds), { padding: [35, 35], maxZoom: 19 });
   }

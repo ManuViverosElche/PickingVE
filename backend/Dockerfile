@@ -13,6 +13,8 @@ RUN ls -la /app \
     && test -s /app/informe_datos.py \
     && test -s /app/informe_pdf.py \
     && test -s /app/informe_html.py \
+    && test -s /app/inventario_pdf.py \
+    && test -d /app/web/inventario \
     && echo "FICHEROS-INFORME OK"
 
 ENV PORT=8080

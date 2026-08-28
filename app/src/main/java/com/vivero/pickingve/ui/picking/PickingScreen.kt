@@ -216,7 +216,8 @@ fun PickingScreen(
                 },
                 actions = {
                     IconButton(onClick = {
-                        chatLinea = null
+                        // D-207: "" = chat a nivel de pedido; con null no se abria nunca.
+                        chatLinea = ""
                         viewModel.marcarChatLeido("")
                     }) {
                         Text(
@@ -266,10 +267,6 @@ fun PickingScreen(
                     sendingReport = state.sendingReport,
                     onScan = {
                         scannerModo = null
-                        showScanner = true
-                    },
-                    onManualScan = {
-                        scannerModo = CameraModo.PASAPORTE
                         showScanner = true
                     },
                     onLabels = { showLabels = true },
@@ -686,7 +683,6 @@ private fun PickingBottomBar(
     pendingLabelCount: Int,
     sendingReport: Boolean,
     onScan: () -> Unit,
-    onManualScan: () -> Unit,
     onLabels: () -> Unit,
     onSend: () -> Unit
 ) {
@@ -698,14 +694,6 @@ private fun PickingBottomBar(
                 Icon(Icons.Filled.QrCodeScanner, contentDescription = "Pistolear")
             },
             label = { Text("Pistolear") }
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = onManualScan,
-            icon = {
-                Icon(Icons.Filled.DocumentScanner, contentDescription = "Etiqueta sin EAN")
-            },
-            label = { Text("Sin EAN") }
         )
         NavigationBarItem(
             selected = false,
@@ -1215,14 +1203,14 @@ private fun OrderLineCard(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                if (line.vigente) {
-                    IconButton(onClick = { onOpenChat(line) }) {
-                        Text(
-                            "💬",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = chatColor(chatEstados, line.orderLineId)
-                        )
-                    }
+                // D-207: el chat de linea siempre disponible; antes se ocultaba
+                // si la linea no estaba vigente y parecia que el boton no respondia.
+                IconButton(onClick = { onOpenChat(line) }) {
+                    Text(
+                        "💬",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = chatColor(chatEstados, line.orderLineId)
+                    )
                 }
             }
             Row(
@@ -2116,8 +2104,17 @@ private fun TruckArrivalDialog(
                 scope.launch {
                     escaneando = true
                     try {
+                        // D-206: decodificar con muestreo para no reventar la memoria
+                        // con fotos de 12+ MP al buscar matriculas por OCR.
+                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        context.contentResolver.openInputStream(uriFoto("CAMION")!!)?.use {
+                            BitmapFactory.decodeStream(it, null, bounds)
+                        }
+                        var muestra = 1
+                        while (bounds.outWidth / (muestra * 2) >= 1280) muestra *= 2
+                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = muestra }
                         val bmp = context.contentResolver.openInputStream(uriFoto("CAMION")!!)?.use {
-                            BitmapFactory.decodeStream(it)
+                            BitmapFactory.decodeStream(it, null, opts)
                         }
                         if (bmp != null) {
                             val texto = OcrReader.readText(bmp)
@@ -2132,9 +2129,6 @@ private fun TruckArrivalDialog(
                             if (matriculaRemolque.isBlank() && encontradas.size > 1) {
                                 matriculaRemolque = encontradas[1]
                             }
-                            if (matriculaRemolqueB.isBlank() && encontradas.size > 2) {
-                                matriculaRemolqueB = encontradas[2]
-                            }
                         }
                     } catch (e: Exception) {
                         // Sin OCR si la foto no se puede leer
@@ -2146,7 +2140,7 @@ private fun TruckArrivalDialog(
         }
     }
 
-    fun lanzarCamara(tipo: String) {
+    fun lanzarCamaraInterno(tipo: String) {
         val archivo = File.createTempFile("matricula_${tipo}_", ".jpg", context.cacheDir)
         val uri = FileProvider.getUriForFile(
             context,
@@ -2156,6 +2150,29 @@ private fun TruckArrivalDialog(
         fotoTarget = tipo
         setFoto(tipo, uri)
         tomarFoto.launch(uri)
+    }
+
+    var tipoPendientePermiso by remember { mutableStateOf<String?>(null) }
+    val pedirPermisoCamara = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { concedido ->
+        val tipo = tipoPendientePermiso
+        tipoPendientePermiso = null
+        if (concedido && tipo != null) lanzarCamaraInterno(tipo)
+    }
+
+    fun lanzarCamara(tipo: String) {
+        // D-206: la app declara CAMERA (escaner); sin permiso en runtime,
+        // TakePicture lanza SecurityException y crashea al pulsar el boton.
+        val concedido = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (concedido) {
+            lanzarCamaraInterno(tipo)
+        } else {
+            tipoPendientePermiso = tipo
+            pedirPermisoCamara.launch(android.Manifest.permission.CAMERA)
+        }
     }
 
     fun confirmar() {
@@ -2234,7 +2251,7 @@ private fun TruckArrivalDialog(
                 OutlinedTextField(
                     value = matriculaRemolque,
                     onValueChange = { matriculaRemolque = it },
-                    label = { Text("Matrícula remolque 1") },
+                    label = { Text("Matrícula remolque (opcional)") },
                     trailingIcon = {
                         if (escaneando) {
                             CircularProgressIndicator(modifier = Modifier.size(18.dp))
@@ -2250,32 +2267,7 @@ private fun TruckArrivalDialog(
                 fotoRemolqueA?.let {
                     AsyncImage(
                         model = it,
-                        contentDescription = "Foto del remolque 1",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 120.dp)
-                    )
-                }
-                OutlinedTextField(
-                    value = matriculaRemolqueB,
-                    onValueChange = { matriculaRemolqueB = it },
-                    label = { Text("Matrícula remolque 2") },
-                    trailingIcon = {
-                        if (escaneando) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                        } else {
-                            IconButton(onClick = { lanzarCamara("REMOLQUE_B") }) {
-                                Icon(Icons.Filled.QrCodeScanner, contentDescription = "Escanear matrícula del remolque 2")
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                fotoRemolqueB?.let {
-                    AsyncImage(
-                        model = it,
-                        contentDescription = "Foto del remolque 2",
+                        contentDescription = "Foto del remolque",
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 120.dp)
@@ -2300,27 +2292,24 @@ private fun TruckArrivalDialog(
                         }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // D-212: botones de foto a ancho completo apilados: el texto
+                // siempre cabe en una linea y el area tactil es generosa.
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { lanzarCamara("CAMION") },
-                        enabled = !escaneando
+                        enabled = !escaneando,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Filled.PhotoCamera, contentDescription = null)
-                        Text("Foto camión", modifier = Modifier.padding(start = 4.dp))
+                        Text("Foto del camión", maxLines = 1, modifier = Modifier.padding(start = 6.dp))
                     }
                     OutlinedButton(
                         onClick = { lanzarCamara("REMOLQUE_A") },
-                        enabled = !escaneando
+                        enabled = !escaneando,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Filled.PhotoCamera, contentDescription = null)
-                        Text("Remolque 1", modifier = Modifier.padding(start = 4.dp))
-                    }
-                    OutlinedButton(
-                        onClick = { lanzarCamara("REMOLQUE_B") },
-                        enabled = !escaneando
-                    ) {
-                        Icon(Icons.Filled.PhotoCamera, contentDescription = null)
-                        Text("Remolque 2", modifier = Modifier.padding(start = 4.dp))
+                        Text("Foto del remolque", maxLines = 1, modifier = Modifier.padding(start = 6.dp))
                     }
                 }
             }

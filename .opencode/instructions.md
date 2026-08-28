@@ -17,3 +17,7 @@
 ## REGLA DE DESPLIEGUE (D-156)
 
 - El usuario prueba SIEMPRE en producción. Todo cambio en `backend/` o `backend/web/` debe desplegarse en Cloud Run con `powershell -File reportes\manager\publicar.ps1` al terminar el trabajo, y la verificación final se hace contra la URL de producción `https://pickingve-api-938422468946.europe-west1.run.app/...`. Dejar solo la versión local sin desplegar NO es válido.
+## Regla Maxima de Ejecucion y Autonomia (obligatoria, D-211)
+1. Ciclo autonomo de autocorreccion: ante cualquier fallo de compilacion/test, analizar el error, aplicar la solucion y revalidar automaticamente. PROHIBIDO quedarse esperando interaccion cuando la terminal ya devolvio un resultado.
+2. Cero bloqueos de consola: NUNCA ejecutar comandos PowerShell con pipes bloqueantes (2>&1 | Select-Object, filtros que retengan el prompt). Ejecutar directo, ej.: gradlew.bat assembleDebug --console=plain.
+3. Persistencia: el flujo Analisis -> Correccion -> Revalidacion sin bloqueo aplica en todas las iteraciones futuras.

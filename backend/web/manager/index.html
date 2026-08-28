@@ -453,7 +453,7 @@
       <div class="field"><label for="pmPass">Contraseña <span id="pmPassHint" style="text-transform:none; letter-spacing:0; color:var(--mut); font-weight:400;"></span></label>
         <div class="pwd-wrap"><input type="password" id="pmPass" placeholder="••••••••" autocomplete="new-password"><button type="button" class="eye-btn" onclick="togglePwd('pmPass', this)" title="Mostrar / ocultar contraseña">👁️</button></div>
       </div>
-      <div class="field"><label>Fincas asignadas</label><div class="chips-select" id="pmFincas"></div></div>
+      <div class="field" id="pmFincasField"><label>Fincas asignadas</label><div class="chips-select" id="pmFincas"></div></div>
       <div class="field" id="pmMaquinariaField"><label>Maquinaria que lleva</label><div class="chips-select" id="pmMaquinaria"></div></div>
       <div class="field-row">
         <div class="field" id="pmRolField"><label for="pmRol">Nivel de acceso</label>
@@ -1016,6 +1016,7 @@
     document.getElementById('pmPassHint').textContent = data ? '(vacío = no cambia)' : '(vacío = por defecto "1234")';
     document.getElementById('pmMaquinariaField').style.display = esOp && !esInventario ? '' : 'none';
     document.getElementById('pmRolField').style.display = esEnc ? '' : 'none';
+    document.getElementById('pmFincasField').style.display = esEnc ? '' : 'none';
     document.getElementById('pmModoField').style.display = '';
     const nombresFinca = fincasCfgList.filter(f => !f.oculto).map(f => f.nombre || f.finca);
     chipsSelect('pmFincas', nombresFinca, (data?.fincas_carga || '').split(','));
@@ -1339,6 +1340,7 @@
   async function renderReparto() {
     await loadUnread();
     if (!operariosList.length) await loadOperarios();
+    if (!encargadosList.length) await loadEncargados();
     const dateVal = document.getElementById('filterDateReparto').value || selectedDate;
     document.getElementById('filterDateReparto').value = dateVal;
 
@@ -1467,6 +1469,11 @@
     const cardKey = `${o.serie}_${o.numero}`;
     const cardAbierta = repartoPedidoAbierto === cardKey;
 
+    const encEmailSet = new Set((encargadosList || []).filter(e => e.activo !== false).map(e => String(e.email || '').trim().toLowerCase()));
+    const nombrePorEmail = {};
+    (encargadosList || []).forEach(e => { const k = String(e.email || '').trim().toLowerCase(); if (k) nombrePorEmail[k] = e.nombre || k; });
+    (operariosList || []).forEach(op => { const k = String(op.email || '').trim().toLowerCase(); if (k && !nombrePorEmail[k]) nombrePorEmail[k] = op.nombre || k; });
+
     let lineasHtml = (o.lineas || []).map((l, idx) => {
       const lineNum = l.posicion || (idx + 1);
       // D-193: SOLO dos etiquetas posibles. NORMAL/vacio/otros = nada.
@@ -1493,14 +1500,22 @@
       }
 
       const fullOp = l.operarios || '—';
-      const encargadoPick = fullOp !== '—' ? escHtml(fullOp.split(',')[0].trim().split(' ')[0]) : '—';
 
       const detalleOps = {};
       (l.detalleOperarios || '').split(',').forEach(par => {
-        const [nom, cant] = par.split(':');
-        if (nom && nom.trim()) detalleOps[nom.trim()] = parseInt(cant) || 0;
+        const idxColon = par.indexOf(':');
+        if (idxColon > 0) {
+          const em = par.slice(0, idxColon).trim().toLowerCase();
+          const cant = parseInt(par.slice(idxColon + 1)) || 0;
+          if (em) detalleOps[em] = cant;
+        }
       });
       detalleOpsGlobal[`${o.serie}_${o.numero}_${lineNum}`] = detalleOps;
+
+      const encargadosDeLinea = Object.keys(detalleOps).filter(em => encEmailSet.has(em));
+      const encargadoPick = encargadosDeLinea.length
+        ? escHtml(encargadosDeLinea.map(em => nombrePorEmail[em] || em).join(', '))
+        : '—';
 
       // D-227: el cambio sin guardar manda sobre lo guardado al re-renderizar,
       // para que el desplegable y "Cogido Op." sean congruentes con el contador
@@ -1511,9 +1526,10 @@
         ? (cambioPendiente.email || '')
         : (l.operarioAsignadoEmail || '');
 
-      const cogidoAsignado = (operarioEfectivo && detalleOps[operarioEfectivo] !== undefined)
-        ? detalleOps[operarioEfectivo]
-        : Object.values(detalleOps).reduce((a, b) => a + b, 0);
+      const operarioEfectivoNorm = (operarioEfectivo || '').trim().toLowerCase();
+      const cogidoAsignado = operarioEfectivoNorm
+        ? (detalleOps[operarioEfectivoNorm] ?? 0)
+        : '—';
 
       let opOptions = '<option value="">-- Sin asignar --</option>';
       operariosList.forEach(op => {
@@ -1541,8 +1557,8 @@
               <td style="white-space:nowrap;">${prioBadge}</td>
               <td><b>${l.pendientes}</b></td>
               <td style="color:var(--lime); font-weight:700;">${l.acopiado}</td>
-              <td id="cogido_${o.serie}_${o.numero}_${lineNum}" style="font-weight:700; color:var(--warn);">${cogidoAsignado || '—'}</td>
-              <td style="font-size:0.78rem; font-weight:700; color:var(--blue);">${encargadoPick}</td>
+              <td id="cogido_${o.serie}_${o.numero}_${lineNum}" title="Plantas cogidas por el operario de faena asignado" style="font-weight:700; color:var(--warn);">${cogidoAsignado}</td>
+              <td title="Encargados que realmente pistolearon la línea" style="font-size:0.78rem; font-weight:700; color:var(--blue);">${encargadoPick}</td>
               <td>
                 <select style="width:120px; font-size:0.78rem;" data-pedido="${o.serie}_${o.numero}" data-linea="${lineNum}" data-huella="${escHtml(huella)}" data-pendientes="${l.pendientes}" data-acopiado="${l.acopiado}" data-origen="${escHtml(l.operarioAsignadoEmail || '')}" onchange="cambiarOperarioFaena(this)">
                   ${opOptions}
@@ -1572,7 +1588,7 @@
               </div>
             </div>
 
-            <div id="reparto_lines_${cardKey}" style="display:${cardAbierta ? 'block' : 'none'}; margin-top:12px; border-top:1px solid var(--line); padding-top:10px; overflow-x:auto;">
+            <div id="reparto_lines_${cardKey}" style="display:${cardAbierta ? 'block' : 'none'}; margin-top:12px; border-top:1px solid var(--line); padding-top:10px; overflow-x:auto; overflow-y:auto; max-height:62vh;">
               <table>
                 <thead>
                   <tr>
@@ -1585,10 +1601,10 @@
                     <th>Finca</th>
                     <th>Prioridad</th>
                     <th>Pend.</th>
-                    <th>Acop.</th>
-                    <th>Cogido Op.</th>
-                    <th>Encargado (Pistoleo)</th>
-                    <th>Operario Faena</th>
+                    <th title="Total de plantas acopiadas (pistoleo real)">Acop.</th>
+                    <th title="Plantas cogidas por el operario de faena asignado (0 si no ha cogido)">Cogido Op.</th>
+                    <th title="Encargados que realmente pistolearon la línea en el acopio">Encargado (Pistoleo)</th>
+                    <th title="Operario de faena asignado (reparto)">Operario Faena</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -1660,7 +1676,7 @@
     };
     const cell = document.getElementById(`cogido_${pedido}_${linea}`);
     if (cell && operario) {
-      const det = (detalleOpsGlobal[`${pedido}_${linea}`] || {})[operario];
+      const det = (detalleOpsGlobal[`${pedido}_${linea}`] || {})[operario.toLowerCase()];
       cell.textContent = det !== undefined ? det : '0';
     } else if (cell) {
       cell.textContent = '—';
@@ -2219,7 +2235,7 @@
             <button onclick="verInformePunteo('${o.numero}')" style="background:var(--primary); color:var(--on-primary);">📄 Punteo</button>
             <button onclick="verInformeDesglose('${o.numero}')" style="background:var(--card2); color:var(--txt); border:1px solid var(--line);">🔍 Desglose</button>
           </div>
-          <div id="histDetalle_${o.numero}" style="display:none; margin-top:10px;"></div>
+          <div id="histDetalle_${o.numero}" style="display:none; margin-top:10px; max-height:70vh; overflow-y:auto; overflow-x:auto;"></div>
         </div>
       `;
     });

@@ -17,6 +17,7 @@ captures/
 secrets.properties
 opencode.json
 Documentacion/*.json
+Documentacion/client_secret_*.json
 
 # Conector Python
 backend/.venv/
@@ -48,3 +49,8 @@ backups/
 # Sesiones de navegador MCP
 .playwright-mcp/
 opencode-export.json
+
+# Scripts temporales y artefactos de pruebas
+probe_payload.b64
+test_query.py
+cleanup_test_data.py

@@ -380,7 +380,7 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
     obs = o.get("OBSERVACIONES")
     peso = 0.0
 
-    empleados = sorted({_nombre_corto(d.get("empleado_nombre")) for d in datos["detalle"] if d.get("empleado_nombre")})
+    empleados = sorted({_nombre_corto(d.get("empleado_nombre")) for d in datos["detalle"] if d.get("empleado_nombre") and not d.get("es_operario")})
     empleado_txt = ", ".join(empleados) or "Pendiente de pistoleo"
     partes_set = {(d.get("picking_tipo"), d.get("picking_numero")) for d in datos["detalle"]}
     doc_label = "Punteo Final" if any(t == "F" for t, _ in partes_set) else ("Punteo Inicial" if partes_set else "Punteo (en curso)")

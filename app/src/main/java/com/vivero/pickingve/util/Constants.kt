@@ -18,4 +18,7 @@ object Constants {
 
     // Shared secret for the backend (injected via BuildConfig from secrets.properties)
     val API_KEY: String = com.vivero.pickingve.BuildConfig.API_KEY
+
+    // D-218: informe web de inventario (token de pagina + URL base del backend)
+    const val INVENTARIO_WEB_TOKEN = "inventario-2026"
 }

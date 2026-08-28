@@ -66,6 +66,7 @@ data class ApiLinea(
     val marca: String = "",
     val fincaRelevada: String = "",
     val sectorRelevado: String = "",
+    val fincaArticulo: String = "",
     val operarioEmail: String = "",
     val operarioNombre: String = "",
     val ubicacion: String = "",
@@ -445,4 +446,242 @@ data class RepartoGuardarResponse(
     val ok: Boolean = false,
     val guardadas: Int = 0,
     val borradas: Int = 0
+)
+// ---- D-213: panel manager (superusuario) ----
+
+@kotlinx.serialization.Serializable
+data class ManagerFecha(
+    val fecha: String = "",
+    val pedidos: Int = 0,
+    val pendientes: Int = 0,
+    val cargados: Int = 0,
+    val enviados: Int = 0,
+    val total: Int = 0
+)
+
+@kotlinx.serialization.Serializable
+data class ManagerFechasResponse(val fechas: List<ManagerFecha> = emptyList())
+
+@kotlinx.serialization.Serializable
+data class ManagerHistoricoPedido(
+    val serie: String = "",
+    val numero: String = "",
+    val cliente: String = "",
+    val fechaCarga: String? = null,
+    val sector: String = "",
+    val finca: String = "",
+    val estado: String = "",
+    val cargado: Boolean = false,
+    val tieneParteFinal: Boolean = false,
+    val totalPistoleado: Int = 0,
+    val totalEventos: Int = 0
+)
+
+@kotlinx.serialization.Serializable
+data class ManagerHistoricoDiaResponse(
+    val fecha: String = "",
+    val pedidos: List<ManagerHistoricoPedido> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class ManagerEtiqueta(
+    val referencia: String = "",
+    val litraje: String = "",
+    val sector: String = "",
+    val descripcion: String = "",
+    val cantidad: Double = 0.0,
+    val motivo: String = "",
+    val estado: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class ManagerEtiquetasPedido(
+    val pedido: String = "",
+    val cliente: String = "",
+    val finca: String = "",
+    val etiquetas: List<ManagerEtiqueta> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class ManagerEtiquetasResponse(val pedidos: List<ManagerEtiquetasPedido> = emptyList())
+
+@kotlinx.serialization.Serializable
+data class ManagerRegistro(
+    val parte: String = "",
+    val fechaHora: String = "",
+    val empleado: String = "",
+    val refServida: String = "",
+    val cantidad: Double = 0.0
+)
+
+@kotlinx.serialization.Serializable
+data class ManagerHistoricoDetalleResponse(
+    val pedido: String = "",
+    val matriculas: List<MatriculaItem> = emptyList(),
+    val registros: List<ManagerRegistro> = emptyList()
+)
+
+// ---- D-216: configuracion de maquinarias y familias (panel) ----
+
+@kotlinx.serialization.Serializable
+data class MaquinariaItem(
+    val id: String = "",
+    val nombre: String = "",
+    val descripcion: String = "",
+    val familia: String = "",
+    val activo: Boolean = true
+)
+
+@kotlinx.serialization.Serializable
+data class MaquinariasResponse(val maquinarias: List<MaquinariaItem> = emptyList())
+
+@kotlinx.serialization.Serializable
+data class FamiliaItem(
+    val id: String = "",
+    val nombre: String = "",
+    val descripcion: String = "",
+    val activo: Boolean = true
+)
+
+@kotlinx.serialization.Serializable
+data class FamiliasResponse(val familias: List<FamiliaItem> = emptyList())
+
+@kotlinx.serialization.Serializable
+data class MaquinariaBody(
+    val id: String = "",
+    val nombre: String = "",
+    val descripcion: String = "",
+    val familia: String = "",
+    val activo: Boolean = true
+)
+
+@kotlinx.serialization.Serializable
+data class OkResponse(val ok: Boolean = false)
+
+@kotlinx.serialization.Serializable
+data class MatriculaItem(
+    val tipo: String? = null,
+    val matricula: String? = null,
+    val muelle: String? = null,
+    val fotoUrl: String? = null,
+    val creadoEn: String? = null
+)
+
+// ---- D-218: Inventario ----
+
+@kotlinx.serialization.Serializable
+data class ApiInvSector(
+    val id: String = "",
+    @SerialName("descripcion") val descripcion: String = "",
+    @SerialName("cerrado") val cerrado: Boolean = false,
+    @SerialName("tieneInventario") val tieneInventario: Boolean = false
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvFinca(
+    val finca: String = "",
+    val prefijo: String = "",
+    val sectores: List<ApiInvSector> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvFincasResponse(val fincas: List<ApiInvFinca> = emptyList())
+
+@kotlinx.serialization.Serializable
+data class ApiInvStockItem(
+    val sector: String = "",
+    val ref: String = "",
+    val litraje: String = "",
+    val nombre: String = "",
+    val ean: String = "",
+    val stock: Double = 0.0
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvStockResponse(
+    val finca: String = "",
+    val filas: List<ApiInvStockItem> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvVersion(val version: String = "")
+
+@kotlinx.serialization.Serializable
+data class ApiInvRegistro(
+    @SerialName("record_id") val recordId: String,
+    @SerialName("finca") val finca: String,
+    @SerialName("sector") val sector: String,
+    @SerialName("ean_escaneado") val eanEscaneado: String = "",
+    @SerialName("ocr_texto") val ocrTexto: String = "",
+    @SerialName("ref_articulo") val refArticulo: String = "",
+    @SerialName("litraje") val litraje: String = "",
+    @SerialName("sector_etiqueta") val sectorEtiqueta: String = "",
+    @SerialName("nombre_planta") val nombrePlanta: String = "",
+    @SerialName("cantidad") val cantidad: Int = 1,
+    @SerialName("fuera_sector") val fueraSector: Boolean = false,
+    @SerialName("reetiquetar") val reetiquetar: Boolean = false,
+    @SerialName("sin_ean") val sinEan: Boolean = false,
+    @SerialName("label_motivo") val labelMotivo: String = "",
+    @SerialName("incidencia_texto") val incidenciaTexto: String = "",
+    @SerialName("es_hueco") val esHueco: Boolean = false,
+    @SerialName("modo_inventario") val modoInventario: String = "",
+    @SerialName("lineal_session_id") val linealSessionId: String = "",
+    @SerialName("latitud") val latitud: Double? = null,
+    @SerialName("longitud") val longitud: Double? = null,
+    @SerialName("fecha_hora") val fechaHora: String,
+    @SerialName("empleado_email") val empleadoEmail: String = "",
+    @SerialName("empleado_nombre") val empleadoNombre: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvUploadBody(val registros: List<ApiInvRegistro>)
+
+@kotlinx.serialization.Serializable
+data class ApiInvUploadResponse(
+    val ok: Int = 0,
+    val duplicados: Int = 0,
+    @SerialName("accepted_ids") val acceptedIds: List<String> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvCompensaBody(
+    @SerialName("record_ids") val recordIds: List<String>
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvBorrarBody(
+    val finca: String? = null,
+    val sector: String? = null,
+    val desde: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvCerrarBody(
+    val finca: String,
+    val sector: String
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvProgresoLinea(
+    val sector: String = "",
+    val ref: String = "",
+    val litraje: String = "",
+    val contado: Double = 0.0,
+    val eventos: Int = 0,
+    val fuera: Int = 0,
+    val reetiquetar: Int = 0
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvProgresoResumen(
+    val sector: String = "",
+    val total: Double = 0.0,
+    val fuera: Int = 0
+)
+
+@kotlinx.serialization.Serializable
+data class ApiInvProgresoResponse(
+    val finca: String = "",
+    val lineas: List<ApiInvProgresoLinea> = emptyList(),
+    val resumen: List<ApiInvProgresoResumen> = emptyList()
 )

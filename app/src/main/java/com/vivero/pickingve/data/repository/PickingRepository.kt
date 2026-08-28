@@ -295,10 +295,21 @@ class PickingRepository(
         currentEncargado()?.rol == "SUPERUSUARIO" ||
             sesPrefs.getString(KEY_ENCARGADO_ROL, "") == "SUPERUSUARIO"
 
-    suspend fun loginEncargadoLocal(usuario: String, password: String): EncargadoEntity? {
-        val enc = encargadoDao.findByUsuario(usuario.trim()) ?: return null
+    /**
+     * D-208: el SUPERUSUARIO solo ve "Mi faena" si además tiene rol activo de
+     * OPERARIO asignado (mismo email en la tabla de operarios).
+     */
+    suspend fun encargadoEsOperarioActivo(): Boolean {
+        val email = currentEncargado()?.email?.trim()?.lowercase().orEmpty()
+        if (email.isBlank()) return false
+        return operarioDao.findByEmail(email)?.activo == true
+    }
+
+    /** D-201: el identificador puede ser usuario o email; la sal del hash es el usuario real. */
+    suspend fun loginEncargadoLocal(identificador: String, password: String): EncargadoEntity? {
+        val enc = encargadoDao.findByUsuarioOEmail(identificador.trim()) ?: return null
         if (!enc.activo) return null
-        if (enc.passwordHash == hashPassword(usuario.trim(), password)) {
+        if (enc.passwordHash == hashPassword(enc.usuario, password)) {
             setCurrentEncargado(enc)
             return enc
         }
@@ -933,8 +944,8 @@ class PickingRepository(
                     labelReason = labelReason,
                     labelFormat = labelFormat,
                     timestamp = System.currentTimeMillis(),
-                    empleadoEmail = currentEncargado()?.email.orEmpty(),
-                    empleadoNombre = currentEncargado()?.nombre.orEmpty()
+                    empleadoEmail = emailFaena(),
+                    empleadoNombre = nombreFaena()
                 )
                 insertPickingRecord(nuevo)
                 return nuevo
@@ -982,8 +993,8 @@ class PickingRepository(
             labelReason = labelReason,
             labelFormat = labelFormat,
             timestamp = System.currentTimeMillis(),
-            empleadoEmail = currentEncargado()?.email.orEmpty(),
-            empleadoNombre = currentEncargado()?.nombre.orEmpty()
+            empleadoEmail = emailFaena(),
+            empleadoNombre = nombreFaena()
         )
         insertPickingRecord(record)
         // D-181: pedir etiqueta por planta danada (rota / pasaporte ilegible)
@@ -1135,6 +1146,7 @@ class PickingRepository(
                     acopiadoServidor = l.acopiado,
                     fincaAcopio = l.fincaRelevada,
                     sectorAcopio = l.sectorRelevado,
+                    fincaArticulo = l.fincaArticulo,
                     operarioEmail = l.operarioEmail,
                     operarioNombre = l.operarioNombre,
                     motivoCierre = prev?.motivoCierre ?: "",
@@ -1506,8 +1518,8 @@ class PickingRepository(
             batchQty = -qty.coerceAtLeast(1),
             needsLabel = false,
             timestamp = System.currentTimeMillis(),
-            empleadoEmail = currentEncargado()?.email.orEmpty(),
-            empleadoNombre = currentEncargado()?.nombre.orEmpty()
+            empleadoEmail = emailFaena(),
+            empleadoNombre = nombreFaena()
         )
         pickingDao.insert(espejo)
         orderDao.updateLinePickedQty(line.orderLineId, maxOf(0, line.pickedQty - qty))

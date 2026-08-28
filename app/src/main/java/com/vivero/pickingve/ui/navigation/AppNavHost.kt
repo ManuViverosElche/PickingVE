@@ -6,10 +6,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
+import com.vivero.pickingve.data.repository.InventarioRepository
 import com.vivero.pickingve.ui.admin.AdminFincasScreen
 import com.vivero.pickingve.ui.admin.AdminFincasViewModel
 import com.vivero.pickingve.ui.admin.AdminUsersScreen
@@ -18,6 +20,7 @@ import com.vivero.pickingve.ui.logistica.FaenaDashboardScreen
 import com.vivero.pickingve.ui.logistica.FaenaDashboardViewModel
 import com.vivero.pickingve.ui.logistica.GestionFaenaScreen
 import com.vivero.pickingve.ui.logistica.GestionFaenaViewModel
+import com.vivero.pickingve.ui.inventario.InvViewModel
 import com.vivero.pickingve.ui.login.LoginScreen
 import com.vivero.pickingve.ui.login.LoginViewModel
 import com.vivero.pickingve.ui.mode.InventarioScreen
@@ -28,12 +31,18 @@ import com.vivero.pickingve.ui.picking.PickingScreen
 import com.vivero.pickingve.ui.picking.PickingViewModel
 import com.vivero.pickingve.ui.settings.SettingsScreen
 import com.vivero.pickingve.ui.settings.SettingsViewModel
+import com.vivero.pickingve.ui.welcome.AcopioResumen
 import com.vivero.pickingve.ui.welcome.WelcomeScreen
+import com.vivero.pickingve.ui.panel.PanelHubScreen
+import com.vivero.pickingve.ui.panel.HistoricoPanelScreen
+import com.vivero.pickingve.ui.panel.EtiquetasPanelScreen
+import com.vivero.pickingve.ui.panel.ConfigPanelScreen
 
 @Composable
 fun AppNavHost(
     repository: PickingRepository,
     settingsRepository: SettingsRepository,
+    inventarioRepository: InventarioRepository,
     deepLinkPedido: String? = null,
     deepLinkLinea: String? = null,
     deepLinkTipo: String? = null,
@@ -56,15 +65,29 @@ fun AppNavHost(
         viewModel { FaenaDashboardViewModel(repository) }
     val gestionFaenaViewModel: GestionFaenaViewModel =
         viewModel { GestionFaenaViewModel(repository) }
+    val invViewModel: InvViewModel =
+        viewModel { InvViewModel(repository, inventarioRepository) }
 
-    var loggedIn by remember { mutableStateOf(repository.tipoSesion().isNotBlank()) }
-    var screen by remember {
+    // D-239: rememberSaveable en lugar de remember para que la pantalla activa
+    // sobreviva a la recreación de la Activity (segundo plano / presión de memoria)
+    // y no vuelva a la bienvenida ("Buenos días").
+    var loggedIn by rememberSaveable { mutableStateOf(repository.tipoSesion().isNotBlank()) }
+    var screen by rememberSaveable {
         mutableStateOf(if (repository.tipoSesion().isNotBlank()) AppScreen.WELCOME else AppScreen.ORDERS)
     }
     val deepPedido = deepLinkPedido?.takeIf { it.isNotBlank() }
     val deepLinea = deepLinkLinea?.takeIf { it.isNotBlank() }
     val deepTipo = deepLinkTipo?.takeIf { it.isNotBlank() }
     val deepCambioTipo = deepLinkCambioTipo?.takeIf { it.isNotBlank() }
+
+    // D-233: cierre de sesión único. Resetea el LoginViewModel porque sin eso
+    // `state.success` seguía a true tras un login y LoginScreen volvía a entrar
+    // solo ("recarga la pantalla pero no cierra sesión").
+    val logout = {
+        repository.logout()
+        loginViewModel.reset()
+        loggedIn = false
+    }
 
     LaunchedEffect(loggedIn, deepPedido, deepTipo, deepCambioTipo) {
         // D-167: los operarios no navegan al pedido por push; solo encargados+
@@ -88,55 +111,59 @@ fun AppNavHost(
     }
 
     val faenaState by faenaViewModel.uiState.collectAsState()
-    val resumenFaena = if (faenaState.dias.isEmpty()) null
-    else {
-        val fincasHoy = faenaState.dias.firstOrNull()?.fincas?.size ?: 0
-        "${faenaState.totalPlantas} plantas · $fincasHoy finca(s)"
-    }
+    val acopioPorFinca = faenaState.dias
+        .flatMap { it.fincas }
+        .groupBy { it.finca }
+        .map { (finca, lista) -> AcopioResumen(finca, lista.sumOf { it.plantasPendientes }) }
+        .sortedByDescending { it.plantas }
 
     when (screen) {
         AppScreen.WELCOME -> WelcomeScreen(
             repository = repository,
             orderListViewModel = orderListViewModel,
-            resumenFaena = resumenFaena,
+            acopioPorFinca = acopioPorFinca,
             onEmpezar = {
                 screen = when {
                     repository.tipoSesion() == PickingRepository.TIPO_OPERARIO -> AppScreen.FAENA
                     else -> initialScreen(repository).let { if (it == AppScreen.ORDERS && repository.currentEncargado()?.modo == "AMBAS") AppScreen.MODE else it }
                 }
-            }
-        )
-        AppScreen.ORDERS -> OrderListScreen(
-            viewModel = orderListViewModel,
-            onOrderSelected = { orderId ->
-                pickingViewModel.selectOrder(orderId)
-                screen = AppScreen.PICKING
             },
-            onOpenSettings = { screen = AppScreen.SETTINGS },
-            onOpenFaena = { screen = AppScreen.FAENA },
-            onLogout = {
-                repository.logout()
-                loggedIn = false
-            }
+            onLogout = logout
         )
+        AppScreen.ORDERS -> {
+            val backDest = if (repository.currentEncargado()?.rol == "SUPERUSUARIO" || repository.currentEncargado()?.modo == "AMBAS") AppScreen.MODE else AppScreen.WELCOME
+            androidx.activity.compose.BackHandler {
+                screen = backDest
+            }
+            OrderListScreen(
+                viewModel = orderListViewModel,
+                onOrderSelected = { orderId ->
+                    pickingViewModel.selectOrder(orderId)
+                    screen = AppScreen.PICKING
+                },
+                onOpenSettings = { screen = AppScreen.SETTINGS },
+                onOpenFaena = { screen = AppScreen.FAENA },
+                onBack = { screen = backDest },
+                onLogout = logout
+            )
+        }
 
-        AppScreen.FAENA -> FaenaDashboardScreen(
-            viewModel = faenaViewModel,
-            onBack = { screen = AppScreen.ORDERS },
-            onOpenPedido = { orderId ->
-                pickingViewModel.selectOrder(orderId)
-                screen = AppScreen.PICKING
-            },
-            onOpenGestion = { screen = AppScreen.GESTION_FAENA },
-            onLogout = {
-                repository.logout()
-                loggedIn = false
-            }
-        )
+        AppScreen.FAENA -> {
+            androidx.activity.compose.BackHandler { screen = AppScreen.WELCOME }
+            FaenaDashboardScreen(
+                viewModel = faenaViewModel,
+                onBack = { screen = AppScreen.WELCOME },
+                onOpenPedido = { orderId ->
+                    pickingViewModel.selectOrder(orderId)
+                    screen = AppScreen.PICKING
+                },
+                onLogout = logout
+            )
+        }
 
         AppScreen.GESTION_FAENA -> GestionFaenaScreen(
             viewModel = gestionFaenaViewModel,
-            onBack = { screen = AppScreen.FAENA }
+            onBack = { screen = AppScreen.PANEL }
         )
 
         AppScreen.PICKING -> PickingScreen(
@@ -176,21 +203,49 @@ fun AppNavHost(
             encargadoNombre = repository.currentEncargado()?.let {
                 it.usuario.ifBlank { it.nombre }
             } ?: "",
+            mostrarPanel = repository.currentEncargado()?.rol == "SUPERUSUARIO",
+            onPanel = { screen = AppScreen.PANEL },
             onPicking = { screen = AppScreen.ORDERS },
             onInventario = { screen = AppScreen.INVENTARIO },
             onLogistica = { screen = AppScreen.FAENA },
-            onLogout = {
-                repository.logout()
-                loggedIn = false
-            }
+            onLogout = logout
         )
 
+        AppScreen.PANEL -> {
+            var panelSub by rememberSaveable { mutableStateOf("HUB") }
+            androidx.activity.compose.BackHandler {
+                if (panelSub != "HUB") panelSub = "HUB"
+                else screen = AppScreen.MODE
+            }
+            when (panelSub) {
+                "HUB" -> PanelHubScreen(
+                    onBack = { screen = AppScreen.MODE },
+                    onOpenHistorico = { panelSub = "HISTORICO" },
+                    onOpenEtiquetas = { panelSub = "ETIQUETAS" },
+                    onOpenConfig = { panelSub = "CONFIG" },
+                    onOpenGestion = { screen = AppScreen.GESTION_FAENA },
+                    onLogout = logout
+                )
+                "HISTORICO" -> HistoricoPanelScreen(
+                    onBack = { panelSub = "HUB" }
+                )
+                "ETIQUETAS" -> EtiquetasPanelScreen(
+                    onBack = { panelSub = "HUB" }
+                )
+                "CONFIG" -> ConfigPanelScreen(
+                    onBack = { panelSub = "HUB" }
+                )
+            }
+        }
+
         AppScreen.INVENTARIO -> InventarioScreen(
+            viewModel = invViewModel,
             onBack = if (repository.currentEncargado()?.modo == "AMBAS") {
                 { screen = AppScreen.MODE }
             } else {
                 null
-            }
+            },
+            onLogout = logout
         )
     }
 }
@@ -214,4 +269,4 @@ private fun initialScreen(repository: PickingRepository): AppScreen {
     }
 }
 
-private enum class AppScreen { WELCOME, ORDERS, FAENA, GESTION_FAENA, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO }
+private enum class AppScreen { WELCOME, ORDERS, FAENA, GESTION_FAENA, PICKING, SETTINGS, USERS, FINCAS, MODE, INVENTARIO, PANEL }

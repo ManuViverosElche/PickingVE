@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -25,10 +26,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vivero.pickingve.R
 import com.vivero.pickingve.ui.theme.BrandGreen
+import com.vivero.pickingve.ui.theme.BrandRed
 
 /**
  * D-192: acceso unificado — usuario (encargado) o email (operario) + contraseña.
@@ -52,31 +60,39 @@ fun LoginScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Spacer(Modifier.height(24.dp))
+        Image(
+            painter = painterResource(R.drawable.logo_viveros),
+            contentDescription = "Logo Viveros Elche",
+            modifier = Modifier
+                .height(130.dp)
+                .width(130.dp)
+        )
+
+        Spacer(Modifier.height(20.dp))
+
         Text(
-            text = "PickingVE",
-            style = MaterialTheme.typography.headlineLarge,
+            text = "Logística Viveros Elche",
+            style = MaterialTheme.typography.titleLarge,
             color = BrandGreen,
-            modifier = Modifier.padding(bottom = 4.dp)
+            fontWeight = FontWeight.Bold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
-        Text(
-            text = "Logística · Viveros Elche",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
+
+        Spacer(Modifier.height(60.dp))
 
         OutlinedTextField(
             value = usuario,
             onValueChange = { usuario = it.trim() },
-            label = { Text("Usuario o email") },
-            supportingText = { Text("Encargados: usuario · Operarios: email") },
+            label = { Text("Email") },
             singleLine = true,
             enabled = !state.loading,
             colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 focusedBorderColor = BrandGreen,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline,
                 cursorColor = BrandGreen,
@@ -91,8 +107,10 @@ fun LoginScreen(
             label = { Text("Contraseña") },
             visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
             singleLine = true,
-            enabled = !state.loading && usuario.isNotBlank(),
+            enabled = !state.loading,
             colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 focusedBorderColor = BrandGreen,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline,
                 cursorColor = BrandGreen,
@@ -103,24 +121,18 @@ fun LoginScreen(
                     Icon(
                         imageVector = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                         contentDescription = if (showPassword) "Ocultar contraseña" else "Mostrar contraseña",
-                        tint = if (usuario.isNotBlank()) BrandGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = BrandGreen
                     )
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().align(Alignment.CenterHorizontally)
         )
 
-        if (state.error != null) {
-            Text(
-                text = state.error.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 10.dp)
-            )
-        }
-
         Button(
-            onClick = { viewModel.login(usuario, password) },
+            onClick = {
+                if (showPassword) showPassword = false
+                viewModel.login(usuario, password)
+            },
             enabled = !state.loading && usuario.isNotBlank() && password.isNotBlank(),
             colors = ButtonDefaults.buttonColors(
                 containerColor = BrandGreen,
@@ -128,7 +140,8 @@ fun LoginScreen(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp)
+                .padding(top = 8.dp)
+                .height(56.dp)
         ) {
             if (state.loading) {
                 CircularProgressIndicator(
@@ -137,7 +150,22 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }
-            Text(if (state.loading) "Accediendo…" else "Entrar")
+            Text(if (state.loading) "Accediendo…" else "Entrar", fontWeight = FontWeight.Bold)
         }
+
+        // D-239: error de autenticación en Rojo Corporativo (#962622).
+        state.error?.let { error ->
+            Text(
+                text = error,
+                color = BrandRed,
+                fontWeight = FontWeight.Medium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+            )
+        }
+
+        Spacer(Modifier.weight(1.5f))
     }
 }

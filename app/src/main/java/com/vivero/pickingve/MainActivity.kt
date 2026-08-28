@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
                 AppNavHost(
                     repository = app.pickingRepository,
                     settingsRepository = app.settingsRepository,
+                    inventarioRepository = app.inventarioRepository,
                     deepLinkPedido = deepLinkPedido,
                     deepLinkLinea = deepLinkLinea,
                     deepLinkTipo = deepLinkTipo,

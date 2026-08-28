@@ -19,6 +19,10 @@ object Errores {
     const val SIN_CONEXION =
         "Sin conexión a internet. Lo que hagas quedará guardado en el móvil y se enviará al recuperar la señal."
 
+    /** D-201: el login es online-only; no promete guardado offline. */
+    const val SIN_CONEXION_LOGIN =
+        "Sin conexión a internet. El acceso necesita conexión: comprueba tu señal y vuelve a intentarlo."
+
     const val TIMEOUT =
         "La conexión tardó demasiado en responder. Comprueba tu señal e inténtalo de nuevo."
 

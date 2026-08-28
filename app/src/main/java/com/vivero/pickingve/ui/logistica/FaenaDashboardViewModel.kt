@@ -29,8 +29,13 @@ data class FaenaLinea(
     val esAyuda: Boolean = false
 )
 
-data class FaenaSector(
-    val sector: String,
+/** D-237: pedido agrupado dentro de una finca de procedencia, con datos de pedido estilo picking. */
+data class FaenaPedido(
+    val orderId: String,
+    val clienteDisplay: String,
+    val marcaPedido: String,
+    val fincaCarga: String,
+    val sectorCarga: String,
     val plantasPendientes: Int,
     val lineas: List<FaenaLinea>
 )
@@ -40,7 +45,7 @@ data class FaenaFinca(
     val fechaCarga: LocalDate,
     val plantasPendientes: Int,
     val viajesEstimados: Int,
-    val sectores: List<FaenaSector>
+    val pedidos: List<FaenaPedido>
 )
 
 data class FaenaDia(
@@ -71,7 +76,11 @@ data class FaenaUiState(
     val colegasDisponibles: List<ColegaFaena> = emptyList(),
     val totalPlantas: Int = 0,
     /** Catálogo sector -> descripción, para mostrar NOMBRES nunca códigos. */
-    val sectoresDesc: Map<String, String> = emptyMap()
+    val sectoresDesc: Map<String, String> = emptyMap(),
+    /** D-237: fincas de procedencia de planta disponibles para filtrar. */
+    val fincasDisponibles: List<String> = emptyList(),
+    /** D-237: finca de procedencia activa en el filtro; null = todas. */
+    val fincaFiltro: String? = null
 ) {
     companion object {
         const val CAPACIDAD_DEFECTO = 300
@@ -87,6 +96,7 @@ class FaenaDashboardViewModel(
     private val colegas = MutableStateFlow<List<ColegaFaena>>(emptyList())
     private val permisosAyuda = MutableStateFlow<Set<String>>(emptySet())
     private val sectores = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val fincaFiltro = MutableStateFlow<String?>(null)
 
     init {
         refrescarPerfil()
@@ -213,6 +223,11 @@ class FaenaDashboardViewModel(
         recargarPermisosAyuda()
     }
 
+    /** D-237: filtra la faena por finca de procedencia de planta (null = todas). */
+    fun filtrarPorFinca(finca: String?) {
+        fincaFiltro.value = finca
+    }
+
     /** D-169: el ayudante solo ve las líneas que le fueron concedidas. */
     private fun recargarPermisosAyuda() {
         viewModelScope.launch {
@@ -337,10 +352,10 @@ class FaenaDashboardViewModel(
         repository.observeOrdersConLineas(),
         ayudaDe,
         maquinaria,
-        sectores,
+        combine(sectores, fincaFiltro) { s, f -> s to f },
         combine(colegas, permisosAyuda) { c, p -> c to p }
-    ) { pedidos, ayuda, mq, sectoresMap, extra ->
-        construirEstado(pedidos, ayuda, mq, sectoresMap, extra.first, extra.second)
+    ) { pedidos, ayuda, mq, sectFiltro, extra ->
+        construirEstado(pedidos, ayuda, mq, sectFiltro.first, sectFiltro.second, extra.first, extra.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FaenaUiState())
 
     private fun construirEstado(
@@ -348,6 +363,7 @@ class FaenaDashboardViewModel(
         ayuda: ColegaFaena?,
         mq: String,
         sectoresMap: Map<String, String>,
+        filtroFinca: String?,
         candidatosColegas: List<ColegaFaena>,
         permisos: Set<String>
     ): FaenaUiState {
@@ -357,12 +373,12 @@ class FaenaDashboardViewModel(
         val esSuper = repository.esSuperusuario()
         val esOperario = repository.tipoSesion() == PickingRepository.TIPO_OPERARIO
 
-        data class Acum(
+        data class AcumFinca(
             val nombreFinca: String,
-            val lineas: MutableList<FaenaLinea> = mutableListOf()
+            val porPedido: MutableMap<String, MutableList<FaenaLinea>> = mutableMapOf()
         )
 
-        val porDia = mutableMapOf<LocalDate, MutableList<Pair<String, Acum>>>()
+        val porDia = mutableMapOf<LocalDate, MutableList<AcumFinca>>()
         var totalPlantas = 0
 
         val hayReparto = pedidos.any { p ->
@@ -393,16 +409,25 @@ class FaenaDashboardViewModel(
                 val pendiente =
                     (line.requestedQty - maxOf(line.pickedQty, line.acopiadoServidor))
                         .coerceAtLeast(0)
-                if (pendiente <= 0) continue
+                // D-237: se acumulan TODAS las líneas vigentes sin cerrar de la
+                // finca (pendientes y completas) para que el operario vea el
+                // estado de cada una (COGIDA/PARCIAL). Las fincas y días se
+                // filtran después a los que aún tienen pendiente.
+                if (pendiente < 0) continue
 
-                val fincaAcopio = line.fincaAcopio.ifBlank { p.order.fincaCarga }.ifBlank { "Sin finca" }
-                val acumuladoresDia = porDia.getOrPut(fecha) { mutableListOf() }
-                var acum = acumuladoresDia.firstOrNull { it.first == fincaAcopio }?.second
-                if (acum == null) {
-                    acum = Acum(nombreFinca = fincaAcopio)
-                    acumuladoresDia += fincaAcopio to acum
-                }
-                acum.lineas += FaenaLinea(
+                // D-237: finca de procedencia = donde está la planta a recoger.
+                // FINCA_RELEVADA prevalece; si no, la finca del artículo; si no, la de carga.
+                val fincaProc = line.fincaAcopio
+                    .ifBlank { line.fincaArticulo }
+                    .ifBlank { p.order.fincaCarga }
+                    .ifBlank { "Sin finca" }
+                // D-237: filtro por finca de procedencia de planta.
+                if (filtroFinca != null && !filtroFinca.equals(fincaProc, ignoreCase = true)) continue
+
+                val diaAcum = porDia.getOrPut(fecha) { mutableListOf() }
+                val acumFinca = diaAcum.firstOrNull { it.nombreFinca.equals(fincaProc, ignoreCase = true) }
+                    ?: AcumFinca(nombreFinca = fincaProc).also { diaAcum += it }
+                acumFinca.porPedido.getOrPut(p.order.orderId) { mutableListOf() } += FaenaLinea(
                     orderId = p.order.orderId,
                     clienteDisplay = clienteDisplay(
                         p.order.customerFiscal,
@@ -420,29 +445,35 @@ class FaenaDashboardViewModel(
         val dias = porDia.entries
             .sortedBy { it.key }
             .map { (dia, acumuladores) ->
-                val fincas = acumuladores.map { (_, acum) ->
-                    val lineas = acum.lineas.sortedWith(
-                        compareByDescending<FaenaLinea> { esUltra(it) }.thenBy { it.line.posicion }
-                    )
-                    val porSector = lineas.groupBy { l ->
-                        l.line.sectorAcopio.ifBlank { l.line.sectorDesc }.ifBlank { "Sin sector" }
-                    }
-                    val sectores = porSector.entries
-                        .map { (clave, ls) ->
-                            val nombre = sectoresMap[clave] ?: clave
-                            FaenaSector(nombre, ls.sumOf { it.pendiente }, ls)
-                        }
-                        .sortedWith(
-                            compareByDescending<FaenaSector> { esUltraEn(it) }
-                                .thenByDescending { it.plantasPendientes }
+                val fincas = acumuladores.mapNotNull { acum ->
+                    val pedidosFinca = acum.porPedido.entries.map { (orderId, lineas) ->
+                        val lineasOrd = lineas.sortedWith(
+                            compareByDescending<FaenaLinea> { esUltra(it) }.thenBy { it.line.posicion }
                         )
-                    val plantas = lineas.sumOf { it.pendiente }
+                        val pedidoRef = pedidos.firstOrNull { it.order.orderId == orderId }?.order
+                        FaenaPedido(
+                            orderId = orderId,
+                            clienteDisplay = lineasOrd.firstOrNull()?.clienteDisplay.orEmpty(),
+                            marcaPedido = pedidoRef?.marcaPedido.orEmpty(),
+                            fincaCarga = pedidoRef?.fincaCarga.orEmpty(),
+                            sectorCarga = pedidoRef?.sectorCarga.orEmpty(),
+                            plantasPendientes = lineasOrd.sumOf { it.pendiente },
+                            lineas = lineasOrd
+                        )
+                    }.sortedWith(
+                        compareByDescending<FaenaPedido> { esUltraEnPedido(it) }
+                            .thenByDescending { it.plantasPendientes }
+                            .thenBy { it.orderId }
+                    )
+                    val plantas = acum.porPedido.values.flatten().sumOf { it.pendiente }
+                    // D-237: solo se muestra la finca si aún queda algo por coger.
+                    if (plantas <= 0) return@mapNotNull null
                     FaenaFinca(
                         finca = acum.nombreFinca,
                         fechaCarga = dia,
                         plantasPendientes = plantas,
                         viajesEstimados = if (plantas == 0) 0 else ceil(plantas / capacidad.toDouble()).toInt(),
-                        sectores = sectores
+                        pedidos = pedidosFinca
                     )
                 }.sortedByDescending { it.plantasPendientes }
                 FaenaDia(
@@ -452,6 +483,10 @@ class FaenaDashboardViewModel(
                     fincas = fincas
                 )
             }
+
+        val fincasDisponibles = dias.flatMap { it.fincas.map { f -> f.finca } }
+            .distinct()
+            .sorted()
 
         val debeCambiarPass = repository.currentOperario()?.debeCambiarPassword == true
 
@@ -466,7 +501,9 @@ class FaenaDashboardViewModel(
             ayudaDe = ayuda,
             colegasDisponibles = candidatosColegas,
             totalPlantas = totalPlantas,
-            sectoresDesc = sectoresMap
+            sectoresDesc = sectoresMap,
+            fincasDisponibles = fincasDisponibles,
+            fincaFiltro = filtroFinca
         )
     }
 
@@ -509,8 +546,11 @@ class FaenaDashboardViewModel(
         fun esUltra(l: FaenaLinea): Boolean =
             l.line.prioridad.trim().uppercase(Locale.getDefault()) == "PRIORITARIO"
 
-        private fun esUltraEn(sector: FaenaSector): Boolean =
-            sector.lineas.any { esUltra(it) }
+        private fun esUltraEnPedido(pedido: FaenaPedido): Boolean =
+            pedido.lineas.any { esUltra(it) }
+
+        /** D-237: true si el pedido tiene alguna línea PRIORITARIA (para chips de la finca). */
+        fun esUltraEnPedidoPublic(pedido: FaenaPedido): Boolean = esUltraEnPedido(pedido)
     }
 }
 

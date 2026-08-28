@@ -23,6 +23,9 @@ import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
 import com.vivero.pickingve.data.local.entities.SectorEntity
+import com.vivero.pickingve.data.local.entities.InventoryRecordEntity
+import com.vivero.pickingve.data.local.entities.InventoryStockEntity
+import com.vivero.pickingve.data.local.dao.InventoryDao
 
 @Database(
     entities = [
@@ -34,9 +37,11 @@ import com.vivero.pickingve.data.local.entities.SectorEntity
         LitrajeEntity::class,
         SectorEntity::class,
         ChatEstadoEntity::class,
-        OperarioEntity::class
+        OperarioEntity::class,
+        InventoryStockEntity::class,
+        InventoryRecordEntity::class
     ],
-    version = 23,
+    version = 27,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -49,6 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sectorDao(): SectorDao
     abstract fun chatEstadoDao(): ChatEstadoDao
     abstract fun operarioDao(): OperarioDao
+    abstract fun inventoryDao(): InventoryDao
 
     companion object {
         @Volatile
@@ -369,6 +375,95 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS inventario_stock (
+                        ref TEXT NOT NULL,
+                        litraje TEXT NOT NULL,
+                        sector TEXT NOT NULL,
+                        nombre TEXT NOT NULL,
+                        ean TEXT NOT NULL,
+                        stock REAL NOT NULL,
+                        PRIMARY KEY(ref, litraje, sector)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS inventario_records (
+                        recordId TEXT NOT NULL PRIMARY KEY,
+                        finca TEXT NOT NULL,
+                        sector TEXT NOT NULL,
+                        eanEscaneado TEXT,
+                        ocrTexto TEXT,
+                        refArticulo TEXT NOT NULL,
+                        litraje TEXT NOT NULL,
+                        sectorEtiqueta TEXT NOT NULL,
+                        nombrePlanta TEXT NOT NULL,
+                        cantidad INTEGER NOT NULL,
+                        fueraSector INTEGER NOT NULL,
+                        reetiquetar INTEGER NOT NULL,
+                        sinEan INTEGER NOT NULL,
+                        latitud REAL,
+                        longitud REAL,
+                        timestamp INTEGER NOT NULL,
+                        syncedBigQuery INTEGER NOT NULL,
+                        deleted INTEGER NOT NULL,
+                        wasUploaded INTEGER NOT NULL,
+                        empleadoEmail TEXT NOT NULL,
+                        empleadoNombre TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_inventario_records_finca_sector " +
+                        "ON inventario_records (finca, sector)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_inventario_records_eanEscaneado " +
+                        "ON inventario_records (eanEscaneado)"
+                )
+            }
+        }
+
+        private val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE order_lines ADD COLUMN fincaArticulo TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
+        private val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // D-240/D-241/D-243: campos de incidencia, motivo de etiqueta,
+                // huecos y modo de pistoleo en los registros de inventario.
+                db.execSQL(
+                    "ALTER TABLE inventario_records ADD COLUMN labelMotivo TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE inventario_records ADD COLUMN incidenciaTexto TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE inventario_records ADD COLUMN esHueco INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE inventario_records ADD COLUMN modoInventario TEXT NOT NULL DEFAULT 'ESTANDAR'"
+                )
+            }
+        }
+
+        private val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // D-244: ID de sesión lineal (A -> B) para agrupar líneas independientes.
+                db.execSQL(
+                    "ALTER TABLE inventario_records ADD COLUMN linealSessionId TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -382,7 +477,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                         MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                        MIGRATION_21_22, MIGRATION_22_23
+                        MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
+                        MIGRATION_25_26, MIGRATION_26_27
                     )
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()

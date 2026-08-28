@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.vivero.pickingve.data.local.AppDatabase
+import com.vivero.pickingve.data.repository.InventarioRepository
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
 import com.vivero.pickingve.worker.PickingSyncWorker
@@ -28,6 +29,16 @@ class PickingApplication : Application() {
             sectorDao = database.sectorDao(),
             chatEstadoDao = database.chatEstadoDao(),
             operarioDao = database.operarioDao()
+        )
+    }
+    val inventarioRepository by lazy {
+        InventarioRepository(
+            context = this,
+            inventoryDao = database.inventoryDao(),
+            productDao = database.productDao(),
+            litrajeDao = database.litrajeDao(),
+            sectorDao = database.sectorDao(),
+            pickingRepository = pickingRepository
         )
     }
 
