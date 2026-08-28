@@ -27,10 +27,10 @@
     --bad: #962622; --bad-soft: #962622; --bad-bg: #f7e3e2; --bad-bd: rgba(150,38,34,0.4);
     --info: #1565c0; --info-bg: #e3edfb; --info-bd: rgba(21,101,192,0.35);
     --amarillo: #d97706;
-    --header-bg: #0c3a3f; --header-tx: #ffffff;
     --ring: rgba(53,184,172,0.25);
     --shadow-sm: 0 2px 6px rgba(12,58,63,0.10);
     --shadow-lg: 0 6px 18px rgba(12,58,63,0.16);
+    --r: 12px;
     /* Alias compatibilidad (legacy inventario) */
     --corp-dark: var(--primary); --corp-line: var(--line); --corp-bg: var(--card2);
     --warn-tx: var(--warn); --gris-tx: var(--mut);
@@ -46,7 +46,6 @@
     --bad: #e05a4e; --bad-soft: #ff9e95; --bad-bg: rgba(224,90,78,0.12); --bad-bd: rgba(224,90,78,0.5);
     --info: #7fd0e0; --info-bg: rgba(127,208,224,0.15); --info-bd: rgba(127,208,224,0.4);
     --amarillo: #e6b45c;
-    --header-bg: #0c262b; --header-tx: #e8f4f2;
     --ring: rgba(66,201,189,0.25);
     --shadow-sm: 0 2px 6px rgba(0,0,0,0.4);
     --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
@@ -55,82 +54,88 @@
     --warn-tx: var(--warn); --gris-tx: var(--mut);
     --rojo: var(--bad); --verde: var(--ok); --corp-green: var(--primary-soft); --azul: var(--info);
   }
-  * { box-sizing: border-box; }
-  body { font-family: "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--txt); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--txt); line-height: 1.5; }
 
   /* ===== Toggle tema (sol/luna) ===== */
-  .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; font-size: 1.05rem; border-radius: 50%; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.35); cursor: pointer; transition: all 0.2s; }
-  .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; font-size: 1.15rem; border-radius: 50%; background: var(--card2); color: var(--txt); border: 1px solid var(--line); cursor: pointer; transition: all 0.2s; }
+  .theme-toggle:hover { border-color: var(--primary); transform: translateY(-1px); }
   .theme-toggle .icon-moon { display: none; }
   .theme-toggle .icon-sun { display: inline; }
-  [data-theme="dark"] .theme-toggle { background: rgba(0,0,0,0.25); border-color: var(--line); color: var(--txt); }
+  [data-theme="dark"] .theme-toggle { background: var(--card2); border-color: var(--line); color: var(--txt); }
   [data-theme="dark"] .theme-toggle .icon-moon { display: inline; }
   [data-theme="dark"] .theme-toggle .icon-sun { display: none; }
 
-  header { position: sticky; top: 0; z-index: 1002; background: var(--header-bg); color: var(--header-tx); box-shadow: var(--shadow-sm); }
-  header .wrap { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 24px; }
-  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-  header .sub { font-size: 12px; opacity: .85; }
-  header .spacer { flex: 1; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--bg); color: var(--txt); border-bottom: 1px solid var(--line); padding: 10px 0; }
+  header h1 { font-size: 1.4rem; margin: 0; font-weight: 800; color: var(--primary); }
+  header .sub { font-size: 0.85rem; color: var(--mut); }
+  header .header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+  .header-btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card2); color: var(--txt); font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+  .header-btn:hover { background: var(--line); }
 
   .wrap { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
 
-  .controles { position: sticky; top: 52px; z-index: 1001; background: var(--card); border-bottom: 1px solid var(--line); box-shadow: var(--shadow-sm); }
-  .controles .wrap { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; padding: 12px 24px; }
-  .campo { display: flex; flex-direction: column; gap: 3px; }
-  .campo label { font-size: 11px; color: var(--mut); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-  select, input[type=date], input[type=text], .datepicker-btn { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; min-width: 180px; background: var(--card); color: var(--txt); }
-  button { padding: 7px 16px; border: none; border-radius: 6px; background: var(--primary); color: var(--on-primary); font-size: 13px; cursor: pointer; }
-  button.secundario { background: var(--card); color: var(--primary); border: 1px solid var(--primary); }
+  .app-head { position: sticky; top: 0; z-index: 1002; background: var(--bg); }
+  .controles { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-sm); margin: 12px 0; }
+  .controles .wrap { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; padding: 12px 16px; }
+  .campo { display: flex; flex-direction: column; gap: 4px; }
+  .campo label { font-size: 0.7rem; color: var(--mut); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+  select, input[type=date], input[type=text], .datepicker-btn { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.88rem; min-width: 180px; background: var(--card); color: var(--txt); }
+  button { padding: 8px 14px; border: none; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+  button:hover { background: var(--primary-soft); }
+  button.secundario { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
+  button.secundario:hover { background: var(--line); }
   button:disabled { opacity: .5; cursor: default; }
 
-  .tabs { position: sticky; top: 108px; z-index: 1000; background: var(--card); border-bottom: 1px solid var(--line); box-shadow: var(--shadow-sm); }
-  .tabs .wrap { display: flex; gap: 4px; overflow-x: auto; padding: 0 24px; }
-  .tab-btn { padding: 12px 18px; border: none; background: transparent; font-size: 13.5px; font-weight: 600; color: var(--mut); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
-  .tab-btn.activa { color: var(--primary); border-bottom-color: var(--primary); background: var(--card2); }
+  .tabs { background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px 0; }
+  .tabs .wrap { display: flex; gap: 8px; flex-wrap: wrap; padding: 0; }
+  .tab-btn { padding: 7px 16px; border: 1px solid var(--line); background: var(--card); font-size: 0.88rem; font-weight: 700; color: var(--mut); cursor: pointer; border-radius: 20px; white-space: nowrap; transition: all 0.15s; }
+  .tab-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .tab-btn.activa { color: var(--primary); border-color: var(--primary); background: var(--card2); outline: 2px solid var(--ring); outline-offset: 1px; }
 
   main { padding: 18px 0 60px; }
-  .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
-  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
-  .kpi .t { font-size: 11px; color: var(--mut); text-transform: uppercase; letter-spacing: .04em; }
-  .kpi .v { font-size: 22px; font-weight: 700; margin-top: 2px; }
-  .kpi .s { font-size: 11px; color: var(--mut); }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 16px; overflow: hidden; display: none; }
+  .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; box-shadow: var(--shadow-sm); }
+  .kpi .t { font-size: 0.7rem; color: var(--mut); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 800; }
+  .kpi .v { font-size: 1.5rem; font-weight: 800; margin-top: 2px; color: var(--primary); font-variant-numeric: tabular-nums; }
+  .kpi .s { font-size: 0.72rem; color: var(--mut); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: 16px; overflow: hidden; display: none; box-shadow: var(--shadow-sm); }
   section.activa { display: block; }
-  section h2 { font-size: 13px; margin: 0; padding: 10px 16px; background: var(--card2); color: var(--primary); text-transform: uppercase; letter-spacing: .05em; display:flex; justify-content: space-between; align-items:center; gap: 10px; flex-wrap: wrap;}
-  section h3 { font-size: 12px; text-transform: uppercase; color: var(--primary); }
+  section h2 { font-size: 0.85rem; margin: 0; padding: 10px 18px; background: var(--card2); color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em; display:flex; justify-content: space-between; align-items:center; gap: 10px; flex-wrap: wrap; font-weight: 800; border-bottom: 1px solid var(--line); }
+  section h3 { font-size: 0.78rem; text-transform: uppercase; color: var(--primary); font-weight: 800; }
 
   .table-scroll { max-height: 480px; overflow-y: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  thead th { background: var(--primary); color: var(--on-primary); text-align: left; padding: 7px 9px; font-weight: 600; position: sticky; top: 0; z-index: 10; }
-  tbody td { padding: 6px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  thead th { background: var(--card); color: var(--mut); text-align: left; padding: 7px 9px; font-weight: 700; position: sticky; top: 0; z-index: 10; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; border-bottom: 1px solid var(--line); }
+  tbody td { padding: 7px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
   tbody tr:nth-child(even) { background: var(--card2); }
   tr.falta td.estado, td.rojo { color: var(--bad); font-weight: 700; }
   tr.exceso { background: var(--warn-bg) !important; }
   td.ambar { color: var(--warn); font-weight: 700; }
   td.verde { color: var(--ok); font-weight: 700; }
-  .estado-badge { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-  .badge-ok { background:var(--ok-bg); color: var(--ok); }
-  .badge-cerrado { background:var(--ok-bg); color: var(--primary-soft); }
-  .badge-abierto { background:var(--warn-bg); color: var(--amarillo); }
-  .badge-asignado { background:var(--info-bg); color: var(--info); }
-  .badge-falta { background:var(--bad-bg); color: var(--bad); }
+  .estado-badge { display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 800; border: 1px solid transparent; }
+  .badge-ok { background:var(--ok-bg); color: var(--ok); border-color: var(--ok-bd); }
+  .badge-cerrado { background:var(--ok-bg); color: var(--primary-soft); border-color: var(--ok-bd); }
+  .badge-abierto { background:var(--warn-bg); color: var(--warn); border-color: var(--warn-bd); }
+  .badge-asignado { background:var(--info-bg); color: var(--info); border-color: var(--info-bd); }
+  .badge-falta { background:var(--bad-bg); color: var(--bad); border-color: var(--bad-bd); }
   .filtros-estados { display:flex; gap:6px; flex-wrap:wrap; }
-  .chip { font-size:11px; padding:3px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--mut); cursor:pointer; }
+  .chip { font-size:0.8rem; font-weight:700; padding:5px 13px; border-radius:18px; border:1px solid var(--line); background:var(--card2); color:var(--mut); cursor:pointer; transition: all 0.15s; }
+  .chip:hover { border-color: var(--primary); color: var(--primary); }
   .chip.activa { background:var(--primary); color:var(--on-primary); border-color:var(--primary); }
-  .vacio { padding: 18px; color: var(--mut); font-size: 13px; text-align: center; }
-  .error { margin: 14px 0; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-bd); border-radius: 8px; padding: 12px 16px; font-size: 13px; }
+  .vacio { padding: 18px; color: var(--mut); font-size: 0.85rem; text-align: center; }
+  .error { margin: 14px 0; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-bd); border-radius: 8px; padding: 12px 16px; font-size: 0.85rem; }
 
   /* Fecha / calendario */
   .datepicker-wrap { position: relative; }
   .datepicker-btn { cursor: pointer; text-align: left; width: 180px; background: var(--card); }
-  .cal-popup { position: absolute; top: 110%; left: 0; z-index: 1200; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-lg); padding: 10px; width: 260px; }
+  .cal-popup { position: absolute; top: 110%; left: 0; z-index: 1200; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 10px; width: 260px; }
   .cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .cal-head button { padding: 2px 10px; font-size: 13px; background: var(--card2); color: var(--primary); border: 1px solid var(--line); }
-  .cal-titulo { font-size: 13px; font-weight: 700; color: var(--primary); }
+  .cal-head button { padding: 2px 10px; font-size: 0.85rem; background: var(--card2); color: var(--primary); border: 1px solid var(--line); }
+  .cal-titulo { font-size: 0.85rem; font-weight: 700; color: var(--primary); }
   .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
-  .cal-dow { font-size: 10px; color: var(--mut); font-weight: 700; padding: 4px 0; text-transform: uppercase; }
-  .cal-dia { padding: 6px 2px; border-radius: 6px; font-size: 12px; color: var(--txt); cursor: pointer; }
+  .cal-dow { font-size: 0.65rem; color: var(--mut); font-weight: 800; padding: 4px 0; text-transform: uppercase; }
+  .cal-dia { padding: 6px 2px; border-radius: 6px; font-size: 0.8rem; color: var(--txt); cursor: pointer; }
   .cal-dia:hover { background: var(--card2); }
   .cal-dia.vacio { cursor: default; }
   .cal-dia.seleccionado { outline: 2px solid var(--primary); }
@@ -141,25 +146,45 @@
   select option.sector-abierto { background: var(--warn-bg); color: var(--warn); }
   select option.sector-asignado { background: var(--info-bg); color: var(--info); }
 
-  .partes-filtros { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); align-items: end; }
-  .partes-filtros .campo label { font-size: 10px; }
+  .partes-filtros { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 16px; background: var(--card2); border-bottom: 1px solid var(--line); align-items: end; }
+  .partes-filtros .campo label { font-size: 0.65rem; }
   .partes-filtros input { min-width: 130px; }
-  .finca-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 16px; background: var(--card2); }
+  .finca-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 16px; background: var(--card2); border-bottom: 1px solid var(--line); }
+
+  /* Configuracion: secciones desplegables (acordeon) con scroll interior */
+  .cfg-section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  .cfg-section-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; cursor: pointer; user-select: none; background: var(--card2); transition: background 0.15s; }
+  .cfg-section-head:hover { background: var(--accent-soft); }
+  .cfg-section-head h3 { font-size: 1rem; color: var(--primary); margin: 0; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 800; }
+  .cfg-chevron { transition: transform 0.2s; color: var(--mut); font-size: 0.9rem; }
+  .cfg-section.open .cfg-chevron { transform: rotate(90deg); color: var(--primary); }
+  .cfg-section-body { display: none; padding: 14px 18px; border-top: 1px solid var(--line); }
+  .cfg-section.open .cfg-section-body { display: block; }
+  .cfg-section .table-scroll { max-height: 340px; }
+  .cfg-faena-finca { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+  .cfg-faena-finca > b { color: var(--primary); }
+  .cfg-faena-fila { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+  .cfg-faena-fila span.sec-label { min-width: 200px; font-size: 0.8rem; color: var(--mut); font-weight: 700; }
+  .cfg-faena-fila select { min-width: 220px; font-size: 0.85rem; padding: 6px 10px; }
+  .cfg-faena-fila button { padding: 6px 12px; font-size: 0.78rem; }
 
   @media print {
     header, .controles, .tabs, button, .partes-filtros, .finca-chips { display: none !important; }
     body { background: #fff; }
     section { break-inside: avoid; border-color: #bbb; display: block !important; }
     thead th { position: static; }
-  }
-</style>
+  }</style>
 </head>
 <body>
+<div class="app-head">
 <header>
-  <div class="wrap">
-    <h1>INVENTARIO</h1>
+  <div>
+    <h1>🌿 INVENTARIO</h1>
     <div class="sub">An&aacute;lisis esperado (FactuSOL) vs contado &middot; Viveros Elche S.L.</div>
-    <span class="spacer"></span>
+  </div>
+  <div class="header-actions">
+    <button class="header-btn" onclick="btnPdf()" title="Descargar informe PDF del análisis actual">📄 PDF</button>
+    <button class="header-btn" onclick="window.print()" title="Imprimir el análisis actual">🖨️ Imprimir</button>
     <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema (claro/oscuro)" aria-label="Cambiar tema claro u oscuro">
       <span class="icon-sun">☀️</span><span class="icon-moon">🌙</span>
     </button>
@@ -170,7 +195,7 @@
   <div class="wrap">
     <div class="campo">
       <label for="selFinca">Finca</label>
-      <select id="selFinca"></select>
+      <select id="selFinca"><option value="">— Selecciona una finca —</option></select>
     </div>
     <div class="campo">
       <label for="selSector">Sector</label>
@@ -185,20 +210,19 @@
       </div>
     </div>
     <button id="btnVer">Ver an&aacute;lisis</button>
-    <button class="secundario" id="btnPdf">PDF</button>
-    <button class="secundario" onclick="window.print()">Imprimir</button>
   </div>
 </div>
 
 <div class="tabs">
   <div class="wrap">
-    <button class="tab-btn activa" onclick="switchTab('mapa', this)">🗺️ Mapa e Interactivo</button>
-    <button class="tab-btn" onclick="switchTab('sectores', this)">📊 Resumen por Sector & Cierre</button>
-    <button class="tab-btn" onclick="switchTab('referencias', this)">🌿 Resumen por Referencia</button>
-    <button class="tab-btn" onclick="switchTab('partes', this)">📋 Partes Realizados</button>
-    <button class="tab-btn" onclick="switchTab('pistoleos', this)">🗑️ Gestión de Pistoleos</button>
+    <button class="tab-btn activa" onclick="switchTab('partes', this)">📋 Partes</button>
+    <button class="tab-btn" onclick="switchTab('sectores', this)">📊 Resumen por sector</button>
+    <button class="tab-btn" onclick="switchTab('referencias', this)">🌿 Resumen por referencia</button>
+    <button class="tab-btn" onclick="switchTab('inventarios', this)">🗑️ Inventarios</button>
+    <button class="tab-btn" onclick="switchTab('mapa', this)">🗺️ Mapa</button>
     <button class="tab-btn" onclick="switchTab('config', this)">⚙️ Configuración</button>
   </div>
+</div>
 </div>
 
 <div class="wrap">
@@ -208,7 +232,7 @@
     <div class="tarjetas" id="kpis"></div>
 
     <!-- PESTAÑA 1: MAPA -->
-    <section id="sec-mapa" class="activa">
+    <section id="sec-mapa">
       <h2>
         Mapa de Calor y Puntos GPS (Escaneos en Campo)
         <span style="font-size:11px; font-weight:normal; color:var(--gris-tx);">
@@ -267,13 +291,20 @@
     </section>
 
     <!-- PESTAÑA 4: PARTES REALIZADOS -->
-    <section id="sec-partes">
+    <section id="sec-partes" class="activa">
       <h2>Partes de Inventario Realizados</h2>
       <div class="partes-filtros">
         <div class="campo"><label>Finca</label><input type="text" id="busqFincaParte" placeholder="Filtrar finca"></div>
         <div class="campo"><label>Operario</label><input type="text" id="busqOperarioParte" placeholder="Filtrar operario"></div>
         <div class="campo"><label>Sector</label><input type="text" id="busqSectorParte" placeholder="Filtrar sector"></div>
-        <div class="campo"><label>Día</label><input type="date" id="busqDiaParte"></div>
+        <div class="campo">
+          <label>Día</label>
+          <div class="datepicker-wrap">
+            <button type="button" class="datepicker-btn" id="btnFechaParte" style="min-width:150px;"></button>
+            <input type="hidden" id="busqDiaParte">
+            <div id="calPopParte" class="cal-popup" style="display:none;"></div>
+          </div>
+        </div>
         <button id="btnBuscarPartes">Buscar</button>
         <button class="secundario" id="btnLimpiarPartes">Limpiar</button>
       </div>
@@ -301,14 +332,34 @@
     <!-- PESTAÑA 6: CONFIGURACIÓN -->
     <section id="sec-config">
       <h2>Configuración de Fincas, Sectores y Operarios de Inventario</h2>
-      <div style="padding: 20px;">
-        <p style="font-size:13px; color:var(--gris-tx); margin-bottom:16px;">Marca las fincas que quieres inventariar y cuáles son propias. Asigna faena (finca + sector) a los operarios.</p>
-        <h3 style="margin-bottom:8px;">Fincas (todas las del sistema)</h3>
-        <div id="cfgFincasLista" style="margin-bottom:24px;"></div>
-        <h3 style="margin-bottom:8px;">Faena a Inventariar (por finca y sector)</h3>
-        <div id="cfgFaenaLista" style="margin-bottom:24px;"></div>
-        <h3 style="margin-bottom:8px;">Operarios Autorizados para Inventario</h3>
-        <div id="cfgOperariosLista"></div>
+      <div style="padding: 16px;">
+        <div class="cfg-section" id="cfgSecFincas">
+          <div class="cfg-section-head" onclick="cfgToggleInv('cfgSecFincas')">
+            <h3>Fincas (propias)</h3>
+            <span class="cfg-chevron">▶</span>
+          </div>
+          <div class="cfg-section-body">
+            <div id="cfgFincasLista"></div>
+          </div>
+        </div>
+        <div class="cfg-section" id="cfgSecFaena">
+          <div class="cfg-section-head" onclick="cfgToggleInv('cfgSecFaena')">
+            <h3>Faena a Inventariar (por finca y sector)</h3>
+            <span class="cfg-chevron">▶</span>
+          </div>
+          <div class="cfg-section-body">
+            <div id="cfgFaenaLista"></div>
+          </div>
+        </div>
+        <div class="cfg-section" id="cfgSecOperarios">
+          <div class="cfg-section-head" onclick="cfgToggleInv('cfgSecOperarios')">
+            <h3>Operarios Autorizados para Inventario</h3>
+            <span class="cfg-chevron">▶</span>
+          </div>
+          <div class="cfg-section-body">
+            <div id="cfgOperariosLista"></div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -333,7 +384,6 @@
   var filtroEstado = "todas";
   var ultimosPuntosGps = [];
   var fechasConInventario = [];
-  var calMes = 0;
   var partesCache = [];
   var filtroFincaParte = "";
 
@@ -388,47 +438,68 @@
   // ---------- Calendario ----------
   function fechaSeleccionada() { return document.getElementById("inpDesde").value || fechaLocalISO(new Date()); }
   function pintarBtnFecha() { document.getElementById("btnFecha").textContent = fmtFecha(fechaSeleccionada()) || "Hoy"; }
-  function renderCalendario() {
-    var pop = document.getElementById("calPop");
-    var ahora = new Date();
-    var base = new Date(ahora.getFullYear(), ahora.getMonth() + calMes, 1);
-    var anio = base.getFullYear(), mes = base.getMonth();
-    var seleccion = fechaSeleccionada();
-    var primerDow = base.getDay();
-    var diasMes = new Date(anio, mes + 1, 0).getDate();
-    var html = '<div class="cal-head">' +
-      '<button type="button" onclick="calNavega(-1)">‹</button>' +
-      '<span class="cal-titulo">' + ("0" + (mes + 1)).slice(-2) + "/" + anio + '</span>' +
-      '<button type="button" onclick="calNavega(1)">›</button></div><div class="cal-grid">' +
-      ["L", "M", "X", "J", "V", "S", "D"].map(function (d) { return '<div class="cal-dow">' + d + "</div>"; }).join("");
-    var inicio = (primerDow === 0) ? 6 : primerDow - 1;
-    for (var i = 0; i < inicio; i++) html += '<div class="cal-dia vacio"></div>';
-    for (var dia = 1; dia <= diasMes; dia++) {
-      var iso = anio + "-" + ("0" + (mes + 1)).slice(-2) + "-" + ("0" + dia).slice(-2);
-      var cls = "cal-dia";
-      if (fechasConInventario.indexOf(iso) >= 0) cls += " inv";
-      if (iso === seleccion) cls += " seleccionado";
-      html += '<div class="' + cls + '" data-fecha="' + iso + '" onclick="calElige(this)">' + dia + "</div>";
+
+  function crearCalendario(cfg) {
+    var mes = 0;
+    function render() {
+      var pop = cfg.pop;
+      var ahora = new Date();
+      var base = new Date(ahora.getFullYear(), ahora.getMonth() + mes, 1);
+      var anio = base.getFullYear(), mm = base.getMonth();
+      var seleccion = cfg.input.value;
+      var primerDow = base.getDay();
+      var diasMes = new Date(anio, mm + 1, 0).getDate();
+      var html = '<div class="cal-head">' +
+        '<button type="button" data-nav="-1">‹</button>' +
+        '<span class="cal-titulo">' + ("0" + (mm + 1)).slice(-2) + "/" + anio + '</span>' +
+        '<button type="button" data-nav="1">›</button></div><div class="cal-grid">' +
+        ["L", "M", "X", "J", "V", "S", "D"].map(function (d) { return '<div class="cal-dow">' + d + "</div>"; }).join("");
+      var inicio = (primerDow === 0) ? 6 : primerDow - 1;
+      for (var i = 0; i < inicio; i++) html += '<div class="cal-dia vacio"></div>';
+      for (var dia = 1; dia <= diasMes; dia++) {
+        var iso = anio + "-" + ("0" + (mm + 1)).slice(-2) + "-" + ("0" + dia).slice(-2);
+        var cls = "cal-dia";
+        if (fechasConInventario.indexOf(iso) >= 0) cls += " inv";
+        if (iso === seleccion) cls += " seleccionado";
+        html += '<div class="' + cls + '" data-fecha="' + iso + '">' + dia + "</div>";
+      }
+      pop.innerHTML = html;
+      pop.querySelectorAll('[data-nav]').forEach(function (b) {
+        b.onclick = function () { mes += parseInt(b.getAttribute('data-nav'), 10); render(); };
+      });
+      pop.querySelectorAll('.cal-dia:not(.vacio)').forEach(function (c) {
+        c.onclick = function () {
+          cfg.input.value = c.getAttribute('data-fecha');
+          cfg.btn.textContent = fmtFecha(cfg.input.value) || 'Hoy';
+          pop.style.display = 'none';
+          if (cfg.onSelect) cfg.onSelect();
+        };
+      });
     }
-    pop.innerHTML = html;
+    cfg.btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (cfg.pop.style.display === 'block') { cfg.pop.style.display = 'none'; return; }
+      document.querySelectorAll('.cal-popup').forEach(function (p) { p.style.display = 'none'; });
+      mes = 0; render(); cfg.pop.style.display = 'block';
+    });
+    document.addEventListener('click', function (e) {
+      var wrap = cfg.btn.closest('.datepicker-wrap');
+      if (wrap && !wrap.contains(e.target)) cfg.pop.style.display = 'none';
+    });
+    return { render: render };
   }
-  window.calNavega = function (dir) { calMes += dir; renderCalendario(); };
-  window.calElige = function (el) {
-    var iso = el.getAttribute("data-fecha");
-    document.getElementById("inpDesde").value = iso;
-    pintarBtnFecha();
-    document.getElementById("calPop").style.display = "none";
-    verAhora();
-  };
-  document.getElementById("btnFecha").addEventListener("click", function (e) {
-    e.stopPropagation();
-    var pop = document.getElementById("calPop");
-    if (pop.style.display === "block") { pop.style.display = "none"; return; }
-    calMes = 0; renderCalendario(); pop.style.display = "block";
+
+  var calTop = crearCalendario({
+    btn: document.getElementById('btnFecha'),
+    input: document.getElementById('inpDesde'),
+    pop: document.getElementById('calPop'),
+    onSelect: function () { if (typeof window.verAhora === 'function') window.verAhora(); }
   });
-  document.addEventListener("click", function (e) {
-    var wrap = document.querySelector(".datepicker-wrap");
-    if (wrap && !wrap.contains(e.target)) document.getElementById("calPop").style.display = "none";
+  var calPartes = crearCalendario({
+    btn: document.getElementById('btnFechaParte'),
+    input: document.getElementById('busqDiaParte'),
+    pop: document.getElementById('calPopParte'),
+    onSelect: function () { cargarPartes(); }
   });
 
   // ---------- Pestañas ----------
@@ -436,7 +507,8 @@
     document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('activa'); });
     document.querySelectorAll('main section').forEach(function (s) { s.classList.remove('activa'); });
     if (btn) btn.classList.add('activa');
-    var sec = document.getElementById('sec-' + tabId);
+    var secMap = { mapa: 'mapa', sectores: 'sectores', referencias: 'referencias', partes: 'partes', inventarios: 'pistoleos', config: 'config' };
+    var sec = document.getElementById('sec-' + (secMap[tabId] || tabId));
     if (sec) sec.classList.add('activa');
     if (tabId === 'mapa') {
       setTimeout(function () {
@@ -450,24 +522,24 @@
         }
       }, 250);
     }
-    if (tabId === 'pistoleos') cargarPistoleos();
+    if (tabId === 'inventarios') cargarPistoleos();
     if (tabId === 'config') cargarConfiguracion();
   };
 
   // ---------- Fincas y sectores ----------
-  function cargarFechas(finca) {
-    if (!finca) return Promise.resolve([]);
-    return apiGet("/inventario/fechas?finca=" + encodeURIComponent(finca)).then(function (d) {
+  function cargarFechasGlobal() {
+    return apiGet("/inventario/fechas").then(function (d) {
       fechasConInventario = d.fechas || [];
-      return fechasConInventario;
-    }).catch(function () { fechasConInventario = []; return []; });
+      calTop.render();
+      calPartes.render();
+    }).catch(function () { fechasConInventario = []; });
   }
 
   function cargarFincas() {
     return apiGet("/inventario/fincas").then(function (d) {
       fincasCache = d.fincas || [];
       var sel = document.getElementById("selFinca");
-      sel.innerHTML = "";
+      sel.innerHTML = '<option value="">— Selecciona una finca —</option>';
       fincasCache.forEach(function (f) {
         var op = document.createElement("option");
         op.value = f.finca;
@@ -477,15 +549,11 @@
         var algunAsignado = sects.some(function (s) { return s.asignado; });
         var cls = todosCerrados ? "sector-cerrado" : (tieneInv ? "sector-abierto" : (algunAsignado ? "sector-asignado" : ""));
         if (cls) op.className = cls;
-        op.textContent = f.finca + " (" + sects.length + ")";
+        op.textContent = f.finca + (sects.length ? " (" + sects.length + ")" : "");
         sel.appendChild(op);
       });
-      sel.onchange = function () {
-        cargarSectores();
-        cargarFechas(sel.value).then(function () { if (document.getElementById("calPop").style.display === "block") renderCalendario(); });
-      };
+      sel.onchange = function () { cargarSectores(); };
       cargarSectores();
-      return cargarFechas(sel.value);
     });
   }
 
@@ -523,10 +591,17 @@
     }).catch(function () {});
   }
 
+  function jsStr(s) {
+    return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/\r?\n/g, " ");
+  }
+
   function renderPartes() {
+    var lista = partesCache;
+    var diaF = document.getElementById("busqDiaParte").value;
+    if (diaF) lista = lista.filter(function (p) { return p.fecha === diaF; });
     // chips de finca
     var fincasPartes = [];
-    partesCache.forEach(function (p) { if (fincasPartes.indexOf(p.finca) < 0) fincasPartes.push(p.finca); });
+    lista.forEach(function (p) { if (fincasPartes.indexOf(p.finca) < 0) fincasPartes.push(p.finca); });
     fincasPartes.sort();
     var chips = document.getElementById("chipsFincaPartes");
     chips.innerHTML = '<span class="chip' + (filtroFincaParte ? "" : " activa") + '" onclick="filtrarParteFinca(\'\')">Todas</span>' +
@@ -535,10 +610,10 @@
       }).join("");
 
     var tb = document.querySelector("#tbPartes tbody");
-    tb.innerHTML = partesCache.map(function (p) {
+    tb.innerHTML = lista.map(function (p) {
       var secText = (p.sectoresDesc && p.sectoresDesc.length) ? p.sectoresDesc.join(", ") : (p.sector || p.sectores || []).join(", ");
       var sectorParam = p.sector || (p.sectores && p.sectores.length === 1 ? p.sectores[0] : "");
-      var onVer = "verParte(" + JSON.stringify(p.finca) + "," + JSON.stringify(p.fecha) + "," + JSON.stringify(sectorParam || "") + ")";
+      var onVer = "verParte('" + jsStr(p.finca) + "','" + jsStr(p.fecha) + "','" + jsStr(sectorParam || "") + "')";
       return "<tr><td><b>" + esc(fmtFecha(p.fecha)) + "</b></td><td>" + esc(p.finca) + "</td><td>" + esc(secText) +
         "</td><td>" + esc(p.empleado) + "</td><td>" + esc(fmtDuracion(p.duracion_seg)) + "</td><td>" + fmt(p.total_plantas) +
         "</td><td>" + p.total_escaneos + "</td><td><button style=\"padding:3px 10px; font-size:11px;\" onclick=\"" + onVer + "\">Ver parte</button></td></tr>";
@@ -552,14 +627,29 @@
     document.getElementById("busqOperarioParte").value = "";
     document.getElementById("busqSectorParte").value = "";
     document.getElementById("busqDiaParte").value = "";
+    document.getElementById("btnFechaParte").textContent = "Todos los días";
     filtroFincaParte = "";
     cargarPartes();
   });
 
   window.verParte = function (finca, fecha, sector) {
-    document.getElementById("selFinca").value = finca;
+    var sel = document.getElementById("selFinca");
+    if (!Array.prototype.some.call(sel.options, function (op) { return op.value === finca; })) {
+      var op = document.createElement("option");
+      op.value = finca; op.textContent = finca;
+      sel.appendChild(op);
+    }
+    sel.value = finca;
     cargarSectores();
-    if (sector) document.getElementById("selSector").value = sector;
+    var selS = document.getElementById("selSector");
+    if (sector) {
+      if (!Array.prototype.some.call(selS.options, function (op) { return op.value === sector; })) {
+        var opS = document.createElement("option");
+        opS.value = sector; opS.textContent = sector;
+        selS.appendChild(opS);
+      }
+      selS.value = sector;
+    }
     document.getElementById("inpDesde").value = fecha;
     pintarBtnFecha();
     switchTab('sectores', document.querySelectorAll('.tab-btn')[1]);
@@ -567,34 +657,31 @@
   };
 
   // ---------- Configuracion ----------
+  window.cfgToggleInv = function (id) { var sec = document.getElementById(id); if (sec) sec.classList.toggle('open'); };
+
   function cargarConfiguracion() {
     apiGet("/inventario/fincas/config").then(function (d) {
       var cfFin = document.getElementById("cfgFincasLista");
-      var fincas = d.fincas || [];
-      cfFin.innerHTML = '<div class="table-scroll" style="max-height:320px;"><table><thead><tr><th style="width:40px;">Inventariar</th><th style="width:40px;">Propia</th><th>Finca</th><th>Estado</th></tr></thead><tbody>' +
-        fincas.map(function (f) {
-          var badge = f.activa
-            ? '<span class="estado-badge badge-ok">Inventariable</span>'
-            : '<span class="estado-badge badge-abierto">Oculta</span>';
-          return '<tr><td><input type="checkbox" class="chkFincaInv" data-finca="' + esc(f.finca) + '" ' + (f.activa ? "checked" : "") + '></td>' +
-            '<td><input type="checkbox" class="chkFincaPropia" data-finca="' + esc(f.finca) + '" ' + (f.propia ? "checked" : "") + '></td>' +
-            '<td><b>' + esc(f.finca) + '</b>' + (f.propia ? ' <span class="estado-badge badge-cerrado">Propia</span>' : ' <span class="estado-badge badge-abierto">Ajena</span>') +
-            '</td><td>' + badge + '</td></tr>';
-        }).join("") + '</tbody></table></div>';
-      cfFin.querySelectorAll('.chkFincaInv').forEach(function (chk) {
-        chk.addEventListener('change', function () {
-          apiPost("/inventario/fincas/activa", { finca: chk.getAttribute('data-finca'), activa: chk.checked })
-            .then(function () { cargarConfiguracion(); cargarFincas().then(verAhora); })
-            .catch(function (e) { alert("Error al actualizar: " + e.message); });
+      var fincas = (d.fincas || []).filter(function (f) { return f.propia; });
+      if (!fincas.length) {
+        cfFin.innerHTML = '<div class="vacio">No hay fincas propias.</div>';
+      } else {
+        cfFin.innerHTML = '<div class="table-scroll"><table><thead><tr><th style="width:90px;">Inventariar</th><th>Finca</th><th>Estado</th></tr></thead><tbody>' +
+          fincas.map(function (f) {
+            var badge = f.activa
+              ? '<span class="estado-badge badge-ok">Inventariable</span>'
+              : '<span class="estado-badge badge-abierto">Oculta</span>';
+            return '<tr><td><input type="checkbox" class="chkFincaInv" data-finca="' + esc(f.finca) + '" ' + (f.activa ? "checked" : "") + '></td>' +
+              '<td><b>' + esc(f.finca) + '</b></td><td>' + badge + '</td></tr>';
+          }).join("") + '</tbody></table></div>';
+        cfFin.querySelectorAll('.chkFincaInv').forEach(function (chk) {
+          chk.addEventListener('change', function () {
+            apiPost("/inventario/fincas/activa", { finca: chk.getAttribute('data-finca'), activa: chk.checked })
+              .then(function () { cargarConfiguracion(); cargarFincas(); })
+              .catch(function (e) { alert("Error al actualizar: " + e.message); });
+          });
         });
-      });
-      cfFin.querySelectorAll('.chkFincaPropia').forEach(function (chk) {
-        chk.addEventListener('change', function () {
-          apiPost("/fincas/propia", { finca: chk.getAttribute('data-finca'), propia: chk.checked })
-            .then(function () { cargarConfiguracion(); })
-            .catch(function (e) { alert("Error al actualizar: " + e.message); });
-        });
-      });
+      }
     }).catch(function () {
       document.getElementById("cfgFincasLista").innerHTML = '<div class="vacio">No se pudieron cargar las fincas.</div>';
     });
@@ -603,34 +690,43 @@
       window.operariosInv = d.operarios || [];
       var ops = window.operariosInv;
       var cfOp = document.getElementById("cfgOperariosLista");
-      cfOp.innerHTML = '<div class="table-scroll" style="max-height:320px;"><table><thead><tr><th>Nombre</th><th>Email</th><th>Modo</th></tr></thead><tbody>' +
+      cfOp.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th></tr></thead><tbody>' +
         ops.map(function (op) {
-          var modo = op.modo === "INVENTARIO" || op.modo === "AMBAS" ? '<span class="estado-badge badge-ok">' + esc(op.modo) + '</span>' : esc(op.modo);
-          return '<tr><td><b>' + esc(op.nombre) + '</b></td><td>' + esc(op.email) + '</td><td>' + modo + '</td></tr>';
+          var rol = (op.rol || op.modo || 'ACOPIO').toUpperCase();
+          return '<tr><td><b>' + esc(op.nombre) + '</b></td><td>' + esc(op.email) + '</td>' +
+            '<td><span class="estado-badge badge-ok">' + esc(rol) + '</span></td></tr>';
         }).join("") + '</tbody></table></div>';
 
-      // Faena por sector de fincas activas
       var cfFaena = document.getElementById("cfgFaenaLista");
       var activas = fincasCache || [];
       if (!activas.length) { cfFaena.innerHTML = '<div class="vacio">Carga las fincas primero.</div>'; return; }
       var inventariables = ops.filter(function (op) { return op.modo === "INVENTARIO" || op.modo === "AMBAS"; });
       var html = "";
       activas.forEach(function (f) {
-        html += '<div style="background:var(--corp-bg); border:1px solid var(--corp-line); border-radius:8px; padding:10px 14px; margin-bottom:12px;">' +
-          '<b style="color:var(--corp-dark);">Finca: ' + esc(f.finca) + '</b>';
-        (f.sectores || []).forEach(function (s) {
-          var opsSel = (s.operarios || []).map(function (o) { return o.email; });
-          var opts = inventariables.map(function (op) {
-            return '<option value="' + esc(op.email) + '"' + (opsSel.indexOf(op.email) >= 0 ? " selected" : "") + '>' + esc(op.nombre) + '</option>';
+        html += '<div class="cfg-faena-finca"><b>Finca: ' + esc(f.finca) + '</b>';
+        var sects = f.sectores || [];
+        if (sects.length) {
+          sects.forEach(function (s) {
+            var opsSel = (s.operarios || []).map(function (o) { return o.email; });
+            var opts = inventariables.map(function (op) {
+              return '<option value="' + esc(op.email) + '"' + (opsSel.indexOf(op.email) >= 0 ? " selected" : "") + '>' + esc(op.nombre) + '</option>';
+            }).join("");
+            html += '<div class="cfg-faena-fila"><span class="sec-label">Sector: ' + esc(s.descripcion || s.id) + '</span>' +
+              '<select multiple class="selFaena" data-finca="' + esc(f.finca) + '" data-sector="' + esc(s.id) + '">' + opts + '</select>' +
+              '<button onclick="guardarFaena(this)">Guardar</button></div>';
+          });
+        } else {
+          var opsSelF = (f.operarios || []).map(function (o) { return o.email; });
+          var optsF = inventariables.map(function (op) {
+            return '<option value="' + esc(op.email) + '"' + (opsSelF.indexOf(op.email) >= 0 ? " selected" : "") + '>' + esc(op.nombre) + '</option>';
           }).join("");
-          html += '<div style="display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap;">' +
-            '<span style="min-width:220px; font-size:12px;">' + esc(s.descripcion || s.id) + '</span>' +
-            '<select multiple size="1" style="min-width:220px; height:30px;" class="selFaena" data-finca="' + esc(f.finca) + '" data-sector="' + esc(s.id) + '">' + opts + '</select>' +
-            '<button style="padding:3px 10px; font-size:11px;" onclick="guardarFaena(this)">Guardar</button></div>';
-        });
+          html += '<div class="cfg-faena-fila"><span class="sec-label">Sin sectores (finca entera)</span>' +
+            '<select multiple class="selFaena" data-finca="' + esc(f.finca) + '" data-sector="">' + optsF + '</select>' +
+            '<button onclick="guardarFaena(this)">Guardar</button></div>';
+        }
         html += '</div>';
       });
-      cfFaena.innerHTML = html || '<div class="vacio">No hay fincas activas con sectores.</div>';
+      cfFaena.innerHTML = html || '<div class="vacio">No hay fincas activas.</div>';
     }).catch(function () {
       document.getElementById("cfgOperariosLista").innerHTML = '<div class="vacio">No se pudieron cargar los operarios.</div>';
       document.getElementById("cfgFaenaLista").innerHTML = '<div class="vacio">No se pudieron cargar los operarios.</div>';
@@ -645,11 +741,11 @@
     for (var i = 0; i < sel.options.length; i++) {
       if (sel.options[i].selected) emails.push(sel.options[i].value);
     }
-    apiPost("/inventario/faena", { finca: finca, sector: sector, operarios: emails })
+    apiPost("/inventario/faena", { finca: finca, sector: sector || "", operarios: emails })
       .then(function () {
         alert("Faena guardada (" + emails.length + " operarios).");
         cargarConfiguracion();
-        cargarFincas().then(verAhora);
+        cargarFincas();
       }).catch(function (e) { alert("Error al guardar faena: " + e.message); });
   };
 
@@ -739,6 +835,8 @@
     document.getElementById("contenido").style.display = "";
     ultimosPuntosGps = d.puntosGps || [];
     var totalEsp = 0, totalCon = 0, fueraN = (d.fueraSector || []).length, etiN = (d.etiquetas || []).length;
+    var huecosN = 0;
+    (d.huecos || []).forEach(function (h) { huecosN += h.huecos; });
     (d.resumen || []).forEach(function (r) { totalEsp += r.esperado; totalCon += r.contado; });
     var difTotal = totalCon - totalEsp;
     document.getElementById("kpis").innerHTML =
@@ -747,7 +845,8 @@
       kpi("Contado", fmt(totalCon), "pistoleado compartido") +
       kpi("Diferencia", fmt(difTotal), difTotal === 0 ? "cuadra" : (difTotal > 0 ? "exceso" : "faltan")) +
       kpi("Fuera de sector", fueraN, "reetiquetar") +
-      kpi("Etiquetas a sacar", etiN, "manual/OCR");
+      kpi("Etiquetas a sacar", etiN, "manual/OCR") +
+      kpi("Huecos (lineal)", huecosN, "espacios vacíos");
 
     var rb = document.querySelector("#tbResumen tbody");
     var fincaActual = document.getElementById("selFinca").value;
@@ -780,7 +879,8 @@
 
     var eb = document.querySelector("#tbEtiquetas tbody");
     eb.innerHTML = (d.etiquetas || []).map(function (r) {
-      var motivo = r.reetiquetar ? "Reetiquetado" : (r.sinEan ? "OCR sin EAN" : "Conteo manual");
+      var motivo = r.motivo || (r.reetiquetar ? "Reetiquetado" : (r.sinEan ? "OCR sin EAN" : "Conteo manual"));
+      if (r.incidenciaTexto) motivo += " · " + r.incidenciaTexto;
       return "<tr><td><b>" + esc(r.ref) + "</b></td><td>" + esc(r.litraje || "—") + "</td><td>" + esc(r.sectorEtiqueta || r.sector) +
         "</td><td>" + motivo + "</td><td>" + fmt(r.cantidad) + "</td><td>" + esc(fmtFecha(r.fechaHora)) + "</td></tr>";
     }).join("") || vacio(6);
@@ -888,7 +988,7 @@
 
   window.verAhora = function () {
     var finca = document.getElementById("selFinca").value;
-    if (!finca) { mostrarError("Elige una finca"); return; }
+    if (!finca) { mostrarPartesDelDia(); return; }
     var sector = document.getElementById("selSector").value;
     var desde = fechaSeleccionada();
     var qs = "?finca=" + encodeURIComponent(finca);
@@ -899,24 +999,37 @@
       mostrarError("No se pudo cargar el an\u00e1lisis (" + e.message + "). Comprueba la conexi\u00f3n.");
     });
   };
+  function mostrarPartesDelDia() {
+    document.getElementById("busqDiaParte").value = fechaSeleccionada();
+    document.getElementById("btnFechaParte").textContent = fmtFecha(fechaSeleccionada()) || "Hoy";
+    filtroFincaParte = "";
+    document.getElementById("error").style.display = "none";
+    cargarPartes();
+    switchTab('partes', document.querySelectorAll('.tab-btn')[0]);
+  }
   function mostrarError(msg) { var el = document.getElementById("error"); el.textContent = msg; el.style.display = ""; }
 
-  document.getElementById("btnVer").addEventListener("click", verAhora);
-  document.getElementById("btnPdf").addEventListener("click", function () {
+  window.btnPdf = function () {
     var finca = document.getElementById("selFinca").value;
-    if (!finca) return;
+    if (!finca) { alert("Selecciona una finca para generar el PDF del análisis."); return; }
     var sector = document.getElementById("selSector").value;
     var desde = fechaSeleccionada();
     var qs = "?finca=" + encodeURIComponent(finca) + "&k=" + encodeURIComponent(K);
     if (sector) qs += "&sector=" + encodeURIComponent(sector);
     if (desde) qs += "&desde=" + encodeURIComponent(desde);
     window.open(API + "/inventario/reporte.pdf" + qs, "_blank");
-  });
+  };
+
+  document.getElementById("btnVer").addEventListener("click", verAhora);
 
   pintarBtnFecha();
+  document.getElementById("btnFechaParte").textContent = "Todos los días";
+  cargarFechasGlobal();
   cargarFincas().then(function () {
     cargarPartes();
-    return verAhora();
+    document.getElementById("contenido").style.display = "";
+    var finca = document.getElementById("selFinca").value;
+    if (finca) verAhora();
   }).catch(mostrarError.bind(null, "No se pudo cargar la lista de fincas. Comprueba la conexi\u00f3n."));
 })();
 </script>
