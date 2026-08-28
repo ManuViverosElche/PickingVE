@@ -55,7 +55,7 @@
     --rojo: var(--bad); --verde: var(--ok); --corp-green: var(--primary-soft); --azul: var(--info);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--txt); line-height: 1.5; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--txt); line-height: 1.5; padding: 8px 16px 16px; }
 
   /* ===== Toggle tema (sol/luna) ===== */
   .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; font-size: 1.15rem; border-radius: 50%; background: var(--card2); color: var(--txt); border: 1px solid var(--line); cursor: pointer; transition: all 0.2s; }
@@ -66,31 +66,32 @@
   [data-theme="dark"] .theme-toggle .icon-moon { display: inline; }
   [data-theme="dark"] .theme-toggle .icon-sun { display: none; }
 
-  header { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--bg); color: var(--txt); border-bottom: 1px solid var(--line); padding: 10px 0; }
-  header h1 { font-size: 1.4rem; margin: 0; font-weight: 800; color: var(--primary); }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--bg); color: var(--txt); border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 16px; }
+  header h1 { font-size: 1.45rem; margin: 0; font-weight: 800; color: var(--primary); display: flex; align-items: center; gap: 8px; }
   header .sub { font-size: 0.85rem; color: var(--mut); }
   header .header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
   .header-btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card2); color: var(--txt); font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: background 0.15s; }
   .header-btn:hover { background: var(--line); }
 
-  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 1250px; margin: 0 auto; }
 
-  .app-head { position: sticky; top: 0; z-index: 1002; background: var(--bg); }
-  .controles { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-sm); margin: 12px 0; }
+  .app-head { position: sticky; top: 0; z-index: 1002; background: var(--bg); padding-top: 4px; }
+  .controles { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-sm); margin-bottom: 14px; }
   .controles .wrap { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; padding: 12px 16px; }
   .campo { display: flex; flex-direction: column; gap: 4px; }
   .campo label { font-size: 0.7rem; color: var(--mut); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
   select, input[type=date], input[type=text], .datepicker-btn { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.88rem; min-width: 180px; background: var(--card); color: var(--txt); }
-  button { padding: 8px 14px; border: none; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: background 0.15s; }
-  button:hover { background: var(--primary-soft); }
+  button { padding: 8px 14px; border: none; border-radius: 8px; background: var(--primary); color: var(--on-primary); font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: filter 0.15s, background 0.15s; }
+  button:hover { filter: brightness(1.15); }
   button.secundario { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
-  button.secundario:hover { background: var(--line); }
+  button.secundario:hover { background: var(--line); color: var(--txt); }
+  button:hover:disabled { filter: none; }
   button:disabled { opacity: .5; cursor: default; }
 
-  .tabs { background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px 0; }
+  .tabs { background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px 0; margin-bottom: 14px; }
   .tabs .wrap { display: flex; gap: 8px; flex-wrap: wrap; padding: 0; }
   .tab-btn { padding: 7px 16px; border: 1px solid var(--line); background: var(--card); font-size: 0.88rem; font-weight: 700; color: var(--mut); cursor: pointer; border-radius: 20px; white-space: nowrap; transition: all 0.15s; }
-  .tab-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .tab-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--card2); }
   .tab-btn.activa { color: var(--primary); border-color: var(--primary); background: var(--card2); outline: 2px solid var(--ring); outline-offset: 1px; }
 
   main { padding: 18px 0 60px; }
@@ -177,6 +178,7 @@
 </head>
 <body>
 <div class="app-head">
+<div class="wrap">
 <header>
   <div>
     <h1>🌿 INVENTARIO</h1>
@@ -222,6 +224,7 @@
     <button class="tab-btn" onclick="switchTab('mapa', this)">🗺️ Mapa</button>
     <button class="tab-btn" onclick="switchTab('config', this)">⚙️ Configuración</button>
   </div>
+</div>
 </div>
 </div>
 
