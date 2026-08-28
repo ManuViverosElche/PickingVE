@@ -60,12 +60,15 @@
 
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; flex-wrap: wrap; gap: 10px; }
   h1 { font-size: 1.45rem; font-weight: 800; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+  .logo-head { height: 32px; width: auto; }
+  [data-theme="dark"] .logo-head { filter: brightness(1.4) contrast(0.95); }
   .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   input, select { background: var(--card); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; }
-  button { background: var(--primary); color: var(--on-primary); border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 0.88rem; transition: background 0.15s; }
-  button:hover { background: var(--primary-soft); }
+  button { background: var(--primary); color: var(--on-primary); border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 0.88rem; transition: filter 0.15s, background 0.15s; }
+  button:hover { filter: brightness(1.15); }
   button.btn-sec { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
   button.btn-sec:hover { background: var(--line); }
+  button:hover:disabled { filter: none; }
 
   .nav-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .nav-tab { border-radius: 20px; padding: 7px 16px; font-size: 0.88rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--mut); cursor: pointer; }
@@ -213,12 +216,12 @@
 <div class="wrap">
   <div class="app-header">
     <header>
-      <h1>🌿 PickingVE — Panel Operativo de Pedidos</h1>
+      <h1><img src="/manager/logo_viveros_sin_palmera.png?k=manager-panel-2026" alt="Viveros Elche" class="logo-head"> Logística</h1>
       <div class="controls">
+        <button onclick="refreshCurrentView()">🔄 Actualizar</button>
         <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema (claro/oscuro)" aria-label="Cambiar tema claro u oscuro">
           <span class="icon-sun">☀️</span><span class="icon-moon">🌙</span>
         </button>
-        <button onclick="refreshCurrentView()">🔄 Actualizar</button>
       </div>
     </header>
 

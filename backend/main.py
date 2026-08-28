@@ -4900,6 +4900,13 @@ def manager_web(k: Optional[str] = Query(default=None)):
     return FileResponse(os.path.join(MANAGER_WEB_DIR, "index.html"))
 
 
+@app.get("/manager/logo_viveros_sin_palmera.png")
+def manager_logo(k: Optional[str] = Query(default=None)):
+    if k != MANAGER_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(MANAGER_WEB_DIR, "logo_viveros_sin_palmera.png"))
+
+
 def _verify_manager_key(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
