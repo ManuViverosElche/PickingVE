@@ -73,11 +73,14 @@ fun ChatDialog(
     suspend fun cargar() {
         try {
             mensajes = api.fetchComentarios(pedidoId, linea)
+            error = null
             if (mensajes.isNotEmpty()) {
                 listState.scrollToItem(mensajes.lastIndex)
             }
         } catch (e: Exception) {
-            error = "No se pudieron cargar los mensajes"
+            if (mensajes.isEmpty()) {
+                error = "No se pudieron cargar los mensajes (toca para reintentar)"
+            }
         }
     }
 

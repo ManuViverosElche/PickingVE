@@ -2299,16 +2299,20 @@ def lista_comentarios(
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
     _verify_key(x_api_key)
+    norm_linea = None
+    if linea and linea.strip() and linea.strip().lower() != "null":
+        norm_linea = linea.strip()
+
     where = [f"pedido_id = {_esc(pedido)}"]
-    if linea:
-        where.append(f"linea_huella = {_esc(linea)}")
+    if norm_linea:
+        where.append(f"(COALESCE(linea_huella, '') = {_esc(norm_linea)} OR linea_huella IS NULL OR linea_huella = '')")
     if desde:
         where.append(f"creado_en > TIMESTAMP({_esc(desde)})")
     rows = _query(
         f"SELECT comentario_id, pedido_id, linea_huella, autor_email, autor_nombre, rol, canal, texto, adjunto_url, "
         f"FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ', creado_en) AS creado_en "
         f"FROM `{PROJECT}.{PICKING_DATASET}.{COMENTARIOS_TABLE}` "
-        f"WHERE " + " AND ".join(where) + " ORDER BY creado_en"
+        f"WHERE " + " AND ".join(where) + " ORDER BY creado_en, comentario_id"
     )
     return {"comentarios": rows}
 
@@ -2666,7 +2670,7 @@ def _telegram_mensaje_texto(bot_token: str, update: dict[str, Any]) -> dict[str,
                 _teclado_principal(),
             )
             return {"ok": True}
-        publicar(pedido, None, f"#{pedido} {cuerpo}")
+        publicar(pedido, None, cuerpo)
         responder_chat(f"✅ Mensaje registrado y enviado a los encargados del pedido {pedido}.")
         return {"ok": True}
 
