@@ -15,6 +15,17 @@ RUN ls -la /app \
     && test -s /app/informe_html.py \
     && test -s /app/inventario_pdf.py \
     && test -d /app/web/inventario \
+    && test -d /app/web/logistica \
+    && test -s /app/web/logistica/index.html \
+    && test -s /app/web/logistica/js/modules/faena.js \
+    && test -s /app/web/logistica/js/modules/inventario.js \
+    && test -s /app/web/logistica/js/modules/impresion.js \
+    && test -s /app/web/logistica/js/modules/designer.js \
+    && test -s /app/web/logistica/js/services/apiService.js \
+    && test -s /app/web/logistica/js/components/orderCard.js \
+    && test -s /app/web/logistica/js/components/modalDetail.js \
+    && test -s /app/web/logistica/js/components/subnavFaena.js \
+    && test -s /app/web/logistica/js/components/labelSelector.js \
     && echo "FICHEROS-INFORME OK"
 
 ENV PORT=8080

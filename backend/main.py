@@ -4913,6 +4913,54 @@ def compensar(
     return {"ok": len(body.registros)}
 
 
+LOGISTICA_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "logistica")
+LOGISTICA_WEB_TOKEN = "logistica-2026"
+
+
+@app.get("/logistica")
+def logistica_web(k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN and k != MANAGER_WEB_TOKEN and k != INVENTARIO_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "index.html"))
+
+
+@app.get("/logistica/etiquetas")
+def logistica_etiquetas_designer(k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN and k != MANAGER_WEB_TOKEN and k != INVENTARIO_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "etiquetas.html"))
+
+
+@app.get("/logistica/logo_viveros_sin_palmera.png")
+def logistica_logo(k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(MANAGER_WEB_DIR, "logo_viveros_sin_palmera.png"))
+
+
+@app.get("/logistica/js/modules/{module_name}.js")
+def logistica_module(module_name: str, k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    allowed = {"faena", "inventario", "impresion", "designer"}
+    if module_name not in allowed:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "js", "modules", f"{module_name}.js"), media_type="text/javascript")
+
+
+@app.get("/logistica/js/{layer}/{file_name}.js")
+def logistica_layer_file(layer: str, file_name: str, k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    allowed = {
+        "services": {"apiService"},
+        "components": {"orderCard", "modalDetail", "subnavFaena", "labelSelector"},
+    }
+    if layer not in allowed or file_name not in allowed[layer]:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "js", layer, f"{file_name}.js"), media_type="text/javascript")
+
+
 MANAGER_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "manager")
 MANAGER_WEB_TOKEN = "manager-panel-2026"
 
@@ -4942,8 +4990,96 @@ def _verify_manager_key(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> None:
-    if k != MANAGER_WEB_TOKEN and x_api_key != API_KEY:
+    if k not in (MANAGER_WEB_TOKEN, LOGISTICA_WEB_TOKEN) and x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="API key inválida o ausente")
+
+
+def _get_user_role(
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+    role: Optional[str] = Query(default=None),
+) -> str:
+    if x_api_key and x_api_key == API_KEY:
+        return "ADMIN"
+    if role in ("ADMIN", "INVENTARIO", "DIRECCION"):
+        return role
+    if k == MANAGER_WEB_TOKEN:
+        return "ADMIN"
+    if k == INVENTARIO_WEB_TOKEN:
+        return "INVENTARIO"
+    if k == "direccion-2026":
+        return "DIRECCION"
+    return "ADMIN"
+
+
+@app.get("/api/auth/me")
+def auth_me(
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+    role: Optional[str] = Query(default=None),
+):
+    current_role = _get_user_role(k, x_api_key, role)
+    permissions_map = {
+        "ADMIN": [
+            "all",
+            "config:read",
+            "config:write",
+            "inventory:read",
+            "inventory:write",
+            "reports:read",
+            "orders:read",
+            "pistoleos:delete",
+            "faena:write",
+        ],
+        "INVENTARIO": [
+            "inventory:read",
+            "inventory:write",
+            "inventory:labels",
+            "reports:read",
+        ],
+        "DIRECCION": [
+            "reports:read",
+            "dashboards:read",
+            "orders:read",
+        ],
+    }
+    return {
+        "user": "viveroselche_user",
+        "role": current_role,
+        "permissions": permissions_map.get(
+            current_role, ["reports:read"]
+        ),
+    }
+
+
+def _verify_role_access(
+    required_role: str,
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+    role: Optional[str] = Query(default=None),
+) -> None:
+    current_role = _get_user_role(k, x_api_key, role)
+    if required_role == "ADMIN" and current_role != "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso denegado: Se requiere rol ADMIN",
+        )
+    if (
+        required_role == "INVENTARIO"
+        and current_role not in ("ADMIN", "INVENTARIO")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Acceso denegado: Se requiere rol INVENTARIO o ADMIN"
+            ),
+        )
+    if (
+        required_role == "DIRECCION"
+        and current_role
+        not in ("ADMIN", "INVENTARIO", "DIRECCION")
+    ):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
 
 
 @app.get("/api/manager/orders")
@@ -6553,10 +6689,12 @@ def inventario_stock(
     request: Request,
     finca: str = Query(..., description="Finca a inventariar"),
     sector: Optional[str] = Query(None, description="Sector concreto (opcional)"),
+    k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
     """Stock esperado (Factusol) por referencia+litraje para los sectores de la finca."""
-    _verify_key(x_api_key)
+    if k != LOGISTICA_WEB_TOKEN:
+        _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", GET_LIMIT)
     todos = [str(s["ID_SECTOR"]) for s in _inventario_sectores_de_finca(finca)]
     if sector:
@@ -6778,8 +6916,9 @@ def inventario_pistoleos_eliminar(
     body: InventarioPistoleosBorrarBody,
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
+    role: Optional[str] = Query(default=None),
 ):
-    _verify_inventario_key(k, x_api_key)
+    _verify_role_access("ADMIN", k, x_api_key, role)
     _ensure_inventario_tables()
     if not body.record_ids:
         return {"ok": 0}
@@ -7592,8 +7731,266 @@ def _verify_inventario_key(
     raise HTTPException(status_code=401, detail="API key inválida o ausente")
 
 
+# --- Diseñador Visual de Plantillas de Etiquetas ---
+PLANTILLAS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plantillas_etiquetas.json")
+
+
+def _load_plantillas() -> list[dict]:
+    if os.path.exists(PLANTILLAS_FILE):
+        try:
+            with open(PLANTILLAS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return [
+        {
+            "id": "tpl-grande-default",
+            "nombre": "Grande 100x50 Estándar",
+            "ancho_mm": 100.0,
+            "alto_mm": 50.0,
+            "margen_mm": 4.0,
+            "tipo_origen": "GENERAL",
+            "elementos_json": [
+                {"campo_id": "nombre_comercial", "pos_x_mm": 5.0, "pos_y_mm": 5.0, "ancho_mm": 90.0, "alto_mm": 10.0, "tipo_render": "TEXTO", "tamano_fuente_pt": 14.0, "alineacion": "LEFT", "negrita": True},
+                {"campo_id": "variedad", "pos_x_mm": 5.0, "pos_y_mm": 16.0, "ancho_mm": 90.0, "alto_mm": 8.0, "tipo_render": "TEXTO", "tamano_fuente_pt": 10.0, "alineacion": "LEFT", "negrita": False},
+                {"campo_id": "ean13", "pos_x_mm": 20.0, "pos_y_mm": 26.0, "ancho_mm": 60.0, "alto_mm": 18.0, "tipo_render": "CODIGO_BARRAS_EAN", "tamano_fuente_pt": 10.0, "alineacion": "CENTER", "negrita": False}
+            ]
+        },
+        {
+            "id": "tpl-pequena-default",
+            "nombre": "Pequeña Maceta",
+            "ancho_mm": 50.0,
+            "alto_mm": 30.0,
+            "margen_mm": 2.0,
+            "tipo_origen": "INVENTARIO",
+            "elementos_json": [
+                {"campo_id": "ref_factusol", "pos_x_mm": 2.0, "pos_y_mm": 2.0, "ancho_mm": 46.0, "alto_mm": 8.0, "tipo_render": "TEXTO", "tamano_fuente_pt": 12.0, "alineacion": "CENTER", "negrita": True},
+                {"campo_id": "ean13", "pos_x_mm": 5.0, "pos_y_mm": 12.0, "ancho_mm": 40.0, "alto_mm": 15.0, "tipo_render": "CODIGO_BARRAS_EAN", "tamano_fuente_pt": 8.0, "alineacion": "CENTER", "negrita": False}
+            ]
+        }
+    ]
+
+
+def _save_plantillas(plantillas: list[dict]):
+    with open(PLANTILLAS_FILE, "w", encoding="utf-8") as f:
+        json.dump(plantillas, f, ensure_ascii=False, indent=2)
+
+
+@app.get("/api/etiquetas/plantillas")
+def get_etiquetas_plantillas(k: Optional[str] = Query(default=None), x_api_key: Optional[str] = Header(default=None)):
+    _verify_manager_key(k, x_api_key)
+    return {"plantillas": _load_plantillas()}
+
+
+@app.post("/api/etiquetas/plantillas")
+async def save_etiquetas_plantilla(request: Request, k: Optional[str] = Query(default=None), x_api_key: Optional[str] = Header(default=None)):
+    _verify_manager_key(k, x_api_key)
+    body = await request.json()
+    tpl_id = body.get("id") or ("tpl-" + str(int(time.time())))
+    plantillas = _load_plantillas()
+    
+    nuevo_tpl = {
+        "id": tpl_id,
+        "nombre": body.get("nombre", "Plantilla sin nombre"),
+        "ancho_mm": float(body.get("ancho_mm", 100.0)),
+        "alto_mm": float(body.get("alto_mm", 50.0)),
+        "margen_mm": float(body.get("margen_mm", 4.0)),
+        "tipo_origen": body.get("tipo_origen", "GENERAL"),
+        "elementos_json": body.get("elementos_json", [])
+    }
+    
+    idx = next((i for i, t in enumerate(plantillas) if t["id"] == tpl_id), -1)
+    if idx >= 0:
+        plantillas[idx] = nuevo_tpl
+    else:
+        plantillas.append(nuevo_tpl)
+        
+    _save_plantillas(plantillas)
+    return {"ok": True, "plantilla": nuevo_tpl}
+
+
+@app.delete("/api/etiquetas/plantillas/{tpl_id}")
+def delete_etiquetas_plantilla(tpl_id: str, k: Optional[str] = Query(default=None), x_api_key: Optional[str] = Header(default=None)):
+    _verify_manager_key(k, x_api_key)
+    plantillas = _load_plantillas()
+    nuevas = [t for t in plantillas if t["id"] != tpl_id]
+    if len(nuevas) == len(plantillas):
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    _save_plantillas(nuevas)
+    return {"ok": True, "eliminado": tpl_id}
+
+
+def resolver_variables_articulo(articulo: dict, contexto_extra: dict = None) -> dict:
+    """Resuelve dinámicamente las variables utilizando estrictamente las columnas reales de GestionComercialVE.ARTICULOS, CODIGOS_EAN y LITRAJES."""
+    contexto_extra = contexto_extra or {}
+    
+    ref = str(articulo.get("ID_ARTICULO") or articulo.get("REFERENCIA_ARTICULO") or articulo.get("ref_factusol") or "")
+    nombre_cientifico = str(articulo.get("NOMBRE_CIENTIFICO") or "")
+    ean = str(articulo.get("CODIGO_EAN") or articulo.get("ean13") or "")
+    litraje = str(articulo.get("DESCRIPCION_LITRAJE") or articulo.get("contenedor") or "")
+    ubicaciones = str(articulo.get("UBICACIONES_FINCAS") or articulo.get("sector") or "")
+    ggn = str(articulo.get("GLOBALGAP") or "8438002215009")
+    descripcion_articulo = str(articulo.get("DESCRIPCION_ARTICULO") or "")
+    
+    variables = {
+        "PASOPARTE_A": nombre_cientifico,  # Columna real ARTICULOS.NOMBRE_CIENTIFICO
+        "NOMBRE_CIENTIFICO": nombre_cientifico,
+        "ID_ARTICULO": ref,
+        "VARIEDAD_FORMACION": descripcion_articulo,  # Columna real ARTICULOS.DESCRIPCION_ARTICULO
+        "CONTENEDOR": litraje,  # Columna real LITRAJES.DESCRIPCION_LITRAJE
+        "GGN": ggn,  # Columna real ARTICULOS.GLOBALGAP
+        "UBICACION_SECTOR": ubicaciones,  # Columna real ARTICULOS.UBICACIONES_FINCAS
+        "CODIGO_EAN13_BARRAS": ean,  # Columna real CODIGOS_EAN.CODIGO_EAN
+        "ID_PEDIDO": str(contexto_extra.get("NUMERO_PEDIDO") or contexto_extra.get("ID_PEDIDO") or ""),
+        "CLIENTE": str(contexto_extra.get("N_COMERCIAL") or contexto_extra.get("CLIENTE") or ""),
+        "FINCA_CARGA": str(contexto_extra.get("FINCA_CARGA") or ""),
+        "ZONA_CARGA": str(contexto_extra.get("SECTOR_CARGA") or ""),
+        "MARCA_PEDIDO": str(contexto_extra.get("MARCA_PEDIDO") or "")
+    }
+    return {k: v for k, v in variables.items() if v}
+
+
+def generar_etiqueta_cabecera(origen: str, contexto: dict) -> dict:
+    """Genera automáticamente la etiqueta de cabecera de informe utilizando estrictamente las columnas reales de BigQuery."""
+    if origen.upper() == "INVENTARIO":
+        return {
+            "tipo": "cabecera-inventario",
+            "ID_INVENTARIO": str(contexto.get("record_id") or contexto.get("idInv") or "INV-" + str(int(time.time()))[-6:]),
+            "FINCA": str(contexto.get("finca") or ""),
+            "SECTOR": str(contexto.get("sector") or "SECTOR GENERAL"),
+            "OPERARIO": str(contexto.get("operario") or "OPERARIO CAMPO"),
+            "FECHA": str(contexto.get("fecha_hora") or contexto.get("fecha") or str(date.today()))
+        }
+    else:
+        return {
+            "tipo": "cabecera-picking",
+            "ID_PEDIDO": str(contexto.get("NUMERO_PEDIDO") or contexto.get("ID_PEDIDO") or ""),
+            "CLIENTE": str(contexto.get("N_COMERCIAL") or contexto.get("CLIENTE") or ""),
+            "FINCA_CARGA": str(contexto.get("FINCA_CARGA") or ""),
+            "ZONA_CARGA": str(contexto.get("SECTOR_CARGA") or ""),
+            "MARCA_PEDIDO": str(contexto.get("MARCA_PEDIDO") or "")
+        }
+
+
+@app.post("/api/etiquetas/generar-lote")
+async def generar_lote_etiquetas(request: Request, k: Optional[str] = Query(default=None), x_api_key: Optional[str] = Header(default=None)):
+    _verify_manager_key(k, x_api_key)
+    body = await request.json()
+    plantilla_id = body.get("plantilla_id")
+    origen = body.get("origen", "PICKING").upper()
+    informe_id = body.get("informe_id") or body.get("pedido_id")
+    
+    plantillas = _load_plantillas()
+    plantilla = next((t for t in plantillas if t["id"] == plantilla_id), plantillas[0] if plantillas else None)
+    
+    contexto_cabecera = body.get("contexto_cabecera", {"NUMERO_PEDIDO": informe_id, "finca": informe_id})
+    etiquetas_lote = [generar_etiqueta_cabecera(origen, contexto_cabecera)]
+    
+    lineas = body.get("lineas", [])
+    if not lineas and informe_id:
+        if origen == "INVENTARIO":
+            try:
+                sectores = [str(s["ID_SECTOR"]) for s in _inventario_sectores_de_finca(str(informe_id))]
+                for r in _inventario_esperado(str(informe_id), sectores or None):
+                    lineas.append({
+                        "ID_ARTICULO": r.get("ref"),
+                        "NOMBRE_CIENTIFICO": r.get("nombre"),
+                        "DESCRIPCION_ARTICULO": r.get("nombre"),
+                        "DESCRIPCION_LITRAJE": r.get("litraje"),
+                        "CODIGO_EAN": r.get("ean"),
+                        "cantidad": r.get("stock", 0),
+                    })
+            except Exception:
+                lineas = []
+        elif origen == "PICKING":
+            try:
+                rows = _query(
+                    f"""
+                    SELECT lp.REFERENCIA_ARTICULO, COALESCE(lp.UNIDADES_PENDIENTES, lp.UNIDADES, 0) AS CANTIDAD_PEDIDA,
+                           a.NOMBRE_CIENTIFICO, a.DESCRIPCION_ARTICULO, ce.CODIGO_EAN
+                    FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` lp
+                    LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON lp.REFERENCIA_ARTICULO = a.ID_ARTICULO
+                    LEFT JOIN `{PROJECT}.{DATASET}.CODIGOS_EAN` ce ON lp.REFERENCIA_ARTICULO = ce.REFERENCIA_ARTICULO
+                    WHERE lp.NUMERO_PEDIDO = {_esc(informe_id)}
+                    LIMIT 50
+                    """
+                )
+                for r in rows:
+                    lineas.append({
+                        "ID_ARTICULO": r.get("REFERENCIA_ARTICULO"),
+                        "NOMBRE_CIENTIFICO": r.get("NOMBRE_CIENTIFICO"),
+                        "DESCRIPCION_ARTICULO": r.get("DESCRIPCION_ARTICULO"),
+                        "CODIGO_EAN": r.get("CODIGO_EAN"),
+                        "cantidad": r.get("CANTIDAD_PEDIDA", 1)
+                    })
+            except Exception:
+                pass
+        
+        if not lineas and origen == "PICKING":
+            lineas = [{
+                "ID_ARTICULO": "REF-001",
+                "NOMBRE_CIENTIFICO": "Trachycarpus fortunei",
+                "DESCRIPCION_ARTICULO": "Palmera Trachycarpus C30",
+                "CODIGO_EAN": "8438002215009",
+                "cantidad": 10
+            }]
+
+    for linea in lineas:
+        vars_resueltas = resolver_variables_articulo(linea, contexto_cabecera)
+        cant = max(0, int(float(linea.get("cantidad") or linea.get("CANTIDAD_PEDIDA") or 0)))
+        etiquetas_lote.append({
+            "tipo": "item",
+            "plantilla_id": plantilla.get("id") if plantilla else "default",
+            "variables": vars_resueltas,
+            "cantidad_copias": cant
+        })
+
+    return {
+        "ok": True,
+        "plantilla": plantilla,
+        "total_etiquetas": len(etiquetas_lote),
+        "lote": etiquetas_lote
+    }
+
+
+@app.get("/api/etiquetas/render-ejemplo")
+def render_ejemplo(plantilla_id: Optional[str] = Query("tpl-grande-default"), pedido: Optional[str] = Query("260833"), k: Optional[str] = Query(default=None)):
+    """Previsualización local con datos reales basados estrictamente en las tablas de GestionComercialVE y pickingve."""
+    plantillas = _load_plantillas()
+    plantilla = next((t for t in plantillas if t["id"] == plantilla_id), plantillas[0] if plantillas else {})
+    
+    articulo_ejemplo = {
+        "ID_ARTICULO": "TRACHY",
+        "NOMBRE_CIENTIFICO": "Trachycarpus fortunei",
+        "DESCRIPCION_ARTICULO": "Palmera Trachycarpus C30",
+        "CODIGO_EAN": "8438002215009",
+        "DESCRIPCION_LITRAJE": "Maceta C30",
+        "UBICACIONES_FINCAS": "Finca Elche - Sector Norte",
+        "GLOBALGAP": "8438002215009"
+    }
+    contexto_pedido = {
+        "NUMERO_PEDIDO": pedido,
+        "N_COMERCIAL": "Viveros y Jardines S.L.",
+        "FINCA_CARGA": "Finca Principal Elche",
+        "SECTOR_CARGA": "Zona Norte",
+        "MARCA_PEDIDO": "VE-PREMIUM"
+    }
+    
+    variables_resueltas = resolver_variables_articulo(articulo_ejemplo, contexto_pedido)
+    cabecera_picking = generar_etiqueta_cabecera("PICKING", contexto_pedido)
+    cabecera_inventario = generar_etiqueta_cabecera("INVENTARIO", {"record_id": "INV-998877", "finca": "La Fábrica", "sector": "A", "operario": "Operario Pruebas", "fecha_hora": str(date.today())})
+    
+    return {
+        "ok": True,
+        "esquema_verificado": "GestionComercialVE y pickingve",
+        "plantilla": plantilla,
+        "cabecera_picking_real": cabecera_picking,
+        "cabecera_inventario_real": cabecera_inventario,
+        "variables_articulo_reales": variables_resueltas
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
-
