@@ -226,42 +226,19 @@ bigquery:
     # ---------- 7. Tareas programadas ----------
     Step "7/9 Programando sincronizacion automatica y auto-actualizacion"
     $runSync = Join-Path $connectorDir "scripts\run_sync.ps1"
-    $action  = "-NoProfile -ExecutionPolicy Bypass -File `"$runSync`""
-    function New-SyncTask($name, $startHour, $intervalMin, $durHours, $dataset){
-        $trg = New-ScheduledTaskTrigger -Daily -At ("{0:00}:00" -f $startHour)
-        $trg.RepetitionInterval = [TimeSpan]::FromMinutes($intervalMin)
-        $trg.RepetitionDuration = [TimeSpan]::FromHours($durHours)
-        $act = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($action + " -Dataset $dataset") -WorkingDirectory $Root
-        $set = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
-        Register-ScheduledTask -TaskName $name -Trigger $trg -Action $act -Settings $set -Force -ErrorAction Stop | Out-Null
-        Ok "$name -> $dataset cada $intervalMin min desde las $($startHour):00"
-    }
-    try {
-        New-SyncTask "PickingVE-Sync-Produccion" 8 30 13 "GestionComercialVE"
-        New-SyncTask "PickingVE-Sync-Analytics"  5 1440 1  "Analytics"
-    } catch {
-        Warn " Register-ScheduledTask fallo ($($_.Exception.Message)); probando schtasks..."
-        schtasks /Create /F /TN "PickingVE-Sync-Produccion" /SC MINUTE /MO 30 /TR "powershell.exe $action -Dataset GestionComercialVE" | Out-Null
-        schtasks /Create /F /TN "PickingVE-Sync-Analytics"  /SC DAILY /ST 05:00 /TR "powershell.exe $action -Dataset Analytics"       | Out-Null
-        if ($LASTEXITCODE -eq 0) { Ok "Tareas creadas con schtasks" }
-        else { Warn " No se pudieron crear tareas automaticas (podras hacerlas a mano; no bloquea)." }
-    }
+    $autoUpdateBat = Join-Path $Root "auto_update.bat"
 
-    # Tarea programada de Auto-Actualizacion (PickingVE_AutoUpdate)
-    try {
-        $autoUpdateBat = Join-Path $Root "auto_update.bat"
-        $trgUpdate = New-ScheduledTaskTrigger -Once -At (Get-Date)
-        $trgUpdate.RepetitionInterval = [TimeSpan]::FromHours(4)
-        $actUpdate = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$autoUpdateBat`"" -WorkingDirectory $Root
-        $setUpdate = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
-        Register-ScheduledTask -TaskName "PickingVE_AutoUpdate" -Trigger $trgUpdate -Action $actUpdate -Settings $setUpdate -Force -ErrorAction Stop | Out-Null
-        Ok "PickingVE_AutoUpdate -> actualiza el repositorio desde GitHub cada 4 horas"
-    } catch {
-        $autoUpdateBat = Join-Path $Root "auto_update.bat"
-        schtasks /Create /F /TN "PickingVE_AutoUpdate" /SC HOURLY /MO 4 /TR "cmd.exe /c `"$autoUpdateBat`"" | Out-Null
-        if ($LASTEXITCODE -eq 0) { Ok "Tarea PickingVE_AutoUpdate creada con schtasks (cada 4 horas)" }
-        else { Warn " No se pudo crear la tarea de auto-actualizacion automaticamente." }
-    }
+    # Tarea Produccion (cada 30 min)
+    schtasks /Create /F /TN "PickingVE-Sync-Produccion" /SC MINUTE /MO 30 /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$runSync`" -Dataset GestionComercialVE" | Out-Null
+    if ($LASTEXITCODE -eq 0) { Ok "PickingVE-Sync-Produccion -> cada 30 min" } else { Warn "No se pudo crear PickingVE-Sync-Produccion" }
+
+    # Tarea Analytics (diaria a las 05:00)
+    schtasks /Create /F /TN "PickingVE-Sync-Analytics" /SC DAILY /ST 05:00 /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$runSync`" -Dataset Analytics" | Out-Null
+    if ($LASTEXITCODE -eq 0) { Ok "PickingVE-Sync-Analytics -> diario a las 05:00" } else { Warn "No se pudo crear PickingVE-Sync-Analytics" }
+
+    # Tarea Auto-Update (cada 4 horas)
+    schtasks /Create /F /TN "PickingVE_AutoUpdate" /SC HOURLY /MO 4 /TR "cmd.exe /c `"$autoUpdateBat`"" | Out-Null
+    if ($LASTEXITCODE -eq 0) { Ok "PickingVE_AutoUpdate -> actualiza el repositorio desde GitHub cada 4 horas" } else { Warn "No se pudo crear PickingVE_AutoUpdate" }
 
     # ---------- 8. Acceso directo ----------
     Step "8/9 Acceso directo en el Escritorio"
