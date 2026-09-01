@@ -117,9 +117,10 @@ interface PickingDao {
                OR orderLineId = :orderLineId)
           AND (scannedEan = :ean
                OR (scannedEan IS NULL AND :ean IS NULL AND actualProductId = :actualProductId))
-          AND (measure = :measure OR (measure IS NULL AND :measure IS NULL))
-          AND (caliber = :caliber OR (caliber IS NULL AND :caliber IS NULL))
-        LIMIT 1
+           AND (measure = :measure OR (measure IS NULL AND :measure IS NULL))
+           AND (caliber = :caliber OR (caliber IS NULL AND :caliber IS NULL))
+           AND pickingNumber = :pickingNumber
+         LIMIT 1
         """
     )
     suspend fun findMatchingRecord(
@@ -128,7 +129,8 @@ interface PickingDao {
         ean: String?,
         actualProductId: String,
         measure: String?,
-        caliber: String?
+        caliber: String?,
+        pickingNumber: Int
     ): PickingRecordEntity?
 
     @Query(

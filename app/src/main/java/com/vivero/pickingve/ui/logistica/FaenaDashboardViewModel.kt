@@ -75,12 +75,15 @@ data class FaenaUiState(
     val ayudaDe: ColegaFaena? = null,
     val colegasDisponibles: List<ColegaFaena> = emptyList(),
     val totalPlantas: Int = 0,
+    val totalSolicitadas: Int = 0,
+    val totalRecogidas: Int = 0,
     /** Catálogo sector -> descripción, para mostrar NOMBRES nunca códigos. */
     val sectoresDesc: Map<String, String> = emptyMap(),
     /** D-237: fincas de procedencia de planta disponibles para filtrar. */
     val fincasDisponibles: List<String> = emptyList(),
-    /** D-237: finca de procedencia activa en el filtro; null = todas. */
-    val fincaFiltro: String? = null
+    val fincaFiltro: String? = null,
+    val sectoresDisponibles: List<String> = emptyList(),
+    val sectorFiltro: String? = null
 ) {
     companion object {
         const val CAPACIDAD_DEFECTO = 300
@@ -97,6 +100,16 @@ class FaenaDashboardViewModel(
     private val permisosAyuda = MutableStateFlow<Set<String>>(emptySet())
     private val sectores = MutableStateFlow<Map<String, String>>(emptyMap())
     private val fincaFiltro = MutableStateFlow<String?>(null)
+    private val sectorFiltro = MutableStateFlow<String?>(null)
+
+    fun filtrarPorFinca(finca: String?) {
+        fincaFiltro.value = finca
+        sectorFiltro.value = null
+    }
+
+    fun filtrarPorSector(sector: String?) {
+        sectorFiltro.value = sector
+    }
 
     init {
         refrescarPerfil()
@@ -223,11 +236,6 @@ class FaenaDashboardViewModel(
         recargarPermisosAyuda()
     }
 
-    /** D-237: filtra la faena por finca de procedencia de planta (null = todas). */
-    fun filtrarPorFinca(finca: String?) {
-        fincaFiltro.value = finca
-    }
-
     /** D-169: el ayudante solo ve las líneas que le fueron concedidas. */
     private fun recargarPermisosAyuda() {
         viewModelScope.launch {
@@ -304,6 +312,22 @@ class FaenaDashboardViewModel(
         }
     }
 
+    fun modificarCantidadAcopiada(linea: FaenaLinea, cantidad: Int, onResultado: (Boolean, String) -> Unit) {
+        if (cantidad !in 0..linea.line.requestedQty) {
+            onResultado(false, "La cantidad debe estar entre 0 y ${linea.line.requestedQty}")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repository.modificarCantidadAcopiada(linea.line, cantidad)
+                subirPendientesBestEffort()
+                onResultado(true, "Cantidad actualizada")
+            } catch (e: Exception) {
+                onResultado(false, "No se pudo actualizar la cantidad: ${Errores.traducir(e)}")
+            }
+        }
+    }
+
     /** D-233: cerrar la línea desde "Mi faena" (no hay más planta que acopiar). */
     fun cerrarLineaFaena(
         line: OrderLineEntity,
@@ -352,10 +376,10 @@ class FaenaDashboardViewModel(
         repository.observeOrdersConLineas(),
         ayudaDe,
         maquinaria,
-        combine(sectores, fincaFiltro) { s, f -> s to f },
+        combine(sectores, fincaFiltro, sectorFiltro) { s, f, sec -> Triple(s, f, sec) },
         combine(colegas, permisosAyuda) { c, p -> c to p }
-    ) { pedidos, ayuda, mq, sectFiltro, extra ->
-        construirEstado(pedidos, ayuda, mq, sectFiltro.first, sectFiltro.second, extra.first, extra.second)
+    ) { pedidos, ayuda, mq, filtros, extra ->
+        construirEstado(pedidos, ayuda, mq, filtros.first, filtros.second, filtros.third, extra.first, extra.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FaenaUiState())
 
     private fun construirEstado(
@@ -364,6 +388,7 @@ class FaenaDashboardViewModel(
         mq: String,
         sectoresMap: Map<String, String>,
         filtroFinca: String?,
+        filtroSector: String?,
         candidatosColegas: List<ColegaFaena>,
         permisos: Set<String>
     ): FaenaUiState {
@@ -380,6 +405,8 @@ class FaenaDashboardViewModel(
 
         val porDia = mutableMapOf<LocalDate, MutableList<AcumFinca>>()
         var totalPlantas = 0
+        var totalSolicitadas = 0
+        var totalRecogidas = 0
 
         val hayReparto = pedidos.any { p ->
             p.lineas.any { it.operarioEmail.isNotBlank() }
@@ -396,8 +423,6 @@ class FaenaDashboardViewModel(
             for (line in p.lineas.filter { it.vigente && it.motivoCierre.isBlank() }) {
                 val asignadaAMi = line.operarioEmail.isNotBlank() &&
                     line.operarioEmail.equals(miEmail, ignoreCase = true)
-                // D-167/D-169: cada rol ve SOLO lo asignado. El SUPERUSUARIO ve todo.
-                // En modo ayuda solo entran las líneas con permiso concreto concedido.
                 val visible = when {
                     ayuda != null -> asignadaAAyuda(line, ayuda) &&
                         permisos.contains(line.orderLineId)
@@ -406,23 +431,27 @@ class FaenaDashboardViewModel(
                     else -> asignadaAMi
                 }
                 if (!visible) continue
+
+                totalSolicitadas += line.requestedQty
+                // D-274: Separación de contadores según el rol
+                // Operario: cuenta su propio acopio (acopiadoOperario)
+                // Encargado: cuenta su propia verificación (pickedQty)
+                val recogido = if (esOperario) line.acopiadoOperario else line.pickedQty
+                totalRecogidas += recogido
+
                 val pendiente =
-                    (line.requestedQty - maxOf(line.pickedQty, line.acopiadoServidor))
+                    (line.requestedQty - recogido)
                         .coerceAtLeast(0)
-                // D-237: se acumulan TODAS las líneas vigentes sin cerrar de la
-                // finca (pendientes y completas) para que el operario vea el
-                // estado de cada una (COGIDA/PARCIAL). Las fincas y días se
-                // filtran después a los que aún tienen pendiente.
                 if (pendiente < 0) continue
 
-                // D-237: finca de procedencia = donde está la planta a recoger.
-                // FINCA_RELEVADA prevalece; si no, la finca del artículo; si no, la de carga.
                 val fincaProc = line.fincaAcopio
                     .ifBlank { line.fincaArticulo }
                     .ifBlank { p.order.fincaCarga }
                     .ifBlank { "Sin finca" }
-                // D-237: filtro por finca de procedencia de planta.
                 if (filtroFinca != null && !filtroFinca.equals(fincaProc, ignoreCase = true)) continue
+
+                val sectorProc = line.sectorAcopio.ifBlank { line.sectorDesc }
+                if (filtroSector != null && !filtroSector.equals(sectorProc, ignoreCase = true)) continue
 
                 val diaAcum = porDia.getOrPut(fecha) { mutableListOf() }
                 val acumFinca = diaAcum.firstOrNull { it.nombreFinca.equals(fincaProc, ignoreCase = true) }
@@ -466,8 +495,6 @@ class FaenaDashboardViewModel(
                             .thenBy { it.orderId }
                     )
                     val plantas = acum.porPedido.values.flatten().sumOf { it.pendiente }
-                    // D-237: solo se muestra la finca si aún queda algo por coger.
-                    if (plantas <= 0) return@mapNotNull null
                     FaenaFinca(
                         finca = acum.nombreFinca,
                         fechaCarga = dia,
@@ -488,6 +515,14 @@ class FaenaDashboardViewModel(
             .distinct()
             .sorted()
 
+        val sectoresDisponibles = dias.flatMap { it.fincas }
+            .filter { filtroFinca == null || it.finca.equals(filtroFinca, ignoreCase = true) }
+            .flatMap { f -> f.pedidos.flatMap { p -> p.lineas } }
+            .map { l -> l.line.sectorAcopio.ifBlank { l.line.sectorDesc } }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+
         val debeCambiarPass = repository.currentOperario()?.debeCambiarPassword == true
 
         return FaenaUiState(
@@ -501,9 +536,13 @@ class FaenaDashboardViewModel(
             ayudaDe = ayuda,
             colegasDisponibles = candidatosColegas,
             totalPlantas = totalPlantas,
+            totalSolicitadas = totalSolicitadas,
+            totalRecogidas = totalRecogidas,
             sectoresDesc = sectoresMap,
             fincasDisponibles = fincasDisponibles,
-            fincaFiltro = filtroFinca
+            fincaFiltro = filtroFinca,
+            sectoresDisponibles = sectoresDisponibles,
+            sectorFiltro = filtroSector
         )
     }
 

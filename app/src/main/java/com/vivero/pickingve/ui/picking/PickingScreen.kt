@@ -111,6 +111,7 @@ import com.vivero.pickingve.data.local.entities.SectorEntity
 import com.vivero.pickingve.domain.usecase.ParsePlantPassportUseCase
 import com.vivero.pickingve.scanner.OcrReader
 import com.vivero.pickingve.ui.theme.DarkOnWarnContainer
+import com.vivero.pickingve.ui.theme.BrandGreen
 import com.vivero.pickingve.ui.theme.DarkPickedContainer
 import com.vivero.pickingve.ui.theme.DarkOnPickedContainer
 import com.vivero.pickingve.ui.theme.DarkWarnContainer
@@ -533,13 +534,26 @@ fun PickingScreen(
                 )
                 showTruckArrival = false
                 fotoCompartir?.let { uri ->
+                    val order = state.order
+                    val comercial = order?.customerName.orEmpty()
+                    val fiscal = order?.customerFiscal.orEmpty()
+                    val clienteStr = if (fiscal.isNotBlank() && !fiscal.equals(comercial, ignoreCase = true)) {
+                        "$comercial - $fiscal"
+                    } else {
+                        comercial.ifBlank { fiscal }
+                    }
+                    val finca = order?.fincaCarga.orEmpty()
+                    val zona = order?.sectorCarga.orEmpty()
+                    val mensajeTexto = "Camión que carga el pedido de $clienteStr en la $zona de la finca $finca"
+
                     val intent = Intent(Intent.ACTION_SEND).apply {
                         type = "image/jpeg"
                         putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_TEXT, mensajeTexto)
                         clipData = ClipData.newRawUri("foto_camion", uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    context.startActivity(Intent.createChooser(intent, "Compartir foto del camión"))
+                    context.startActivity(Intent.createChooser(intent, "Enviar por WhatsApp / Compartir"))
                 }
             },
             onDismiss = { showTruckArrival = false }
@@ -1167,8 +1181,10 @@ private fun OrderLineCard(
     val marcaEfectiva = line.marca.ifBlank { order?.marcaPedido.orEmpty() }
     val marcaDistinta = order?.marcaPedido?.isNotBlank() == true &&
         line.marca.isNotBlank() && line.marca != order.marcaPedido
-    val pickedContainer = if (isSystemInDarkTheme()) DarkPickedContainer else LightPickedContainer
+    val pickedContainer = BrandGreen
     val highlightColor = if (isSystemInDarkTheme()) Color(0xFFFFD54F) else Color(0xFFF9A825) // Amber
+
+    var showOperarioModal by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -1194,13 +1210,43 @@ private fun OrderLineCard(
                     line.productName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
+                    color = if (complete) Color.White else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
                 if (complete) {
                     Icon(
                         Icons.Filled.CheckCircle,
                         contentDescription = "Completada",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (complete) Color(0xFFFFEE58) else MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(onClick = { showOperarioModal = true }) {
+                    val tieneOperario = line.operarioNombre.isNotBlank()
+                    val acopiadoTotal = line.acopiadoServidor
+                    val cerradaPorOperario = line.motivoCierre.isNotBlank()
+
+                    val infiniteTransition = rememberInfiniteTransition(label = "blinkIcon")
+                    val alphaBlink by infiniteTransition.animateFloat(
+                        initialValue = 0.3f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(500),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "alphaBlink"
+                    )
+
+                    val tint = when {
+                        !tieneOperario -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        cerradaPorOperario -> MaterialTheme.colorScheme.error
+                        acopiadoTotal > 0 -> Color(0xFFF9A825).copy(alpha = alphaBlink)
+                        else -> Color(0xFF4CAF50)
+                    }
+
+                    Icon(
+                        Icons.Filled.Person,
+                        contentDescription = "Operario asignado",
+                        tint = tint
                     )
                 }
                 // D-207: el chat de linea siempre disponible; antes se ocultaba
@@ -1213,6 +1259,13 @@ private fun OrderLineCard(
                     )
                 }
             }
+
+            if (showOperarioModal) {
+                OperarioAsignadoDialog(
+                    line = line,
+                    onDismiss = { showOperarioModal = false }
+                )
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -1220,13 +1273,13 @@ private fun OrderLineCard(
                 Text(
                     line.productId,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (complete) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (line.litrajeDesc.isNotBlank()) {
                     Text(
                         "· ${line.litrajeDesc}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (complete) Color(0xFFFFEE58) else MaterialTheme.colorScheme.primary
                     )
                 }
                 // D-191: el REVELADO solo lo ve el OPERARIO de acopio (donde está
@@ -1236,13 +1289,13 @@ private fun OrderLineCard(
                         "· ${line.sectorAcopio} (relevado)",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.tertiary
+                        color = if (complete) Color.White else MaterialTheme.colorScheme.tertiary
                     )
                 } else if (line.sectorDesc.isNotBlank()) {
                     Text(
                         "· ${line.sectorDesc}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (complete) Color(0xFFFFEE58) else MaterialTheme.colorScheme.primary
                     )
                 }
                 if (line.marcado) {
@@ -1438,7 +1491,7 @@ private fun OrderLineCard(
                             else (shownPicked.toFloat() * 100 / line.requestedQty).toInt()
                         }% acopiadas",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (complete) Color(0xFFFFEE58) else MaterialTheme.colorScheme.primary
                     )
                     if (cerrada) {
                         Text(
@@ -1454,7 +1507,7 @@ private fun OrderLineCard(
                     Icon(
                         Icons.Filled.Straighten,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
+                        tint = if (complete) Color(0xFFFFEE58) else MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.padding(end = 4.dp)
                     )
                 }
@@ -2128,6 +2181,9 @@ private fun TruckArrivalDialog(
                             }
                             if (matriculaRemolque.isBlank() && encontradas.size > 1) {
                                 matriculaRemolque = encontradas[1]
+                            }
+                            if (matriculaRemolqueB.isBlank() && encontradas.size > 2) {
+                                matriculaRemolqueB = encontradas[2]
                             }
                         }
                     } catch (e: Exception) {
@@ -2912,6 +2968,116 @@ private fun UnpickScanConfirmDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
+private fun OperarioAsignadoDialog(
+    line: OrderLineEntity,
+    onDismiss: () -> Unit
+) {
+    val tieneOperario = line.operarioNombre.isNotBlank()
+    val acopiadoOperario = line.acopiadoOperario // D-274: Acopio físico del operario de campo
+    val verificadoEncargado = line.pickedQty // D-274: Verificación del encargado
+    val cerradaPorOperario = line.motivoCierre.isNotBlank()
+
+    val infiniteTransition = rememberInfiniteTransition(label = "blink")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    val estadoColor = when {
+        !tieneOperario -> MaterialTheme.colorScheme.onSurfaceVariant
+        cerradaPorOperario -> MaterialTheme.colorScheme.error
+        acopiadoOperario > 0 -> Color(0xFFF9A825) // Naranja: operario ha acopiado
+        else -> Color(0xFF4CAF50) // Verde: pendiente
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Asignación de Operario · Línea ${line.posicion}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                InfoRow("Planta", line.productName)
+                InfoRow("Referencia", line.productId)
+                InfoRow("Operario asignado", line.operarioNombre.ifBlank { "Sin operario asignado" })
+
+                HorizontalDivider()
+
+                // D-274: Mostrar contadores separados
+                if (tieneOperario && !cerradaPorOperario) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            color = Color(0xFFF9A825).copy(alpha = if (acopiadoOperario > 0) alpha else 1f),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.size(16.dp)
+                        ) {}
+                        Text(
+                            text = "👷 Acopiado por operario: $acopiadoOperario unidades",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFF9A825)
+                        )
+                    }
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            color = Color(0xFF4CAF50),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.size(16.dp)
+                        ) {}
+                        Text(
+                            text = "✅ Verificado por encargado: $verificadoEncargado / ${line.requestedQty} unidades",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF4CAF50)
+                        )
+                    }
+                    
+                    HorizontalDivider()
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        color = estadoColor.copy(alpha = if (acopiadoOperario > 0) alpha else 1f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.size(16.dp)
+                    ) {}
+                    Text(
+                        text = when {
+                            !tieneOperario -> "Esta línea no tiene ningún operario asignado."
+                            cerradaPorOperario -> {
+                                val motivoDesc = motivoCierreEtiqueta(line.motivoCierre)
+                                val extra = if (line.motivoCierreTexto.isNotBlank()) " (${line.motivoCierreTexto})" else ""
+                                "Línea cerrada por el operario: $motivoDesc$extra."
+                            }
+                            acopiadoOperario > 0 -> "El operario ${line.operarioNombre} ha recogido $acopiadoOperario de ${line.requestedQty} unidades y están de camino."
+                            else -> "Operario asignado: ${line.operarioNombre} · Asignada, pendiente de recogida en campo."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cerrar") }
         }
     )
 }

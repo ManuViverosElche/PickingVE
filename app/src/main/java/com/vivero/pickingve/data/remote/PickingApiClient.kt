@@ -535,4 +535,12 @@ class PickingApiClient(
             auth()
             url.parameters.append("finca", finca)
         }.body<ApiInvProgresoResponse>()
+
+    suspend fun guardarParte(body: ApiParteBody) {
+        client.post("$baseUrl/picking/partes") {
+            auth()
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+    }
 }

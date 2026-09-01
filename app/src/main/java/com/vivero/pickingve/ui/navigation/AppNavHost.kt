@@ -121,6 +121,7 @@ fun AppNavHost(
         AppScreen.WELCOME -> WelcomeScreen(
             repository = repository,
             orderListViewModel = orderListViewModel,
+            faenaViewModel = faenaViewModel,
             acopioPorFinca = acopioPorFinca,
             onEmpezar = {
                 screen = when {
@@ -137,6 +138,7 @@ fun AppNavHost(
             }
             OrderListScreen(
                 viewModel = orderListViewModel,
+                mostrarFaena = repository.currentEncargado()?.rol == "SUPERUSUARIO",
                 onOrderSelected = { orderId ->
                     pickingViewModel.selectOrder(orderId)
                     screen = AppScreen.PICKING
@@ -203,6 +205,7 @@ fun AppNavHost(
             encargadoNombre = repository.currentEncargado()?.let {
                 it.usuario.ifBlank { it.nombre }
             } ?: "",
+            mostrarFaena = repository.currentEncargado()?.rol == "SUPERUSUARIO",
             mostrarPanel = repository.currentEncargado()?.rol == "SUPERUSUARIO",
             onPanel = { screen = AppScreen.PANEL },
             onPicking = { screen = AppScreen.ORDERS },

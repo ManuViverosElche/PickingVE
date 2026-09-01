@@ -8,6 +8,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +53,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
+import android.os.Build
+import com.vivero.pickingve.ui.logistica.FaenaDashboardViewModel
 import com.vivero.pickingve.R
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.ui.orders.OrderListViewModel
@@ -96,6 +103,7 @@ data class AcopioResumen(val finca: String, val plantas: Int)
 fun WelcomeScreen(
     repository: PickingRepository,
     orderListViewModel: OrderListViewModel,
+    faenaViewModel: FaenaDashboardViewModel,
     acopioPorFinca: List<AcopioResumen>,
     onEmpezar: () -> Unit,
     onLogout: () -> Unit
@@ -113,7 +121,19 @@ fun WelcomeScreen(
     val horaActual = remember { java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) }
     val context = LocalContext.current
 
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ -> }
+
     LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
         if (!esOperario) {
             esOperario = repository.encargadoEsOperarioActivo()
         }
@@ -121,6 +141,7 @@ fun WelcomeScreen(
 
     LaunchedEffect(Unit) {
         orderListViewModel.syncOrders()
+        faenaViewModel.refrescarPerfil()
         while (segundos < 3) { delay(250); segundos += 1 }
     }
     LaunchedEffect(Unit) {
@@ -155,6 +176,7 @@ fun WelcomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -353,7 +375,7 @@ fun WelcomeScreen(
                     modifier = Modifier.fillMaxWidth().height(56.dp)
                 ) { Text("EMPEZAR EL DÍA", fontWeight = FontWeight.Bold) }
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(32.dp))
         }
     }
 }

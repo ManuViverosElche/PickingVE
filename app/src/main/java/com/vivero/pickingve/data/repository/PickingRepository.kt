@@ -155,8 +155,7 @@ class PickingRepository(
     // ---- Encargados ----
     suspend fun syncEncargados(api: PickingApiClient) {
         val encargados = api.fetchIngresos()
-        encargadoDao.clear()
-        encargadoDao.upsert(encargados.map { it.toEntity() })
+        encargadoDao.replaceAll(encargados.map { it.toEntity() })
     }
 
     suspend fun encargadosLocales(): List<EncargadoEntity> = encargadoDao.getAll()
@@ -333,19 +332,19 @@ class PickingRepository(
     suspend fun loginEncargadoRemoto(api: PickingApiClient, usuario: String, password: String): Boolean {
         return try {
             val enc = api.loginEncargado(usuario.trim(), password)
-            setCurrentEncargado(
-                EncargadoEntity(
-                    id = enc.id,
-                    nombre = enc.nombre,
-                    usuario = enc.usuario,
-                    passwordHash = hashPassword(enc.usuario, password),
-                    rol = enc.rol,
-                    fincasCarga = enc.fincasCarga,
-                    modo = enc.modo,
-                    email = enc.email,
-                    activo = enc.activo
-                )
+            val entity = EncargadoEntity(
+                id = enc.id,
+                nombre = enc.nombre,
+                usuario = enc.usuario,
+                passwordHash = hashPassword(enc.usuario, password),
+                rol = enc.rol,
+                fincasCarga = enc.fincasCarga,
+                modo = enc.modo,
+                email = enc.email,
+                activo = enc.activo
             )
+            setCurrentEncargado(entity)
+            encargadoDao.upsert(listOf(entity))
             true
         } catch (e: Exception) {
             if (Errores.esErrorDeRed(e)) throw e
@@ -917,7 +916,7 @@ class PickingRepository(
         labelFormat: String = ""
     ): PickingRecordEntity {
         val existing = pickingDao.findMatchingRecord(
-            orderId, orderLineId, scannedEan, actualProductId, measure, caliber
+            orderId, orderLineId, scannedEan, actualProductId, measure, caliber, pickingNumber
         )
         if (existing != null) {
             // D-175: pedir etiqueta NUNCA marca el registro previo entero: si
@@ -997,18 +996,9 @@ class PickingRepository(
             empleadoNombre = nombreFaena()
         )
         insertPickingRecord(record)
-        // D-181: pedir etiqueta por planta danada (rota / pasaporte ilegible)
-        // implica RETIRAR esa unidad: se registra un desacopio de 1 para que
-        // web e informes lo resten. CAMBIO_FORMATO no retira planta.
-        if (needsLabel && labelReason != "CAMBIO_FORMATO" && orderLineId != null) {
-            val espejo = record.copy(
-                recordId = UUID.randomUUID().toString(),
-                batchQty = -1,
-                needsLabel = false
-            )
-            insertPickingRecord(espejo)
-            orderDao.addLinePickedQty(orderLineId, -1)
-        }
+        // D-275: la planta físicamente acopiada CUENTA como acopiada, independientemente
+        // de si necesita etiqueta. Las etiquetas se listan por separado en el CSV/panel.
+        // Se elimina el registro espejo -1 que restaba la unidad del conteo.
         return record
     }
 
@@ -1143,6 +1133,7 @@ class PickingRepository(
                     accion = l.accion,
                     observaciones = l.observaciones,
                     marcado = l.marcado,
+                    acopiadoOperario = l.acopiadoOperario,
                     acopiadoServidor = l.acopiado,
                     fincaAcopio = l.fincaRelevada,
                     sectorAcopio = l.sectorRelevado,
@@ -1569,6 +1560,52 @@ class PickingRepository(
         } catch (e: Exception) {
             // Sin red: el worker lo reintenta con cierrePendiente=1
         }
+    }
+
+    /** D-244: corrige offline la cantidad total acopiada por el operario. */
+    suspend fun modificarCantidadAcopiada(line: OrderLineEntity, cantidad: Int) {
+        val anterior = line.acopiadoOperario.coerceAtLeast(0)
+        val nueva = cantidad.coerceIn(0, line.requestedQty)
+        val delta = nueva - anterior
+        if (delta == 0) return
+
+        if (delta > 0) {
+            createRecord(
+                orderId = line.orderId,
+                pickingNumber = nextPickingNumber(line.orderId),
+                pickingType = "I",
+                orderLineId = line.orderLineId,
+                scannedEan = null,
+                ocrRawText = null,
+                originalProductId = line.productId,
+                actualProductId = line.productId,
+                liters = null,
+                measure = null,
+                caliber = null,
+                batchQty = delta
+            )
+        } else {
+            val ajuste = PickingRecordEntity(
+                recordId = UUID.randomUUID().toString(),
+                orderId = line.orderId,
+                pickingNumber = nextPickingNumber(line.orderId),
+                pickingType = "I",
+                orderLineId = line.orderLineId,
+                scannedEan = null,
+                ocrRawText = "AJUSTE_CANTIDAD_ACOPIADA",
+                originalProductId = line.productId,
+                actualProductId = line.productId,
+                batchQty = delta,
+                liters = null,
+                measure = null,
+                caliber = null,
+                empleadoEmail = emailFaena(),
+                empleadoNombre = nombreFaena()
+            )
+            pickingDao.insert(ajuste)
+        }
+        orderDao.updateLineAcopiadoOperario(line.orderLineId, nueva)
+        orderDao.refreshOrderStatus(line.orderId)
     }
 
     /** Reintenta subir los cierres de línea que no pudieron notificarse. */

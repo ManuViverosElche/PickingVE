@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -183,9 +184,9 @@ fun CameraScannerScreen(
         runOcr(ocrScope, context, capture, executor, viewModel) { ocrLoading = false }
     }
 
-    fun onCodigoLeido(codigo: String) {
+    val onCodigoLeido = rememberUpdatedState<(String) -> Unit> { codigo ->
         codigoVisto = true
-        if (modo == CameraModo.PASAPORTE) return
+        if (modo == CameraModo.PASAPORTE) return@rememberUpdatedState
         val esEan = Regex("^\\d{8}$|^\\d{13}$").matches(codigo)
         if (esEan) viewModel.onBarcodeScanned(codigo) else avisoPasaporte = true
     }
@@ -215,7 +216,11 @@ fun CameraScannerScreen(
                         val analysis = ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
-                            .also { it.setAnalyzer(executor, BarcodeAnalyzer(debouncer, ::onCodigoLeido)) }
+                            .also {
+                                it.setAnalyzer(executor, BarcodeAnalyzer(debouncer) { codigo ->
+                                    onCodigoLeido.value(codigo)
+                                })
+                            }
 
                         provider.unbindAll()
                         val owner = lifecycleOwner

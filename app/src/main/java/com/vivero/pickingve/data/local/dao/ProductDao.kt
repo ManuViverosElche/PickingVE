@@ -16,7 +16,7 @@ interface ProductDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(product: ProductEntity)
 
-    @Query("SELECT * FROM products WHERE ean = :ean OR reference = :ean LIMIT 1")
+    @Query("SELECT * FROM products WHERE ean = :ean OR reference = :ean ORDER BY CASE WHEN ean = :ean THEN 0 ELSE 1 END LIMIT 1")
     suspend fun findByEan(ean: String): ProductEntity?
 
     @Query("SELECT * FROM products WHERE LOWER(name) LIKE '%' || LOWER(:query) || '%' OR LOWER(reference) LIKE '%' || LOWER(:query) || '%' ORDER BY name LIMIT 15")

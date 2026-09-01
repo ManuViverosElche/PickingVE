@@ -23,42 +23,49 @@ class BarcodeAnalyzer(
     private val scanner: BarcodeScanner = BarcodeScanning.getClient()
 
     override fun analyze(imageProxy: ImageProxy) {
-        val mediaImage = imageProxy.image
-        if (mediaImage == null) {
-            imageProxy.close()
-            return
-        }
+        var handedToScanner = false
+        try {
+            val mediaImage = imageProxy.image
+            if (mediaImage == null) return
 
-        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-        scanner.process(image)
-            .addOnSuccessListener { barcodes ->
-                barcodes.forEach { barcode ->
-                    val format = barcode.format
-                    if (format == Barcode.FORMAT_EAN_13 ||
-                        format == Barcode.FORMAT_EAN_8 ||
-                        format == Barcode.FORMAT_CODE_128 ||
-                        format == Barcode.FORMAT_DATA_MATRIX
-                    ) {
-                        barcode.rawValue?.let { raw ->
-                            val accepted = debouncer.tryAccept(
-                                com.vivero.pickingve.domain.model.ScanResult(
-                                    ean = raw.trim(),
-                                    ocrText = null
+            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            val processing = scanner.process(image)
+            handedToScanner = true
+            processing
+                .addOnSuccessListener { barcodes ->
+                    barcodes.forEach { barcode ->
+                        val format = barcode.format
+                        if (format == Barcode.FORMAT_EAN_13 ||
+                            format == Barcode.FORMAT_EAN_8 ||
+                            format == Barcode.FORMAT_CODE_128 ||
+                            format == Barcode.FORMAT_DATA_MATRIX
+                        ) {
+                            barcode.rawValue?.let { raw ->
+                                val accepted = debouncer.tryAccept(
+                                    com.vivero.pickingve.domain.model.ScanResult(
+                                        ean = raw.trim(),
+                                        ocrText = null
+                                    )
                                 )
-                            )
-                            if (accepted != null) {
-                                onBarcode(raw.trim())
+                                if (accepted != null) {
+                                    onBarcode(raw.trim())
+                                }
                             }
                         }
                     }
                 }
-            }
-            .addOnCompleteListener {
-                imageProxy.close()
-            }
-            .addOnFailureListener { e ->
-                Log.e(TAG, "Barcode processing failed", e)
-            }
+                .addOnCompleteListener {
+                    imageProxy.close()
+                }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "Barcode processing failed", e)
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not prepare barcode frame", e)
+        } finally {
+            // No completion callback exists when frame preparation fails.
+            if (!handedToScanner) imageProxy.close()
+        }
     }
 
     private companion object {

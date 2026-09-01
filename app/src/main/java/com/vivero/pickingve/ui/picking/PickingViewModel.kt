@@ -10,6 +10,7 @@ import com.vivero.pickingve.data.local.entities.PickingRecordEntity
 import com.vivero.pickingve.data.local.entities.ProductEntity
 import com.vivero.pickingve.data.local.entities.SectorEntity
 import com.vivero.pickingve.data.remote.PickingApiClient
+import com.vivero.pickingve.data.remote.ApiParteBody
 import com.vivero.pickingve.data.repository.PickingRepository
 import com.vivero.pickingve.data.repository.SettingsRepository
 import com.vivero.pickingve.domain.usecase.ParsePlantPassportUseCase
@@ -913,6 +914,7 @@ class PickingViewModel(
     }
 
     fun dismissConfirm() {
+        forceEanScanQtyOne = false
         ultimoEscaneoFueEan = false // D-179: no heredar a la siguiente operacion
         pendingConfirm.value = null
         lastOcrText = null
@@ -939,6 +941,11 @@ class PickingViewModel(
             val employeeEmail = repository.currentEncargado()?.email
                 ?.takeIf { it.isNotBlank() }
                 ?: s.operatorEmail
+            val matriculaCamionEf = matriculaCamion ?: s.matriculaCamion
+            val matriculaRemolqueEf = matriculaRemolque ?: s.matriculaRemolque
+            val pesoEf = pesoCarga ?: s.pesoCarga
+            val fincaEf = finca ?: s.finca
+            val zonaEf = zona ?: s.zona
             val result = repository.sendTelegramReport(
                 orderId = orderId,
                 pickingNumber = pickingNumber,
@@ -946,17 +953,29 @@ class PickingViewModel(
                 botToken = s.telegramBotToken,
                 chatId = s.telegramChatId,
                 employeeEmail = employeeEmail,
-                matriculaCamion = matriculaCamion ?: s.matriculaCamion,
-                matriculaRemolque = matriculaRemolque ?: s.matriculaRemolque,
-                finca = finca ?: s.finca,
-                zona = zona ?: s.zona,
-                pesoCarga = pesoCarga ?: s.pesoCarga,
+                matriculaCamion = matriculaCamionEf,
+                matriculaRemolque = matriculaRemolqueEf,
+                finca = fincaEf,
+                zona = zonaEf,
+                pesoCarga = pesoEf,
                 labelsBotToken = s.labelsBotToken,
                 labelsChatId = s.labelsChatId
             )
             sendingReport.value = false
             lastMessage.value = result.fold(
                 onSuccess = {
+                    viewModelScope.launch {
+                        persistirParte(
+                            pickingNumber = pickingNumber,
+                            pickingType = pickingType,
+                            matriculaCamion = matriculaCamionEf,
+                            matriculaRemolque = matriculaRemolqueEf,
+                            pesoCarga = pesoEf,
+                            finca = fincaEf,
+                            zona = zonaEf,
+                            empleadoEmail = employeeEmail
+                        )
+                    }
                     val uploaded = try {
                         repository.uploadPendingRegistros(PickingApiClient())
                     } catch (e: Exception) {
@@ -967,6 +986,51 @@ class PickingViewModel(
                 },
                 onFailure = { "Error: ${Errores.traducir(it)}" }
             )
+        }
+    }
+
+    /** D-271: persiste los datos del parte (matrículas + peso) en BigQuery para
+     *  que los informes puedan mostrarlos. Best-effort: si falla la red no se
+     *  bloquea el cierre del parte (el XLSX/Telegram ya se ha enviado). */
+    private suspend fun persistirParte(
+        pickingNumber: Int,
+        pickingType: String,
+        matriculaCamion: String,
+        matriculaRemolque: String,
+        pesoCarga: String,
+        finca: String,
+        zona: String,
+        empleadoEmail: String
+    ) {
+        val orderId = selectedOrderId.value ?: return
+        val encargado = repository.currentEncargado()
+        val parteId = "$orderId-$pickingType$pickingNumber"
+        val fecha = try {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                .format(java.util.Date())
+        } catch (e: Exception) {
+            ""
+        }
+        val peso = pesoCarga.toDoubleOrNull()
+        try {
+            PickingApiClient().guardarParte(
+                ApiParteBody(
+                    parteId = parteId,
+                    pedidoId = orderId,
+                    pickingTipo = pickingType,
+                    pickingNumero = pickingNumber,
+                    matriculaCamion = matriculaCamion,
+                    matriculaRemolque = matriculaRemolque,
+                    peso = peso,
+                    finca = finca,
+                    zona = zona,
+                    empleadoEmail = empleadoEmail,
+                    empleadoNombre = encargado?.nombre.orEmpty(),
+                    fecha = fecha
+                )
+            )
+        } catch (e: Exception) {
+            Log.e("PickingVE", "Error al persistir parte $parteId", e)
         }
     }
 

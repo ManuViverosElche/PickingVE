@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.vivero.pickingve.data.local.entities.EncargadoEntity
 
 @Dao
@@ -14,6 +15,12 @@ interface EncargadoDao {
 
     @Query("DELETE FROM encargados")
     suspend fun clear()
+
+    @Transaction
+    suspend fun replaceAll(encargados: List<EncargadoEntity>) {
+        clear()
+        upsert(encargados)
+    }
 
     @Query("SELECT * FROM encargados")
     suspend fun getAll(): List<EncargadoEntity>

@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.AlertDialog
@@ -186,27 +189,6 @@ fun ConfirmPickingDialog(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                if (!pending.ocrText.isNullOrBlank()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                            Text(
-                                "Etiqueta",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                            Text(
-                                text = pending.ocrText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-                }
                 if (ventaDirecta) {
                     OutlinedTextField(
                         value = qtyText,
@@ -263,27 +245,36 @@ fun ConfirmPickingDialog(
                         )
                     }
                 }
-                LabelOptionSelector(
-                    labelOption = labelOption,
-                    labelFormat = labelFormat,
-                    litrajes = litrajes,
-                    mostrarNoEtiqueta = false,
-                    onOptionChange = { labelOption = it; if (it != 3) labelFormat = "" },
-                    onFormatChange = { labelFormat = it }
-                )
+                // D-276: Modal scrolleable para que todas las opciones sean visibles
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    LabelOptionSelector(
+                        labelOption = labelOption,
+                        labelFormat = labelFormat,
+                        litrajes = litrajes,
+                        mostrarNoEtiqueta = true, // D-277: mostrar opción "No tiene etiqueta"
+                        onOptionChange = { labelOption = it; if (it != 3) labelFormat = "" },
+                        onFormatChange = { labelFormat = it }
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 enabled = measureValid && (labelOption != 3 || labelFormat.isNotBlank()),
                 onClick = {
-                    val isLabel = labelOption == 2 || labelOption == 3 || labelOption == 4
+                    val isLabel = labelOption == 1 || labelOption == 2 || labelOption == 3 || labelOption == 4
                     onConfirm(
                         liters,
                         measure.ifBlank { null },
                         caliber.ifBlank { null },
                         isLabel,
                         when (labelOption) {
+                            1 -> "SIN_ETIQUETA"
                             2 -> "MACETA_ROTA"
                             3 -> "CAMBIO_FORMATO"
                             4 -> "PASAPORTE_MAL_ESTADO"

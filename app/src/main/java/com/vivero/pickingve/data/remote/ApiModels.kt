@@ -57,6 +57,7 @@ data class ApiLinea(
     val pendientes: Double? = null,
     val imprimirLinea: Int = 0,
     val marcado: Boolean = false,
+    val acopiadoOperario: Int = 0,
     val acopiado: Int = 0,
     val empleado: String = "",
     val litraje: String = "",
@@ -147,6 +148,22 @@ data class ApiUploadResponse(
     val ok: Int = 0,
     val duplicados: Int = 0,
     @SerialName("accepted_ids") val acceptedIds: List<String> = emptyList()
+)
+
+@Serializable
+data class ApiParteBody(
+    @SerialName("parte_id") val parteId: String,
+    @SerialName("pedido_id") val pedidoId: String,
+    @SerialName("picking_tipo") val pickingTipo: String,
+    @SerialName("picking_numero") val pickingNumero: Int,
+    @SerialName("matricula_camion") val matriculaCamion: String = "",
+    @SerialName("matricula_remolque") val matriculaRemolque: String = "",
+    val peso: Double? = null,
+    val finca: String = "",
+    val zona: String = "",
+    @SerialName("empleado_email") val empleadoEmail: String = "",
+    @SerialName("empleado_nombre") val empleadoNombre: String = "",
+    val fecha: String = ""
 )
 
 @Serializable

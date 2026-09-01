@@ -55,6 +55,7 @@ data class OrderLineEntity(
     val vigente: Boolean = true, // False: línea retirada del pedido (se muestra pero no se pistoolea)
     val marcado: Boolean = false, // True: línea marcada ([M] en la descripción, tabla LINEA_PEDIDO)
     val acopiadoServidor: Int = 0, // Unidades subidas a BigQuery por cualquier dispositivo (otras tabletas incluidas)
+    val acopiadoOperario: Int = 0, // D-274: Acopio físico del operario de campo (picking_tipo='I')
     val fincaAcopio: String = "", // FINCA_RELEVADA: finca real donde está la planta (si difiere de la teórica)
     val sectorAcopio: String = "", // SECTOR_RELEVADO: sector real donde está la planta
     val fincaArticulo: String = "", // FINCA_ARTICULO: finca de procedencia de la planta (artículo)
