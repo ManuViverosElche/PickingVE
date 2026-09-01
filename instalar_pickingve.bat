@@ -1,13 +1,28 @@
 <# :
 @echo off
+chcp 65001 >nul
 title PickingVE - Instalador Servidor v3
+
+REM 1. Comprobar permisos de Administrador usando net session
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [AVISO] Se requieren privilegios de Administrador para la instalacion.
+    echo Solicitando elevacion de privilegios...
+    PowerShell -Command "Start-Process cmd -ArgumentList '/k \"\"%~f0\"\"' -Verb RunAs"
+    exit /b
+)
+
 echo.
 echo  INSTALADOR PICKINGVE v3 - esta ventana NO se cierra sola hasta el final.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$raw=[IO.File]::ReadAllText('%~f0'); $parts=$raw -split '(?m)^#>[ \t]*\r?\n',2; if($parts.Count -lt 2){ Write-Host 'Cabecera corrupta'; exit 1 }; & { Invoke-Expression $parts[1] }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$raw=[IO.File]::ReadAllText('%~f0'); $parts=$raw -split '(?m)^#>[ \t]*\r?\n',2; if($parts.Count -lt 2){ Write-Host 'Cabecera corrupta'; pause; exit 1 }; & { Invoke-Expression $parts[1] }"
 set "EC=%errorlevel%"
 echo.
 echo ============================================================
-if "%EC%"=="0" (echo   INSTALACION FINALIZADA CORRECTAMENTE) else (echo   INSTALACION CON ERRORES - codigo %EC%)
+if "%EC%"=="0" (
+    echo   INSTALACION FINALIZADA CORRECTAMENTE
+) else (
+    echo   INSTALACION CON ERRORES - codigo %EC%
+)
 echo   Log guardado en el ESCRITORIO: pickingve_instalador.log
 echo ============================================================
 echo.
@@ -25,15 +40,6 @@ exit /b %EC%
 $ErrorActionPreference = 'Continue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
-
-# 1. Comprobar privilegios de Administrador y elevar si es necesario
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Host "`n[AVISO] Se requieren privilegios de Administrador para configurar tareas del sistema (SYSTEM)." -ForegroundColor Yellow
-    Write-Host "Elevando privilegios..." -ForegroundColor Cyan
-    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
-    exit
-}
 
 $RepoUrl      = "https://github.com/ManuViverosElche/PickingVE.git"
 $DefaultDb    = "X:\Datos\FS\0142026.accdb"
@@ -240,8 +246,6 @@ bigquery:
     $hoy     = Get-Date -Format "yyyy-MM-dd"
 
     function New-SyncTaskXml($name, $startHour, $intervalMin, $durHours, $dataset){
-        # schtasks + XML: metodo universal (Register-ScheduledTask falla en
-        # algunos Windows 10 al setear RepetitionInterval)
         $rep = ""
         if ($intervalMin -gt 0) {
             $rep = "<Repetition><Interval>PT$($intervalMin)M</Interval><Duration>PT$($durHours)H</Duration><StopAtDurationEnd>true</StopAtDurationEnd></Repetition>"
@@ -342,6 +346,7 @@ bigquery:
     Write-Host "   Detalle tecnico completo en el log:" -ForegroundColor Red
     Write-Host "   $LogPath" -ForegroundColor Red
     Write-Host "  ==========================================`n" -ForegroundColor Red
+    Read-Host "Presiona Enter para cerrar la ventana..."
 }
 
 Stop-Transcript | Out-Null
