@@ -8,7 +8,7 @@ net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [AVISO] Se requieren privilegios de Administrador para la instalacion.
     echo Solicitando elevacion de privilegios...
-    PowerShell -Command "Start-Process cmd -ArgumentList '/k \"\"%~f0\"\"' -Verb RunAs"
+    PowerShell -Command "Start-Process cmd -ArgumentList '/k ""%~f0""' -Verb RunAs"
     exit /b
 )
 
