@@ -247,7 +247,7 @@ bigquery:
         else { Warn " No se pudieron crear tareas automaticas (podras hacerlas a mano; no bloquea)." }
     }
 
-    # Tarea programada de Auto-Actualizacion del repositorio (cada 4 horas)
+    # Tarea programada de Auto-Actualizacion (PickingVE_AutoUpdate)
     try {
         $autoUpdateBat = Join-Path $Root "auto_update.bat"
         $trgUpdate = New-ScheduledTaskTrigger -Once -At (Get-Date)
