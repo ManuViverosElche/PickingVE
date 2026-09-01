@@ -111,7 +111,7 @@ body {
 /* D-200: pagina fisica EXACTA (height fija + overflow hidden): el contenido
    nunca puede crecer ni pisar el pie; el navegador no re-pagina porque
    @page margin es 0 y cada .pagina ocupa justo una hoja. */
-.pagina { width: 210mm; height: 297mm; padding: 7mm 9mm 34mm; page-break-after: always; position: relative; overflow: hidden; }
+.pagina { width: 210mm; height: 297mm; padding: 7mm 9mm 44mm; page-break-after: always; position: relative; overflow: hidden; }
 .pagina.apaisada { width: 297mm; height: 210mm; padding: 6mm 8mm 10mm; page: apaisada; }
 .pagina:last-child { page-break-after: auto; }
 @media print { .no-print { display: none; } body { background: #fff; } }
@@ -160,7 +160,8 @@ table.datos tbody tr:nth-child(even) td { background: var(--corp-bg); }
 table.datos td.c { text-align: center; }
 table.datos td.nl { text-align: center; font-weight: 700; color: var(--corp-teal); }
 table.datos td.ref { font-weight: 700; color: var(--corp-dark); }
-table.datos tr.ggn .marca-ggn { display: inline-block; background: var(--corp-lime); color: #fff; border-radius: 1mm; font-size: 6pt; font-weight: 700; padding: 0.2mm 1.2mm; margin-left: 1mm; vertical-align: middle; }
+table.datos tr.ggn .ref-celda { display: flex; flex-direction: column; align-items: center; gap: 0.6mm; }
+table.datos tr.ggn .marca-ggn { display: inline-block; background: var(--corp-teal); color: #fff; border-radius: 1mm; font-size: 6.5pt; font-weight: 700; padding: 0.4mm 2.5mm; letter-spacing: 0.5px; line-height: 1.3; }
 table.datos td.estrella { text-align: center; font-weight: 700; color: var(--corp-teal); }
 table.datos tr.sust td { background: var(--corp-warn-bg) !important; border-left: 3px solid var(--corp-warn-line); }
 .sust-tag { color: #a06a10; font-weight: 700; }
@@ -180,7 +181,7 @@ table.apaisada tr.sust td { background: var(--corp-warn-bg) !important; }
 .cambio { color: #a06a10; font-weight: 700; }
 
 /* ---- Pie ---- */
-.pie { position: absolute; bottom: 7mm; left: 9mm; right: 9mm; height: 24mm; overflow: hidden; font-size: 7.5pt; }
+.pie { position: absolute; bottom: 7mm; left: 9mm; right: 9mm; height: 34mm; overflow: hidden; font-size: 7.5pt; }
 .pagina.apaisada .pie { display: none; }
 .pie .ggn-line { color: var(--corp-mid); margin-bottom: 1.5mm; }
 .pie .obs-box { border: 1px solid var(--corp-line); border-radius: 1.5mm; padding: 1.6mm 2.2mm; min-height: 9mm; background: var(--corp-bg); margin-bottom: 2mm; overflow: hidden; }
@@ -367,18 +368,18 @@ def _agrupar_filas_pedido(filas: list) -> list:
     return sorted(agrupado.values(), key=lambda g: (g["POSICION"], g["ref_servida"], g["TALLA"], g["SECTOR"], g["MEDIDA_TXT"]))
 
 
-def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido) -> str:
+def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido) -> str:
     """Documento de Punteo: UN solo listado correlativo con todas las líneas del pedido.
 
     Cada fila conserva el N.L. original de Factusol (POSICION_PEDIDO), de modo que si
     una línea se desglosa en varias referencias al pistolear, todas comparten N.L.
     """
-    datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido)
+    datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido)
     o = datos["o"]
     filas = datos["filas"]
     sust_map = datos["sust_map"]
     obs = o.get("OBSERVACIONES")
-    peso = 0.0
+    peso = datos.get("peso", 0.0)
 
     empleados = sorted({_nombre_corto(d.get("empleado_nombre")) for d in datos["detalle"] if d.get("empleado_nombre") and not d.get("es_operario")})
     empleado_txt = ", ".join(empleados) or "Pendiente de pistoleo"
@@ -387,28 +388,58 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
 
     filas_agrupadas = _agrupar_filas_pedido(filas)
 
+    # Pre-computar sustituciones agrupadas por (POSICION, ref_original, ref_servida, medida).
+    # Cada escaneo con distinta medida crea una entrada separada para que cada fila
+    # del informe (que se agrupa por MEDIDA_TXT) muestre SOLO sus propias sustituciones.
+    sust_agrupadas: dict[tuple, dict] = {}
+    for d in datos["detalle"]:
+        if not d.get("sustituido"):
+            continue
+        pos = int(_num(d.get("POSICION")))
+        ref_orig = str(d.get("ref_original") or "")
+        ref_serv = str(d.get("ref_servida") or "")
+        med = str(d.get("medida") or "")
+        key = (pos, ref_orig, ref_serv, med)
+        sa = sust_agrupadas.get(key)
+        if sa is None:
+            sa = sust_agrupadas[key] = {
+                "POSICION": pos,
+                "ref_original": ref_orig,
+                "ref_servida": ref_serv,
+                "medida": med,
+                "litraje_pedida": str(d.get("LITRAJE_PEDIDA") or ""),
+                "sector_pedida": str(d.get("SECTOR_PEDIDA") or ""),
+                "litraje_servida": str(d.get("LITRAJE_SERVIDA") or ""),
+                "sector_servida": str(d.get("SECTOR_SERVIDA") or ""),
+                "cantidad": 0.0,
+            }
+        sa["cantidad"] += _num(d.get("cantidad_partida"))
+
     bloques: list[tuple[str, int]] = []
     for i, g in enumerate(filas_agrupadas, start=1):
         clase_ggn = "ggn" if g.get("EQUIVALENTE") else ""
         marca_ggn = '<span class="marca-ggn">GGN</span>' if g.get("EQUIVALENTE") else ""
         estrella = "*" if g.get("EQUIVALENTE") else ""
+        med_txt = str(g.get("MEDIDA_TXT") or "")
         susts = []
-        for d in datos["detalle"]:
-            if not d.get("sustituido"):
+        for key_s, sa in sust_agrupadas.items():
+            if sa["POSICION"] != g["POSICION"] or sa["ref_servida"] != g["ref_servida"]:
                 continue
-            if (str(d.get("ref_servida") or ""), str(d.get("LITRAJE_SERVIDA") or ""), str(d.get("SECTOR_SERVIDA") or "")) != (
-                g["ref_servida"], g["TALLA"], g["SECTOR"]
-            ):
+            # Solo mostrar la sustitución si su medida individual cae dentro
+            # del MEDIDA_TXT de la fila (rango "90-100 cm" incluye "90" y "100").
+            med_sust = sa["medida"]
+            if med_sust and med_txt and med_sust not in med_txt:
                 continue
             susts.append(
-                f"{d.get('ref_original') or '—'} ({_set(d.get('LITRAJE_PEDIDA'))} · {_set(d.get('SECTOR_PEDIDA'))})"
-                f" → {d.get('ref_servida') or '—'} ({_set(g['TALLA'])} · {_set(g['SECTOR'])})"
+                f"{sa['ref_original'] or '—'} ({_set(sa['litraje_pedida'])} · {_set(sa['sector_pedida'])})"
+                f" → {sa['ref_servida'] or '—'} ({_set(g['TALLA'])} · {_set(g['SECTOR'])})"
+                f"  ×{sa['cantidad']:,.0f}"
             )
         bloque_html = f"""
 <tr class="{clase_ggn}">
   <td class="nl">{i}</td>
   <td class="c">{_html_esc(g['POSICION'])}</td>
-  <td class="c ref">{_html_esc(g['ref_servida'])}{marca_ggn}</td>
+  <td class="c ref">{'<div class="ref-celda">' if marca_ggn else ''}{_html_esc(g['ref_servida'])}{marca_ggn}{'</div>' if marca_ggn else ''}</td>
   <td class="estrella">{estrella}</td>
   <td>{_html_esc(_set(g.get("DESCRIPCION")))}{f' <i class="medida-desc">· {_html_esc(g["MEDIDA_TXT"])}</i>' if g.get("MEDIDA_TXT") else ''}</td>
   <td class="c">{_html_esc(g['TALLA'])}</td>
@@ -455,9 +486,9 @@ def build_punteo_html(bq_client, project, dataset, picking_dataset, picking_tabl
 # Informe 2 — Detalle del Pistoleo (A4 horizontal)
 # ---------------------------------------------------------------------------
 
-def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido) -> str:
+def build_detalle_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido) -> str:
     """Detalle exhaustivo del pistoleo en A4 horizontal: un evento por línea."""
-    datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido)
+    datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido)
     o = datos["o"]
     detalle = datos["detalle"]
 
@@ -541,9 +572,9 @@ def _susts_por_linea(detalle: list) -> dict[int, list[str]]:
     return mapa
 
 
-def build_control_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido) -> str:
+def build_control_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido) -> str:
     """Control de Acopio en A4 horizontal: pedido vs acopiado con trazabilidad de cambios."""
-    datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido)
+    datos = _load_datos(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido)
     o = datos["o"]
     control = datos["control"]
     sin_localizar = datos["sin_localizar"]
@@ -619,10 +650,10 @@ def build_control_html(bq_client, project, dataset, picking_dataset, picking_tab
 # Compatibilidad: desglose = detalle + control
 # ---------------------------------------------------------------------------
 
-def build_desglose_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido) -> str:
+def build_desglose_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido) -> str:
     """Informe desglosado: Detalle del Pistoleo + Control de Acopio (ambos apaisados)."""
-    pag_det = build_detalle_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido)
-    pag_ctrl = build_control_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido)
+    pag_det = build_detalle_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido)
+    pag_ctrl = build_control_html(bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido)
     body_det = pag_det.split("<body>", 1)[1].split("</body>", 1)[0]
     body_ctrl = pag_ctrl.split("<body>", 1)[1].split("</body>", 1)[0]
     css = pag_det.split("<style>", 1)[1].split("</style>", 1)[0]

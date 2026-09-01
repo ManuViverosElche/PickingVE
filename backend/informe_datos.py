@@ -81,6 +81,7 @@ def _load_datos(
     picking_dataset: str,
     picking_table: str,
     matriculas_table: str,
+    partes_table: str,
     numero_pedido: str,
 ) -> dict:
     """Carga todos los datos del informe Punteo desde BigQuery (compartido por xlsx y pdf)."""
@@ -97,13 +98,20 @@ def _load_datos(
                COALESCE(c.DIRECCION, '') AS DIR_CLIENTE,
                COALESCE(c.CIUDAD, '') AS CIUDAD_CLIENTE,
                COALESCE(mc.matricula, '') AS MATRICULA_CAMION,
-               COALESCE(mr.matricula, '') AS MATRICULA_REMOLQUE
+               COALESCE(mr.matricula, '') AS MATRICULA_REMOLQUE,
+               COALESCE(pp.peso, 0) AS PESO_CARGA
         FROM `{project}.{dataset}.PEDIDOS` p
         LEFT JOIN `{project}.{dataset}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
         LEFT JOIN `{project}.{picking_dataset}.{matriculas_table}` mc
             ON mc.pedido_id = p.NUMERO_PEDIDO AND mc.tipo = 'CAMION'
         LEFT JOIN `{project}.{picking_dataset}.{matriculas_table}` mr
-            ON mr.pedido_id = p.NUMERO_PEDIDO AND mr.tipo = 'REMOLQUE'
+            ON mr.pedido_id = p.NUMERO_PEDIDO AND mr.tipo IN ('REMOLQUE', 'REMOLQUE_A')
+        LEFT JOIN (
+            SELECT pedido_id, MAX(peso) AS peso
+            FROM `{project}.{picking_dataset}.{partes_table}`
+            WHERE peso IS NOT NULL AND peso > 0
+            GROUP BY pedido_id
+        ) pp ON pp.pedido_id = p.NUMERO_PEDIDO
         WHERE p.NUMERO_PEDIDO = @pedido
         LIMIT 1
     """
@@ -299,6 +307,7 @@ def _load_datos(
         "control": control,
         "sin_localizar": sin_localizar,
         "sust_map": sust_map,
+        "peso": _num(o.get("PESO_CARGA")),
     }
 
 
@@ -309,12 +318,13 @@ def build_punteo_xlsx(
     picking_dataset: str,
     picking_table: str,
     matriculas_table: str,
+    partes_table: str,
     numero_pedido: str,
 ) -> bytes:
     """Devuelve los bytes del .xlsx del informe Punteo del pedido."""
     datos = _load_datos(
         bq_client, project, dataset, picking_dataset, picking_table,
-        matriculas_table, numero_pedido,
+        matriculas_table, partes_table, numero_pedido,
     )
     return _build_workbook(
         pedido=numero_pedido,
@@ -324,6 +334,7 @@ def build_punteo_xlsx(
         detalle=datos["detalle"],
         control=datos["control"],
         sin_localizar=datos["sin_localizar"],
+        peso=datos["peso"],
     )
 
 
@@ -475,13 +486,13 @@ def _write_table_row(ws, row_idx, seq, ref, equiv, desc, talla, sector, finca, c
     _style_cell(ws, f"{col('cant')}{row_idx}", _num(cant), _FONT_NORMAL, border=True, align=_CENTER, number="0")
 
 
-def _build_workbook(pedido, o, partes, filas, detalle, control, sin_localizar):
+def _build_workbook(pedido, o, partes, filas, detalle, control, sin_localizar, peso=0.0):
     wb = Workbook()
     ws0 = wb.create_sheet("Portada", 0)
     wb.remove(wb["Sheet"])
 
     obs = _set(o.get("OBSERVACIONES"))
-    peso = 0.0  # pendiente de capturar en el cierre de parte (D-153)
+    peso = _num(peso)  # D-271: peso persistido en picking_partes (antes 0.0, D-153)
 
     # --- Hojas Punteo (una por parte) -------------------------------------
     for parte in partes:

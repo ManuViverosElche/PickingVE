@@ -21,11 +21,37 @@ RUN ls -la /app \
     && test -s /app/web/logistica/js/modules/inventario.js \
     && test -s /app/web/logistica/js/modules/impresion.js \
     && test -s /app/web/logistica/js/modules/designer.js \
+    && test -s /app/web/logistica/js/modules/portal.js \
     && test -s /app/web/logistica/js/services/apiService.js \
+    && test -s /app/web/logistica/js/services/dataConnector.js \
     && test -s /app/web/logistica/js/components/orderCard.js \
     && test -s /app/web/logistica/js/components/modalDetail.js \
     && test -s /app/web/logistica/js/components/subnavFaena.js \
     && test -s /app/web/logistica/js/components/labelSelector.js \
+    && test -s /app/web/logistica/js/components/dashboardFaena.js \
+    && test -s /app/web/logistica/js/components/navigation/sidebar.js \
+    && test -s /app/web/logistica/js/components/navigation/submenu.js \
+    && test -s /app/web/logistica/js/components/faena/pedidosDia.js \
+    && test -s /app/web/logistica/js/components/faena/etiquetasDia.js \
+    && test -s /app/web/logistica/js/components/faena/historicoCargas.js \
+    && test -s /app/web/logistica/js/components/faena/repartoFaena.js \
+    && test -s /app/web/logistica/js/components/faena/cargaOperarios.js \
+    && test -s /app/web/logistica/js/components/inventario/partes.js \
+    && test -s /app/web/logistica/js/components/inventario/resumenSector.js \
+    && test -s /app/web/logistica/js/components/inventario/resumenReferencia.js \
+    && test -s /app/web/logistica/js/components/inventario/inventarios.js \
+    && test -s /app/web/logistica/js/components/inventario/mapa.js \
+    && test -s /app/web/logistica/js/components/etiquetas/disenador.js \
+    && test -s /app/web/logistica/js/components/etiquetas/impresion.js \
+    && test -s /app/web/logistica/js/components/configuracion/personal.js \
+    && test -s /app/web/logistica/js/components/configuracion/logistica.js \
+    && test -s /app/web/logistica/js/components/configuracion/inventario.js \
+    && test -s /app/web/logistica/js/components/configuracion/integraciones.js \
+    && test -s /app/web/logistica/css/faena.css \
+    && test -s /app/web/logistica/css/layout.css \
+    && test -s /app/web/logistica/css/inventario.css \
+    && test -s /app/web/logistica/css/etiquetas.css \
+    && test -s /app/web/logistica/css/configuracion.css \
     && echo "FICHEROS-INFORME OK"
 
 ENV PORT=8080

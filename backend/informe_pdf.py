@@ -82,26 +82,46 @@ def _dt_es(dt) -> str:
         return local.strftime("%d/%m/%Y %H:%M")
     return str(dt)
 
-from informe_datos import (
-    GGN,
-    _load_datos,
-    _num,
-    _set,
-)
 
 F = "Helvetica"
 FB = "Helvetica-Bold"
+FI = "Helvetica-Oblique"
 
 _LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "manager", "viveros_logo.png")
 
 PAGE_W, PAGE_H = A4
 MARG = 10 * mm
 CONTENT_W = PAGE_W - 2 * MARG
-HEADER_H = 44 * mm
-ROW_H = 5.2 * mm
-FOOTER_H = 26 * mm
 
-# Mismas columnas y anchos relativos que la tabla del HTML
+# ---- Colores corporativos (exactos del CSS HTML) ----
+_CORP_DARK = colors.HexColor("#0c3a3f")
+_CORP_MID = colors.HexColor("#14555c")
+_CORP_TEAL = colors.HexColor("#0e8a80")
+_CORP_LIME = colors.HexColor("#35b8ac")
+_CORP_BG = colors.HexColor("#eef7f5")
+_CORP_LINE = colors.HexColor("#b8d8d3")
+_CORP_WARN_BG = colors.HexColor("#fdf3e0")
+_CORP_WARN_LINE = colors.HexColor("#e0a13c")
+_CORP_TEXT = colors.HexColor("#1a2b2e")
+_CORP_TEXT2 = colors.HexColor("#3d565a")
+
+# ---- Dimensiones del HTML replicadas ----
+# .pie { bottom:7mm; height:34mm } → pie_bottom = 7mm, pie_top = 41mm
+# .pagina { padding-bottom:44mm } → content_limit = PAGE_H - 44mm
+PIE_BOTTOM = 7 * mm
+PIE_HEIGHT = 34 * mm
+PIE_TOP = PIE_BOTTOM + PIE_HEIGHT  # 41mm
+CONTENT_LIMIT = PAGE_H - 44 * mm  # 253mm desde abajo = contenido útil
+
+# Cabecera: flex con 3 zonas, border-bottom 2px teal, padding-bottom 3mm
+HEADER_H = 40 * mm  # Alto total de la cabecera HTML
+HEADER_GAP = 4 * mm  # margin-bottom del titulo
+
+# Tabla
+ROW_H = 5.2 * mm
+THEAD_H = 6 * mm  # cabecera de tabla
+
+# Columnas (mismos anchos relativos que el thead HTML)
 _COLS = [
     ("N.\u00ba", 9 * mm),
     ("N.L.", 12 * mm),
@@ -115,108 +135,151 @@ _COLS = [
 ]
 TABLE_W = sum(w for _, w in _COLS)
 
-_AZUL = colors.HexColor("#0c3a3f")      # D-200: corp-dark del HTML (antes azul Office)
-_GRIS_BORDE = colors.HexColor("#b8d8d3")  # D-200: corp-line del HTML
-_AMBAR_FONDO = colors.HexColor("#fdf3e0")  # D-200: corp-warn-bg del HTML
-_AMBAR_TEXTO = colors.HexColor("#a06a10")
-_LIME = colors.HexColor("#35b8ac")      # D-200: corp-lime del HTML
-_GRIS_TEXTO = colors.HexColor("#3D565A")
-_ZEBRA = colors.HexColor("#eef7f5")     # D-200: corp-bg para filas pares
-
 
 def _cortar(texto: str, ancho_mm: float, font: str = F, size: float = 7) -> str:
     max_chars = max(3, int(ancho_mm / (size * 0.155 * mm)))
     return texto[:max_chars]
 
 
-def _caja(c, x, y, w, h, etiqueta, valor):
-    """Caja dato del centro de la cabecera (equivalente a .caja-dato del HTML)."""
-    c.setStrokeColor(_GRIS_BORDE)
-    c.setLineWidth(0.4)
-    c.rect(x, y, w, h, stroke=1, fill=0)
-    c.setFillColor(_GRIS_TEXTO)
-    c.setFont(FB, 5.6)
-    c.drawString(x + 1.2 * mm, y + h - 3.1 * mm, etiqueta)
-    c.setFillColor(colors.black)
-    c.setFont(FB, 7.2)
-    v = _set(valor) or "\u2014"
-    c.drawString(x + 1.2 * mm, y + 1.6 * mm, _cortar(v, w - 2.4 * mm, FB, 7.2))
-
-
 def _draw_cabecera(c, o, documento, y_top, pagina=1, total_paginas=1):
-    """Cabecera completa: fiscal | cajas centro | logo + tabla documento/paginacion."""
-    alto = HEADER_H
-    y0 = y_top - alto
+    """Cabecera replicando exactamente el CSS flex del HTML:
+    cabecera { display:flex; gap:5mm; border-bottom:2px solid teal; padding-bottom:3mm }
+    → Zona izq (cab-fiscal 62mm) | Centro (cab-centro grid) | Der (cab-doc 52mm)"""
+    y0 = y_top - HEADER_H
 
-    # ---- Zona izquierda: datos fiscales + cliente ----
-    x = MARG
-    c.setFillColor(colors.black)
+    # ---- Separador inferior (border-bottom 2px teal) ----
+    c.setStrokeColor(_CORP_TEAL)
+    c.setLineWidth(2)
+    c.line(MARG, y0, PAGE_W - MARG, y0)
+    c.setLineWidth(0.5)
+
+    # ---- ZONA IZQUIERDA: cab-fiscal (62mm) ----
+    fx = MARG
+    fw = 62 * mm
+    # Fondo .cab-fiscal: bg #eef7f5, border 1.5px corp-mid, border-radius 2mm
+    c.setFillColor(_CORP_BG)
+    c.setStrokeColor(_CORP_MID)
+    c.setLineWidth(1.2)
+    c.roundRect(fx, y0 + 3 * mm, fw, HEADER_H - 3 * mm, 2 * mm, stroke=1, fill=1)
+    c.setLineWidth(0.5)
+
+    # .empresa: 12.5pt bold, corp-dark
+    c.setFillColor(_CORP_DARK)
     c.setFont(FB, 11)
-    c.drawString(x, y_top - 6 * mm, "VIVEROS ELCHE, S.L.")
+    c.drawString(fx + 3 * mm, y_top - 6 * mm, "VIVEROS ELCHE, S.L.")
+    # .dir: 6.5pt, #3d565a
     c.setFont(F, 6.5)
-    c.setFillColor(colors.black)
-    c.drawString(x, y_top - 10 * mm, "CIF B03303005")
+    c.setFillColor(_CORP_TEXT2)
+    c.drawString(fx + 3 * mm, y_top - 10 * mm, "CIF B03303005")
     yy = y_top - 13.5 * mm
     for linea in _DIRECCION:
-        c.drawString(x, yy, linea)
-        yy -= 3.4 * mm
+        c.drawString(fx + 3 * mm, yy, linea)
+        yy -= 3.2 * mm
 
-    # Cliente: código + comercial + fiscal·dirección
-    cy = yy - 3 * mm
-    c.setFont(FB, 8.5)
+    # .cliente: border-top 1px corp-line, padding-top 1.5mm
+    sep_y = yy - 1.5 * mm
+    c.setStrokeColor(_CORP_LINE)
+    c.setLineWidth(0.5)
+    c.line(fx + 2 * mm, sep_y, fx + fw - 2 * mm, sep_y)
+
+    cy = sep_y - 4 * mm
     codigo = _set(o.get("NUMERO_CLIENTE"))
+    # .codigo: bg teal, white, rounded
     if codigo:
-        c.drawString(x, cy, codigo)
-        c.setFont(FB, 8.5)
-        c.drawString(x + 12 * mm, cy, _cortar(_set(o.get("N_COMERCIAL")), 58 * mm, FB, 8.5))
+        cod_w = c.stringWidth(codigo, FB, 7.5) + 3 * mm
+        c.setFillColor(_CORP_TEAL)
+        c.roundRect(fx + 3 * mm, cy - 1 * mm, cod_w, 4 * mm, 1 * mm, stroke=0, fill=1)
+        c.setFillColor(colors.white)
+        c.setFont(FB, 7.5)
+        c.drawString(fx + 4.5 * mm, cy, codigo)
+        # .nombre: bold, corp-dark
+        c.setFillColor(_CORP_DARK)
+        c.setFont(FB, 7.5)
+        c.drawString(fx + 3 * mm + cod_w + 2 * mm, cy, _cortar(_set(o.get("N_COMERCIAL")), fw - cod_w - 8 * mm, FB, 7.5))
     else:
-        c.drawString(x, cy, _cortar(_set(o.get("N_COMERCIAL")), 70 * mm, FB, 8.5))
+        c.setFillColor(_CORP_DARK)
+        c.setFont(FB, 7.5)
+        c.drawString(fx + 3 * mm, cy, _cortar(_set(o.get("N_COMERCIAL")), fw - 6 * mm, FB, 7.5))
+    # N_FISCAL + dirección cliente: 7.5pt, #3d565a
     c.setFont(F, 6.3)
-    c.setFillColor(_GRIS_TEXTO)
-    cliente_dir = ", ".join(
-        xx for xx in [_set(o.get("DIR_CLIENTE")), _set(o.get("CIUDAD_CLIENTE"))] if xx
-    )
+    c.setFillColor(_CORP_TEXT2)
+    cliente_dir = ", ".join(xx for xx in [_set(o.get("DIR_CLIENTE")), _set(o.get("CIUDAD_CLIENTE"))] if xx)
     fiscal_txt = _set(o.get("N_FISCAL"))
     segunda = fiscal_txt + ((" \u00b7 " + cliente_dir) if cliente_dir else "")
-    c.drawString(x, cy - 3.6 * mm, _cortar(segunda, 70 * mm, F, 6.3))
+    c.drawString(fx + 3 * mm, cy - 3.6 * mm, _cortar(segunda, fw - 6 * mm, F, 6.3))
     c.setFillColor(colors.black)
 
-    # ---- Zona central: cajas de datos (grid 2 columnas x 3 filas) ----
-    cx = MARG + 74 * mm
-    caja_w, caja_h = 28 * mm, 10 * mm
-    gap = 1.5 * mm
+    # ---- ZONA CENTRAL: cab-centro (grid 2 cols, gap 2mm) ----
+    cx = fx + fw + 5 * mm  # gap: 5mm
+    caja_w = 28 * mm
+    caja_h = 10 * mm
+    gap = 2 * mm
+    # .caja-dato: border 1px corp-line, border-left 3px corp-teal, border-radius 1.5mm, bg white
     filas_cajas = [
         [("Finca", o.get("FINCA_CARGA")), ("Zona", o.get("SECTOR_CARGA"))],
         [("Tractora", o.get("MATRICULA_CAMION")), ("Remolque", o.get("MATRICULA_REMOLQUE"))],
     ]
-    ry = y_top - caja_h
+    ry = y_top - caja_h - 2 * mm  # padding-top de la cabecera
     for par in filas_cajas:
-        _caja(c, cx, ry, caja_w, caja_h, par[0][0], par[0][1])
-        _caja(c, cx + caja_w + gap, ry, caja_w, caja_h, par[1][0], par[1][1])
+        for offset, (etq, val) in enumerate(par):
+            bx = cx + offset * (caja_w + gap)
+            # border-left 3px teal + borde normal
+            c.setStrokeColor(_CORP_LINE)
+            c.setLineWidth(0.4)
+            c.rect(bx, ry, caja_w, caja_h, stroke=1, fill=0)
+            c.setStrokeColor(_CORP_TEAL)
+            c.setLineWidth(2.5)
+            c.line(bx, ry, bx, ry + caja_h)
+            c.setLineWidth(0.5)
+            # etiqueta: 6.5pt uppercase, corp-mid
+            c.setFillColor(_CORP_MID)
+            c.setFont(FB, 5.6)
+            c.drawString(bx + 2 * mm, ry + caja_h - 3.2 * mm, etq.upper())
+            # valor: 9.5pt bold, corp-dark
+            c.setFillColor(_CORP_DARK)
+            c.setFont(FB, 7.5)
+            c.drawString(bx + 2 * mm, ry + 1.6 * mm, _cortar(_set(val) or "\u2014", caja_w - 4 * mm, FB, 7.5))
         ry -= caja_h + gap
+    # Span 2 cols: Marca del Pedido + Referencia del Pedido
     ancho_span = caja_w * 2 + gap
-    _caja(c, cx, ry, ancho_span, caja_h, "Marca del Pedido", o.get("MARCA_PEDIDO"))
-    ry -= caja_h + gap
-    _caja(c, cx, ry, ancho_span, caja_h, "Referencia del Pedido", o.get("REFERENCIA_PEDIDO"))
+    for etq, val in [("Marca del Pedido", o.get("MARCA_PEDIDO")), ("Referencia del Pedido", o.get("REFERENCIA_PEDIDO"))]:
+        c.setStrokeColor(_CORP_LINE)
+        c.setLineWidth(0.4)
+        c.rect(cx, ry, ancho_span, caja_h, stroke=1, fill=0)
+        c.setStrokeColor(_CORP_TEAL)
+        c.setLineWidth(2.5)
+        c.line(cx, ry, cx, ry + caja_h)
+        c.setLineWidth(0.5)
+        c.setFillColor(_CORP_MID)
+        c.setFont(FB, 5.6)
+        c.drawString(cx + 2 * mm, ry + caja_h - 3.2 * mm, etq.upper())
+        c.setFillColor(_CORP_DARK)
+        c.setFont(FB, 7.5)
+        c.drawString(cx + 2 * mm, ry + 1.6 * mm, _cortar(_set(val) or "\u2014", ancho_span - 4 * mm, FB, 7.5))
+        ry -= caja_h + gap
 
-    # ---- Zona derecha: logo + tabla documento ----
+    # ---- ZONA DERECHA: cab-doc (52mm) → logo + tabla-doc ----
     dx = PAGE_W - MARG - 52 * mm
     dw = 52 * mm
+    # Logo: .cab-logo { width:100%; max-height:22mm; object-fit:contain; margin-bottom:2mm }
+    logo_h = 0
     if os.path.exists(_LOGO):
         try:
-            logo_w = 20 * mm
+            logo_w = dw - 4 * mm
+            logo_h = 16 * mm
             c.drawImage(
                 _LOGO,
-                dx + dw - logo_w,
-                y_top - 16 * mm,
+                dx + 2 * mm,
+                y_top - logo_h - 2 * mm,
                 width=logo_w,
-                height=14 * mm,
+                height=logo_h,
                 preserveAspectRatio=True,
                 mask="auto",
             )
         except Exception:
             pass
-    ty = y_top - 19 * mm
+    # .tabla-doc: border 1px corp-mid, border-radius 1.5mm, overflow hidden
+    ty = y_top - logo_h - 2 * mm - 2 * mm  # gap after logo
     fila_h = 5.4 * mm
     doc_filas = [
         ("Documento", documento),
@@ -224,176 +287,313 @@ def _draw_cabecera(c, o, documento, y_top, pagina=1, total_paginas=1):
         ("Fecha Carga", _fecha_es(o.get("FECHA_CARGA"))),
         ("P\u00e1gina", f"{pagina} de {total_paginas}"),
     ]
-    c.setStrokeColor(_GRIS_BORDE)
-    c.setLineWidth(0.4)
+    # Borde exterior
+    c.setStrokeColor(_CORP_MID)
+    c.setLineWidth(1)
+    c.roundRect(dx, ty - len(doc_filas) * fila_h, dw, len(doc_filas) * fila_h, 1.5 * mm, stroke=1, fill=0)
+    c.setLineWidth(0.5)
     for k, v in doc_filas:
-        c.rect(dx, ty - fila_h, dw * 0.36, fila_h, stroke=1, fill=0)
-        c.rect(dx + dw * 0.36, ty - fila_h, dw * 0.64, fila_h, stroke=1, fill=0)
-        c.setFont(FB, 6.4)
-        c.setFillColor(_GRIS_TEXTO)
-        c.drawString(dx + 1.2 * mm, ty - fila_h + 1.8 * mm, k)
-        c.setFillColor(colors.black)
+        # Fila: td.k (38% bg corp-bg) + td.v (62%)
+        kw = dw * 0.36
+        vw = dw * 0.64
+        # bg celda k
+        c.setFillColor(_CORP_BG)
+        c.rect(dx, ty - fila_h, kw, fila_h, stroke=0, fill=1)
+        # bordes internos
+        c.setStrokeColor(_CORP_LINE)
+        c.setLineWidth(0.3)
+        c.rect(dx, ty - fila_h, kw, fila_h, stroke=1, fill=0)
+        c.rect(dx + kw, ty - fila_h, vw, fila_h, stroke=1, fill=0)
+        # texto k: 6.5pt uppercase bold corp-mid
+        c.setFillColor(_CORP_MID)
+        c.setFont(FB, 5.6)
+        c.drawString(dx + 1.5 * mm, ty - fila_h + 1.8 * mm, k.upper())
+        # texto v: 7pt bold corp-dark
+        c.setFillColor(_CORP_DARK)
         c.setFont(FB, 7)
-        c.drawString(dx + dw * 0.36 + 1.2 * mm, ty - fila_h + 1.8 * mm, _cortar(v, dw * 0.6, FB, 7))
+        c.drawString(dx + kw + 1.5 * mm, ty - fila_h + 1.8 * mm, _cortar(v, vw - 3 * mm, FB, 7))
         ty -= fila_h
 
-    # Marco general de la cabecera
-    c.setStrokeColor(colors.white)
-    return y0
+    c.setFillColor(colors.black)
+    c.setStrokeColor(colors.black)
+    return y0 - HEADER_GAP
 
 
 def _draw_titulo(c, y, o):
-    c.setFont(FB, 12.5)
-    c.setFillColor(colors.black)
-    c.drawString(MARG, y - 6 * mm, "DOCUMENTO DE PUNTEO")
+    """Titulo con gradiente dark→mid (como .titulo-informe del HTML)."""
+    bar_h = 8 * mm
+    # Gradiente: de corp-dark a corp-mid
+    steps = 30
+    for i in range(steps):
+        t = i / steps
+        r = 0.047 + t * (0.078 - 0.047)
+        g = 0.227 + t * (0.333 - 0.227)
+        b = 0.247 + t * (0.361 - 0.247)
+        c.setFillColorRGB(r, g, b)
+        seg_w = CONTENT_W / steps
+        c.rect(MARG + i * seg_w, y - bar_h, seg_w + 1, bar_h, stroke=0, fill=1)
+    # Bordes redondeados (aproximar con rectángulo)
+    c.setStrokeColor(_CORP_MID)
+    c.setLineWidth(0.5)
+    c.roundRect(MARG, y - bar_h, CONTENT_W, bar_h, 1.5 * mm, stroke=1, fill=0)
+
+    # Texto: h2 11.5pt bold white + meta 7.5pt white 85% opacity
+    c.setFillColor(colors.white)
+    c.setFont(FB, 10)
+    c.drawString(MARG + 3.5 * mm, y - 5.5 * mm, "DOCUMENTO DE PUNTEO")
     c.setFont(F, 7)
-    c.setFillColor(_GRIS_TEXTO)
-    meta = (
-        f"Pedido {_set(o.get('NUMERO_PEDIDO'))} \u00b7 "
-        f"Generado {_dt_es(datetime.now(timezone.utc))}"
-    )
-    c.drawRightString(PAGE_W - MARG, y - 6 * mm, meta)
+    meta = f"Pedido {_set(o.get('NUMERO_PEDIDO'))} \u00b7 Generado {_dt_es(datetime.now(timezone.utc))}"
+    c.drawRightString(PAGE_W - MARG - 3.5 * mm, y - 5.5 * mm, meta)
     c.setFillColor(colors.black)
-    return y - 10 * mm
+    return y - bar_h - 3 * mm
 
 
 def _draw_tabla_header(c, y):
+    """Cabecera de tabla: bg corp-dark, texto white, border-bottom 2px teal."""
     x = MARG
-    c.setFillColor(_AZUL)
-    c.setStrokeColor(_GRIS_BORDE)
-    c.rect(x, y - 6 * mm, TABLE_W, 6 * mm, stroke=1, fill=1)
+    c.setFillColor(_CORP_DARK)
+    c.rect(x, y - THEAD_H, TABLE_W, THEAD_H, stroke=0, fill=1)
+    # border-bottom teal
+    c.setStrokeColor(_CORP_TEAL)
+    c.setLineWidth(2)
+    c.line(x, y - THEAD_H, x + TABLE_W, y - THEAD_H)
+    c.setLineWidth(0.5)
+    # Texto: white, 6.8pt bold uppercase
     c.setFillColor(colors.white)
-    c.setFont(FB, 6.8)
+    c.setFont(FB, 6)
     for name, w in _COLS:
-        c.drawCentredString(x + w / 2, y - 4.2 * mm, name)
+        c.drawCentredString(x + w / 2, y - THEAD_H + 1.8 * mm, name)
         x += w
     c.setFillColor(colors.black)
-    return y - 6 * mm
+    return y - THEAD_H
 
 
 def _draw_fila(c, y, num, g, susts, zebra=False):
-    if zebra:
-        # D-200: fondo corporativo de filas pares, como el HTML
-        x = MARG
-        c.setFillColor(_ZEBRA)
-        for _, w in _COLS:
-            c.rect(x, y - ROW_H, w, ROW_H, stroke=0, fill=1)
-            x += w
-    x = MARG
-    c.setStrokeColor(_GRIS_BORDE)
-    c.setLineWidth(0.35)
-    for _, w in _COLS:
-        c.rect(x, y - ROW_H, w, ROW_H, stroke=1, fill=0)
-        x += w
+    """Fila de datos replicando el CSS del HTML:
+    - Zebra: bg #eef7f5 en filas pares
+    - Borde inferior: 1px corp-line
+    - nl: center, bold, teal
+    - ref: bold, corp-dark
+    - GGN: chip verde debajo de la referencia
+    - sust: bg warn-bg, border-left 3px warn-line"""
+    has_ggn = bool(g.get("EQUIVALENTE"))
+    # Fila principal: más alta si hay GGN (para que el badge quepa debajo de la ref)
+    badge_extra = 3.5 * mm if has_ggn else 0
+    row_h = ROW_H + badge_extra
 
+    if zebra:
+        c.setFillColor(_CORP_BG)
+        c.rect(MARG, y - row_h, TABLE_W, row_h, stroke=0, fill=1)
+
+    # Bordes inferiores de cada celda
+    c.setStrokeColor(_CORP_LINE)
+    c.setLineWidth(0.35)
+    c.line(MARG, y - row_h, MARG + TABLE_W, y - row_h)
+    # Bordes laterales de cada columna
+    x = MARG
+    for _, w in _COLS:
+        c.line(x, y, x, y - row_h)
+        x += w
+    c.line(x, y, x, y - row_h)  # borde derecho
+
+    # Valores de celda
     desc = _set(g.get("DESCRIPCION"))
     medida_txt = _set(g.get("MEDIDA_TXT"))
-    # D-201: descripcion + " · medida" en cursiva (Helvetica-Oblique); se trunca
-    # la desc para que ambos quepan en la columna (53mm).
     sufijo = f" \u00b7 {medida_txt}" if medida_txt else ""
-    ancho_suf = c.stringWidth(sufijo, "Helvetica-Oblique", 7) if sufijo else 0
-    disp_pt = 53 * mm - 1.4 * mm - ancho_suf
+    ancho_suf = c.stringWidth(sufijo, FI, 7) if sufijo else 0
+    desc_col_w = _COLS[4][1]
+    disp_pt = desc_col_w - 1.4 * mm - ancho_suf
     desc_final = desc[: max(3, int(disp_pt / (7 * 0.155 * mm)))]
     vals = {
-        0: (str(num), "C", F),
-        1: (_set(g.get("POSICION")), "C", F),
-        2: (_set(g["ref_servida"]), "C", FB),
-        3: ("*" if g.get("EQUIVALENTE") else "", "C", FB),
-        4: (desc_final, "L", F),
-        5: (_set(g["TALLA"]), "C", F),
-        6: (_set(g["SECTOR"]), "C", F),
-        7: (_cortar(_set(g.get("FINCA_ARTICULO")), 22 * mm), "C", F),
-        8: (f"{_num(g['CANT']):,.0f}".replace(",", "."), "C", FB),
+        0: (str(num), "C", F, 7),
+        1: (str(g.get("POSICION") or ""), "C", F, 7),
+        2: (str(g["ref_servida"] or ""), "C", FB, 7),
+        3: ("*" if has_ggn else "", "C", FB, 7),
+        4: (desc_final, "L", F, 7),
+        5: (_set(g["TALLA"]), "C", F, 7),
+        6: (_set(g["SECTOR"]), "C", F, 7),
+        7: (_cortar(_set(g.get("FINCA_ARTICULO")), 22 * mm), "C", F, 7),
+        8: (f"{_num(g['CANT']):,.0f}".replace(",", "."), "C", FB, 7),
     }
-    # D-178: reportlab exige str; normaliza cualquier int/float (POSICION, CANT...)
     for _k in list(vals):
-        _v, _a, _f = vals[_k]
-        vals[_k] = ("" if _v is None else str(_v), _a, _f)
+        _v, _a, _f, _s = vals[_k]
+        vals[_k] = ("" if _v is None else str(_v), _a, _f, _s)
+
     x = MARG
     for idx, (_, w) in enumerate(_COLS):
-        v, align, font = vals[idx]
-        c.setFont(font, 7)
-        if align == "C":
-            c.drawCentredString(x + w / 2, y - ROW_H + 1.6 * mm, v)
+        v, align, font, size = vals[idx]
+        # nl: teal, ref: dark, estrella: teal
+        if idx == 0:
+            c.setFillColor(_CORP_TEAL)
+        elif idx == 2:
+            c.setFillColor(_CORP_DARK)
+        elif idx == 3:
+            c.setFillColor(_CORP_TEAL)
         else:
-            c.drawString(x + 1.4 * mm, y - ROW_H + 1.6 * mm, v)
+            c.setFillColor(colors.black)
+        c.setFont(font, size)
+        # Cuando hay GGN, subir el texto de la ref para hacer sitio al chip debajo
+        if has_ggn and idx == 2:
+            baseline = y - ROW_H + 3 * mm
+        else:
+            baseline = y - row_h + 1.6 * mm
+        if align == "C":
+            c.drawCentredString(x + w / 2, baseline, v)
+        else:
+            c.drawString(x + 1.4 * mm, baseline, v)
         x += w
-    # D-201: medida fisica en cursiva pegada a la descripcion
+
+    # Medida en cursiva
     if sufijo:
         ancho_desc = c.stringWidth(desc_final, F, 7)
-        c.setFont("Helvetica-Oblique", 7)
-        c.setFillColor(_GRIS_TEXTO)
-        c.drawString(MARG + _COLS[0][1] + _COLS[1][1] + _COLS[2][1] + _COLS[3][1] + 1.4 * mm + ancho_desc,
-                     y - ROW_H + 1.6 * mm, sufijo)
-        c.setFillColor(colors.black)
-    # Chip GGN pegado a la referencia (como .marca-ggn del HTML)
-    if g.get("EQUIVALENTE"):
-        ref_w = _COLS[2][1]
-        chip_w = 8 * mm
-        c.setFillColor(_LIME)
-        c.rect(MARG + _COLS[0][1] + _COLS[1][1] + ref_w - chip_w - 1 * mm, y - ROW_H + 1.1 * mm, chip_w, 3 * mm, stroke=0, fill=1)
-        c.setFillColor(colors.white)
-        c.setFont(FB, 5.4)
-        c.drawCentredString(
-            MARG + _COLS[0][1] + _COLS[1][1] + ref_w - chip_w / 2 - 1 * mm,
-            y - ROW_H + 1.9 * mm,
-            "GGN",
-        )
+        x_desc = MARG + sum(w for _, w in _COLS[:4]) + 1.4 * mm
+        c.setFont(FI, 7)
+        c.setFillColor(_CORP_TEXT2)
+        c.drawString(x_desc + ancho_desc, y - row_h + 1.6 * mm, sufijo)
         c.setFillColor(colors.black)
 
-    cur_y = y - ROW_H
+    # Chip GGN debajo de la referencia (replicando .marca-ggn del HTML)
+    if has_ggn:
+        ref_x = MARG + _COLS[0][1] + _COLS[1][1]
+        ref_w = _COLS[2][1]
+        chip_w = 10 * mm
+        chip_h = 2.5 * mm
+        chip_x = ref_x + (ref_w - chip_w) / 2
+        # El chip va CENTRADO en la zona badge_extra (la franja inferior de la fila).
+        # badge_extra = 3.5mm, chip_h = 2.5mm → margen = 0.5mm arriba y abajo.
+        # chip_bottom = y - row_h + 0.5mm
+        chip_y = y - row_h + 0.5 * mm
+        c.setFillColor(_CORP_TEAL)
+        c.roundRect(chip_x, chip_y, chip_w, chip_h, 1 * mm, stroke=0, fill=1)
+        c.setFillColor(colors.white)
+        c.setFont(FB, 5.5)
+        c.drawCentredString(chip_x + chip_w / 2, chip_y + 0.6 * mm, "GGN")
+        c.setFillColor(colors.black)
+
+    cur_y = y - row_h
     for s in susts:
-        c.setFillColor(_AMBAR_FONDO)
-        c.setStrokeColor(_GRIS_BORDE)
-        c.rect(MARG, cur_y - ROW_H, TABLE_W, ROW_H, stroke=1, fill=1)
-        c.setFillColor(_AMBAR_TEXTO)
+        # Fila sustitución: bg warn-bg, border-left 3px warn-line
+        c.setFillColor(_CORP_WARN_BG)
+        c.rect(MARG, cur_y - row_h, TABLE_W, row_h, stroke=0, fill=1)
+        c.setStrokeColor(_CORP_LINE)
+        c.setLineWidth(0.35)
+        c.rect(MARG, cur_y - row_h, TABLE_W, row_h, stroke=1, fill=0)
+        # border-left warn-line
+        c.setStrokeColor(_CORP_WARN_LINE)
+        c.setLineWidth(2.5)
+        c.line(MARG, cur_y, MARG, cur_y - row_h)
+        c.setLineWidth(0.5)
+        # Texto sustitución
+        c.setFillColor(_CORP_WARN_LINE)
         c.setFont(FB, 6.3)
         c.drawString(
             MARG + 3 * mm,
-            cur_y - ROW_H + 1.5 * mm,
+            cur_y - row_h + 1.5 * mm,
             _cortar(f"\u2194 Sustituci\u00f3n: {s}", TABLE_W - 6 * mm, FB, 6.3),
         )
         c.setFillColor(colors.black)
-        cur_y -= ROW_H
+        cur_y -= row_h
     return cur_y
 
 
 def _draw_pie(c, obs, empleado_txt, peso):
-    y0 = MARG + FOOTER_H
-    c.setStrokeColor(_GRIS_BORDE)
-    c.line(MARG, y0 + FOOTER_H - 2 * mm, PAGE_W - MARG, y0 + FOOTER_H - 2 * mm)
+    """Pie replicando EXACTAMENTE el CSS del HTML:
+    .pie { position:absolute; bottom:7mm; left:9mm; right:9mm; height:34mm }
+    .ggn-line → .obs-box (border, bg, rounded) → .fila-final (flex: firma + peso)"""
+    # Posición del pie (bottom-up): PIE_BOTTOM = 7mm
+    y0 = PIE_BOTTOM
 
-    c.setFont(F, 6.6)
-    c.drawString(MARG, y0 + FOOTER_H - 5.4 * mm, f"* Producto certificado GlobalG.A.P.   GGN {GGN}  \u00b7  GLN {GGN}")
+    # ---- Línea separadora superior (de .pie border-top implícito) ----
+    c.setStrokeColor(_CORP_LINE)
+    c.setLineWidth(0.5)
+    c.line(MARG, y0 + PIE_HEIGHT, PAGE_W - MARG, y0 + PIE_HEIGHT)
 
-    # Observaciones
-    box_h = 12 * mm
-    box_w = CONTENT_W * 0.62
-    c.rect(MARG, y0 + 4 * mm, box_w, box_h, stroke=1, fill=0)
-    c.setFont(FB, 6.4)
-    c.drawString(MARG + 1.5 * mm, y0 + 4 * mm + box_h - 3.4 * mm, "Observaciones")
+    # ---- GGN line ----
     c.setFont(F, 6.6)
+    c.setFillColor(_CORP_MID)
+    c.drawString(MARG, y0 + PIE_HEIGHT - 5 * mm,
+                 f"* Producto certificado GlobalG.A.P.   GGN {GGN}  \u00b7  GLN {GGN}")
+
+    # ---- Observaciones (.obs-box) ----
+    obs_top = y0 + PIE_HEIGHT - 7 * mm
+    obs_h = 12 * mm
+    obs_w = CONTENT_W * 0.62
+    # border 1px corp-line, border-radius 1.5mm, bg corp-bg
+    c.setFillColor(_CORP_BG)
+    c.setStrokeColor(_CORP_LINE)
+    c.setLineWidth(0.5)
+    c.roundRect(MARG, obs_top - obs_h, obs_w, obs_h, 1.5 * mm, stroke=1, fill=1)
+    # Titulo: 6.5pt uppercase bold corp-mid
+    c.setFillColor(_CORP_MID)
+    c.setFont(FB, 5.6)
+    c.drawString(MARG + 2 * mm, obs_top - 3.2 * mm, "OBSERVACIONES")
+    # Contenido
+    c.setFont(F, 6.6)
+    c.setFillColor(colors.black)
     obs_txt = _set(obs) or "\u2014"
-    max_chars = int((box_w - 3 * mm) / (6.6 * 0.155 * mm))
-    lineas_obs = [obs_txt[i:i + max_chars] for i in range(0, len(obs_txt), max_chars)][:3]
-    oy = y0 + 4 * mm + box_h - 6.6 * mm
+    max_chars = int((obs_w - 4 * mm) / (6.6 * 0.155 * mm))
+    lineas_obs = [obs_txt[i:i + max_chars] for i in range(0, len(obs_txt), max_chars)][:2]
+    oy = obs_top - 6.5 * mm
     for ln in lineas_obs:
-        c.drawString(MARG + 1.5 * mm, oy, ln)
+        c.drawString(MARG + 2 * mm, oy, ln)
         oy -= 3 * mm
 
-    # Verificado por + Peso
-    fx = MARG + box_w + 4 * mm
-    fw = PAGE_W - MARG - fx
-    c.setFont(FB, 6.8)
-    c.drawString(fx, y0 + 4 * mm + box_h - 3.4 * mm, "Verificado por")
-    c.setFont(F, 7.5)
-    c.drawString(fx + 24 * mm, y0 + 4 * mm + box_h - 3.6 * mm, _nombre_corto(empleado_txt))
-    c.setStrokeColor(colors.black)
-    c.line(fx + 22 * mm, y0 + 4 * mm + box_h - 4.6 * mm, PAGE_W - MARG, y0 + 4 * mm + box_h - 4.6 * mm)
-    c.setFont(FB, 6.8)
-    c.drawString(fx, y0 + 4 * mm + box_h - 9.4 * mm, "Peso de la carga (KG)")
+    # ---- Fila final: Verificado por + Peso (.fila-final: flex) ----
+    fila_y = y0 + 1 * mm
+    fila_h = 12 * mm
+
+    # -- Firma box (.firma-box) --
+    firma_x = MARG
+    firma_w = CONTENT_W - obs_w - 4 * mm  # el resto del ancho
+    # border 1px corp-line, border-radius 1.5mm
+    c.setStrokeColor(_CORP_LINE)
+    c.setLineWidth(0.5)
+    c.roundRect(firma_x, fila_y, firma_w, fila_h, 1.5 * mm, stroke=1, fill=0)
+    # Titulo: 6.5pt uppercase bold corp-mid
+    c.setFillColor(_CORP_MID)
+    c.setFont(FB, 5.6)
+    c.drawString(firma_x + 2.5 * mm, fila_y + fila_h - 3.2 * mm, "VERIFICADO POR")
+    # Nombre: bold, corp-dark, centrado
+    c.setFillColor(_CORP_DARK)
+    c.setFont(FB, 7.5)
+    nombre = _nombre_corto(empleado_txt)
+    c.drawCentredString(firma_x + firma_w / 2, fila_y + 2 * mm, nombre)
+    # Línea bajo el nombre
+    c.setStrokeColor(colors.HexColor("#7fa8a2"))
+    c.setLineWidth(0.5)
+    line_y = fila_y + 4.5 * mm
+    c.line(firma_x + 4 * mm, line_y, firma_x + firma_w - 4 * mm, line_y)
+
+    # -- Peso box (.peso-box) --
+    peso_x = firma_x + firma_w + 4 * mm
+    peso_w = PAGE_W - MARG - peso_x
+    # border 1.5px corp-mid, border-radius 1.5mm
+    c.setStrokeColor(_CORP_MID)
+    c.setLineWidth(1.2)
+    c.roundRect(peso_x, fila_y, peso_w, fila_h, 1.5 * mm, stroke=1, fill=0)
+    c.setLineWidth(0.5)
+    # Titulo
+    c.setFillColor(_CORP_MID)
+    c.setFont(FB, 5.6)
+    c.drawString(peso_x + 2.5 * mm, fila_y + fila_h - 3.2 * mm, "PESO DE LA CARGA (KG)")
+    # Valor: bold, border corp-mid, bg white, centrado en caja
+    c.setFillColor(colors.black)
     c.setFont(FB, 8)
-    c.drawString(fx + 34 * mm, y0 + 4 * mm + box_h - 9.8 * mm, f"{_num(peso):,.2f}".replace(",", "@").replace(".", ",").replace("@", "."))
+    peso_txt = f"{_num(peso):,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+    # Mini caja para el valor
+    val_w = c.stringWidth(peso_txt, FB, 8) + 4 * mm
+    val_x = peso_x + peso_w - val_w - 2 * mm
+    val_y = fila_y + 1.5 * mm
+    c.setFillColor(colors.white)
+    c.setStrokeColor(_CORP_MID)
+    c.setLineWidth(0.5)
+    c.roundRect(val_x, val_y, val_w, 5 * mm, 1 * mm, stroke=1, fill=1)
+    c.setFillColor(colors.black)
+    c.setFont(FB, 8)
+    c.drawCentredString(val_x + val_w / 2, val_y + 1.2 * mm, peso_txt)
+
+    c.setFillColor(colors.black)
+    c.setStrokeColor(colors.black)
 
 
 def _agrupar_filas_pedido(filas: list) -> list:
@@ -431,11 +631,6 @@ def _agrupar_filas_pedido(filas: list) -> list:
     )
 
 
-def _alto_tras_cabecera(y_top: float) -> float:
-    """Y donde empieza el titulo tras dibujar la cabecera completa."""
-    return y_top - HEADER_H
-
-
 def build_punteo_pdf(
     bq_client,
     project,
@@ -443,16 +638,17 @@ def build_punteo_pdf(
     picking_dataset,
     picking_table,
     matriculas_table,
+    partes_table,
     numero_pedido,
 ) -> bytes:
-    """PDF del DOCUMENTO DE PUNTEO id\u00e9ntico al HTML previsualizado en el panel."""
+    """PDF del DOCUMENTO DE PUNTEO idéntico al HTML previsualizado en el panel."""
     datos = _load_datos(
-        bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, numero_pedido
+        bq_client, project, dataset, picking_dataset, picking_table, matriculas_table, partes_table, numero_pedido
     )
     o = datos["o"]
     filas = datos["filas"]
     obs = o.get("OBSERVACIONES")
-    peso = 0.0
+    peso = datos.get("peso", 0.0)
 
     empleados = sorted(
         {_nombre_corto(d.get("empleado_nombre")) for d in datos["detalle"] if d.get("empleado_nombre") and not d.get("es_operario")}
@@ -466,27 +662,51 @@ def build_punteo_pdf(
 
     filas_agrupadas = _agrupar_filas_pedido(filas)
 
+    # Pre-computar sustituciones agrupadas por (POSICION, ref_original, ref_servida, medida).
+    sust_agrupadas: dict[tuple, dict] = {}
+    for d in datos["detalle"]:
+        if not d.get("sustituido"):
+            continue
+        pos = int(_num(d.get("POSICION")))
+        ref_orig = str(d.get("ref_original") or "")
+        ref_serv = str(d.get("ref_servida") or "")
+        med = str(d.get("medida") or "")
+        key = (pos, ref_orig, ref_serv, med)
+        sa = sust_agrupadas.get(key)
+        if sa is None:
+            sa = sust_agrupadas[key] = {
+                "POSICION": pos,
+                "ref_original": ref_orig,
+                "ref_servida": ref_serv,
+                "medida": med,
+                "litraje_pedida": str(d.get("LITRAJE_PEDIDA") or ""),
+                "sector_pedida": str(d.get("SECTOR_PEDIDA") or ""),
+                "litraje_servida": str(d.get("LITRAJE_SERVIDA") or ""),
+                "sector_servida": str(d.get("SECTOR_SERVIDA") or ""),
+                "cantidad": 0.0,
+            }
+        sa["cantidad"] += _num(d.get("cantidad_partida"))
+
     def susts_de(g):
         guion = "\u2014"
         flecha = "\u2194"
         punto = "\u00b7"
         flecha_txt = " \u2192 "
+        med_txt = str(g.get("MEDIDA_TXT") or "")
         out = []
-        for d in datos["detalle"]:
-            if not d.get("sustituido"):
+        for key_s, sa in sust_agrupadas.items():
+            if sa["POSICION"] != g["POSICION"] or sa["ref_servida"] != g["ref_servida"]:
                 continue
-            if (
-                str(d.get("ref_servida") or ""),
-                str(d.get("LITRAJE_SERVIDA") or ""),
-                str(d.get("SECTOR_SERVIDA") or ""),
-            ) != (g["ref_servida"], g["TALLA"], g["SECTOR"]):
+            med_sust = sa["medida"]
+            if med_sust and med_txt and med_sust not in med_txt:
                 continue
-            orig = d.get("ref_original") or guion
-            lit_p = _set(d.get("LITRAJE_PEDIDA"))
-            sec_p = _set(d.get("SECTOR_PEDIDA"))
+            orig = sa["ref_original"] or guion
+            lit_p = _set(sa["litraje_pedida"])
+            sec_p = _set(sa["sector_pedida"])
             out.append(
                 f"{orig} ({lit_p} {punto} {sec_p})"
-                f"{flecha_txt}{d.get('ref_servida') or guion} ({_set(g['TALLA'])} {punto} {_set(g['SECTOR'])})"
+                f"{flecha_txt}{sa['ref_servida'] or guion} ({_set(g['TALLA'])} {punto} {_set(g['SECTOR'])})"
+                f"  \u00d7{sa['cantidad']:,.0f}"
             )
         return out
 
@@ -494,30 +714,26 @@ def build_punteo_pdf(
     c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle(f"Punteo - Pedido {numero_pedido}")
 
-    # D-196: tope real del pie = linea separadora en MARG + 2*FOOTER_H - 2mm
-    # (60mm desde el borde inferior). Las filas deben quedar por encima con
-    # 3mm de holgura; antes (MARG+FOOTER_H+14) una pagina llena las metia
-    # 10mm dentro del pie, tachando la ultima fila con la linea separadora.
-    limite_inferior = MARG + 2 * FOOTER_H - 2 * mm + 3 * mm
+    # Límite inferior: contenido debe quedar por encima del pie
+    # pie_top = PIE_BOTTOM + PIE_HEIGHT = 41mm desde abajo
+    limite_inferior = PIE_TOP + 3 * mm  # 44mm desde abajo
 
-    # ---- D-178: PLANIFICACION de paginas ANTES de dibujar ----
-    # Cada bloque = fila de linea + sus subfilas de sustitucion. La primera
-    # pagina gasta cabecera completa + titulo + cabecera de tabla; las
-    # siguientes repiten la cabecera completa (logo, documento y PAGINA X de Y
-    # en todas las hojas) pero sin el titulo grande.
+    # ---- Planificación de páginas ----
     bloques = []
     for i, g in enumerate(filas_agrupadas, start=1):
         s = susts_de(g)
-        bloques.append((i, g, s, ROW_H * (1 + len(s))))
+        ggn_h = 3.5 * mm if g.get("EQUIVALENTE") else 0
+        bloques.append((i, g, s, (ROW_H + ggn_h) + ROW_H * len(s)))
 
     def capacidad(es_primera: bool) -> float:
         y0 = PAGE_H - MARG
+        y = y0 - HEADER_H - HEADER_GAP  # tras cabecera
         if es_primera:
-            y = _alto_tras_cabecera(y0)
-            y -= 10 * mm  # titulo
-            return y - 6 * mm - limite_inferior  # header tabla
-        # Páginas 2+ también llevan cabecera completa (HEADER_H) + continuación
-        return _alto_tras_cabecera(y0) - 9 * mm - 6 * mm - limite_inferior
+            y -= 8 * mm + 3 * mm  # titulo bar + gap
+        else:
+            y -= 9 * mm  # titulo continuacion
+        y -= THEAD_H  # cabecera tabla
+        return y - limite_inferior
 
     paginas_plan: list[list[tuple]] = [[]]
     libres = [capacidad(True)]
@@ -535,18 +751,26 @@ def build_punteo_pdf(
         if num_pag == 1:
             y = _draw_titulo(c, y, o)
         else:
-            c.setFont(FB, 9)
+            # Titulo de continuación
+            bar_h = 7 * mm
+            c.setFillColor(_CORP_DARK)
+            c.rect(MARG, y - bar_h, CONTENT_W, bar_h, stroke=0, fill=1)
+            c.setStrokeColor(_CORP_MID)
+            c.setLineWidth(0.5)
+            c.roundRect(MARG, y - bar_h, CONTENT_W, bar_h, 1.5 * mm, stroke=1, fill=0)
+            c.setFillColor(colors.white)
+            c.setFont(FB, 8)
             c.drawString(
-                MARG,
-                y - 6 * mm,
+                MARG + 3.5 * mm,
+                y - 5 * mm,
                 f"DOCUMENTO DE PUNTEO \u00b7 Pedido {_set(o.get('NUMERO_PEDIDO'))} (cont.)",
             )
-            y -= 9 * mm
+            y -= bar_h + 3 * mm
         y = _draw_tabla_header(c, y)
 
         if not plan and num_pag == 1:
             c.setFont(F, 7.5)
-            c.setFillColor(_GRIS_TEXTO)
+            c.setFillColor(_CORP_TEXT2)
             c.drawCentredString(
                 PAGE_W / 2,
                 y - 20 * mm,
@@ -558,8 +782,6 @@ def build_punteo_pdf(
             y = _draw_fila(c, y, i, g, s, zebra=(fila_idx % 2 == 1))
 
         _draw_pie(c, obs, empleado_txt, peso)
-        if num_pag != total_paginas or not filas_agrupadas:
-            pass
         c.showPage()
 
     c.save()

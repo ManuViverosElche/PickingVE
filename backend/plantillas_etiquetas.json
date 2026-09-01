@@ -177,16 +177,17 @@
         "color": "#000000"
       },
       {
-        "tipo": "text",
+        "tipo": "db",
+        "campo_id": "CODIGO_LOTE",
         "pos_x_mm": 10,
         "pos_y_mm": 24,
         "ancho_mm": 36,
         "alto_mm": 5,
-        "texto": "10520-MA-22",
         "tamano_fuente_pt": 10,
         "negrita": false,
         "alineacion": "left",
-        "color": "#000000"
+        "prefijo": "",
+        "sufijo": ""
       },
       {
         "tipo": "text",
@@ -374,16 +375,17 @@
         "color": "#000000"
       },
       {
-        "tipo": "text",
+        "tipo": "db",
+        "campo_id": "CODIGO_LOTE",
         "pos_x_mm": 10,
         "pos_y_mm": 24,
         "ancho_mm": 36,
         "alto_mm": 5,
-        "texto": "10520-MA-22",
         "tamano_fuente_pt": 10,
         "negrita": false,
         "alineacion": "left",
-        "color": "#000000"
+        "prefijo": "",
+        "sufijo": ""
       },
       {
         "tipo": "text",

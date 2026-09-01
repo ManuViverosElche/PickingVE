@@ -1466,7 +1466,10 @@ def _startup() -> None:
     _ensure_reparto_table()
     _ensure_notificaciones_tables()
     _ensure_matriculas_table()
+    _ensure_picking_partes_table()
     _ensure_etiquetas_table()
+    _ensure_etiquetas_plantillas_table()
+    _seed_etiquetas_plantillas()
     # D-218: tablas del modulo de inventario en el arranque para que
     # /api/inventario/fincas funcione desde la primera llamada. Nunca debe
     # tumbar el servicio si BigQuery tarda: se reintenta perezosamente en los
@@ -1967,6 +1970,8 @@ COMENTARIOS_TABLE = "comentarios"
 NOTIFICACIONES_META_TABLE = "notificaciones_meta"
 MATRICULAS_TABLE = "matriculas_pedido"
 ETIQUETAS_TABLE = "etiquetas"
+PICKING_PARTES_TABLE = "picking_partes"
+ETIQUETAS_PLANTILLAS_TABLE = "etiquetas_plantillas"
 
 _fcm_token_cache: dict[str, tuple[float, str]] = {}
 
@@ -2029,6 +2034,28 @@ def _ensure_matriculas_table() -> None:
     ).result()
 
 
+def _ensure_picking_partes_table() -> None:
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{PICKING_PARTES_TABLE}` (
+            parte_id STRING NOT NULL,
+            pedido_id STRING NOT NULL,
+            picking_tipo STRING,
+            picking_numero INT64,
+            matricula_camion STRING,
+            matricula_remolque STRING,
+            peso FLOAT64,
+            finca STRING,
+            zona STRING,
+            empleado_email STRING,
+            empleado_nombre STRING,
+            fecha STRING,
+            creado_en TIMESTAMP
+        )
+        """
+    ).result()
+
+
 def _ensure_etiquetas_table() -> None:
     client.query(
         f"""
@@ -2044,6 +2071,38 @@ def _ensure_etiquetas_table() -> None:
             creado_en TIMESTAMP,
             actualizado_en TIMESTAMP,
             actualizado_por STRING
+        )
+        """
+    ).result()
+
+
+def _ensure_etiquetas_plantillas_table() -> None:
+    """D-273: tabla de plantillas de etiquetas en BigQuery (pickingve).
+
+    Sustituye la persistencia en plantillas_etiquetas.json (filesystem efimero
+    de Cloud Run): la instruccion de eliminacion se perdeia en los reinicios y
+    las plantillas borradas reaparecian. BigQuery es la base de datos real del
+    backend, como el resto de tablas de metadatos (comentarios, matriculas, ...).
+    """
+    client.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS `{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_PLANTILLAS_TABLE}` (
+            id STRING NOT NULL,
+            nombre STRING,
+            ancho_mm FLOAT64,
+            alto_mm FLOAT64,
+            margen_mm FLOAT64,
+            margen_sup_mm FLOAT64,
+            margen_izq_mm FLOAT64,
+            cols INT64,
+            `rows` INT64,
+            gap_h_mm FLOAT64,
+            gap_v_mm FLOAT64,
+            tipo_origen STRING,
+            es_sistema BOOL,
+            elementos_json STRING,
+            creado_en TIMESTAMP,
+            actualizado_en TIMESTAMP
         )
         """
     ).result()
@@ -4228,9 +4287,10 @@ def pedidos(
                l.SECTOR_RELEVADO, l.UBICACION_EXTRA, l.PRIORIDAD, l.ACCION_LOGISTICA,
                l.NOTA_LINEA_PEDIDO, l.IMPRIMIR_LINEA, l.MARCADO,
                lt.DESCRIPCION_LITRAJE, st.DESCRIPCION_SECTOR,
-               COALESCE(a.FINCA_ARTICULO, '') AS FINCA_ARTICULO,
-               COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
-               COALESCE(pn.ULTIMO_PARTE, 0) AS ULTIMO_PARTE
+                COALESCE(a.FINCA_ARTICULO, '') AS FINCA_ARTICULO,
+                COALESCE(pr.ACOPIADO_OPERARIO, 0) AS ACOPIADO_OPERARIO,
+                COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
+                COALESCE(pn.ULTIMO_PARTE, 0) AS ULTIMO_PARTE
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
         INNER JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
@@ -4242,7 +4302,9 @@ def pedidos(
         LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = l.CODIGO_LITRAJE
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN (
-            SELECT order_id, order_line_id, SUM(cantidad_partida) AS ACOPIADO
+            SELECT order_id, order_line_id, 
+                   SUM(IF(picking_tipo = 'I', cantidad_partida, 0)) AS ACOPIADO_OPERARIO,
+                   SUM(IF(picking_tipo = 'F', cantidad_partida, 0)) AS ACOPIADO
             FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
             GROUP BY order_id, order_line_id
         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
@@ -4330,6 +4392,7 @@ def pedidos(
                     "pendientes": r.get("UNIDADES_PENDIENTES"),
                     "imprimirLinea": r.get("IMPRIMIR_LINEA") or 0,
                     "marcado": bool(r.get("MARCADO")),
+                    "acopiadoOperario": int(r.get("ACOPIADO_OPERARIO") or 0),
                     "acopiado": int(r.get("ACOPIADO") or 0),
                     "litraje": r.get("CODIGO_LITRAJE") or "",
                     "litrajeDesc": r.get("DESCRIPCION_LITRAJE") or "",
@@ -4913,6 +4976,70 @@ def compensar(
     return {"ok": len(body.registros)}
 
 
+class ParteBody(BaseModel):
+    """D-271: datos del parte (inicial o final) con peso de la carga.
+
+    La app envía esto al cerrar un parte para persistir en BigQuery la
+    matrícula de camión/remolque y el peso, que de otro modo solo irían al
+    XLSX legacy de Telegram (D-153) y no estarían disponibles para los
+    informes. Idempotente por parte_id (MERGE).
+    """
+    parte_id: str = Field(min_length=1, max_length=128)
+    pedido_id: str = Field(min_length=1, max_length=64)
+    picking_tipo: str = Field(pattern="^[IF]$")
+    picking_numero: int = Field(ge=1, le=50)
+    matricula_camion: str = Field(default="", max_length=16)
+    matricula_remolque: str = Field(default="", max_length=16)
+    peso: Optional[float] = Field(default=None, ge=0, le=1000000)
+    finca: str = Field(default="", max_length=128)
+    zona: str = Field(default="", max_length=128)
+    empleado_email: str = Field(default="", max_length=128)
+    empleado_nombre: str = Field(default="", max_length=128)
+    fecha: str = Field(default="", max_length=64)
+
+
+@app.post("/api/picking/partes")
+def guardar_parte(
+    request: Request,
+    body: ParteBody,
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _verify_key(x_api_key)
+    _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
+    _ensure_picking_partes_table()
+    peso = body.peso if body.peso is not None else 0.0
+    client.query(
+        f"""
+        MERGE `{PROJECT}.{PICKING_DATASET}.{PICKING_PARTES_TABLE}` T
+        USING (SELECT {_esc(body.parte_id)} AS parte_id) S
+        ON T.parte_id = S.parte_id
+        WHEN MATCHED THEN
+            UPDATE SET pedido_id = {_esc(body.pedido_id)},
+                       picking_tipo = {_esc(body.picking_tipo)},
+                       picking_numero = {int(body.picking_numero)},
+                       matricula_camion = {_esc(body.matricula_camion)},
+                       matricula_remolque = {_esc(body.matricula_remolque)},
+                       peso = {float(peso)},
+                       finca = {_esc(body.finca)},
+                       zona = {_esc(body.zona)},
+                       empleado_email = {_esc(body.empleado_email)},
+                       empleado_nombre = {_esc(body.empleado_nombre)},
+                       fecha = {_esc(body.fecha)},
+                       creado_en = CURRENT_TIMESTAMP()
+        WHEN NOT MATCHED THEN
+            INSERT (parte_id, pedido_id, picking_tipo, picking_numero,
+                    matricula_camion, matricula_remolque, peso, finca, zona,
+                    empleado_email, empleado_nombre, fecha, creado_en)
+            VALUES ({_esc(body.parte_id)}, {_esc(body.pedido_id)}, {_esc(body.picking_tipo)},
+                    {int(body.picking_numero)}, {_esc(body.matricula_camion)},
+                    {_esc(body.matricula_remolque)}, {float(peso)}, {_esc(body.finca)},
+                    {_esc(body.zona)}, {_esc(body.empleado_email)}, {_esc(body.empleado_nombre)},
+                    {_esc(body.fecha)}, CURRENT_TIMESTAMP())
+        """
+    ).result()
+    return {"ok": 1, "parte_id": body.parte_id}
+
+
 LOGISTICA_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "logistica")
 LOGISTICA_WEB_TOKEN = "logistica-2026"
 
@@ -4942,23 +5069,71 @@ def logistica_logo(k: Optional[str] = Query(default=None)):
 def logistica_module(module_name: str, k: Optional[str] = Query(default=None)):
     if k != LOGISTICA_WEB_TOKEN:
         raise HTTPException(404, "Not found")
-    allowed = {"faena", "inventario", "impresion", "designer"}
+    allowed = {"faena", "inventario", "impresion", "designer", "portal"}
     if module_name not in allowed:
         raise HTTPException(404, "Not found")
     return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "js", "modules", f"{module_name}.js"), media_type="text/javascript")
+
+
+@app.get("/logistica/js/services/{file_name}.js")
+def logistica_service_file(file_name: str, k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    allowed = {"apiService", "dataConnector", "printBatchBuilder", "printTemplateRenderer"}
+    if file_name not in allowed:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "js", "services", f"{file_name}.js"), media_type="text/javascript")
+
+
+@app.get("/logistica/js/components/{file_name}.js")
+def logistica_component_flat_file(file_name: str, k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    allowed_flat = {"printModal", "modalDetail", "orderCard", "labelSelector", "etiquetasDia"}
+    if file_name not in allowed_flat:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "js", "components", f"{file_name}.js"), media_type="text/javascript")
+
+
+@app.get("/logistica/js/components/{sub}/{file_name}.js")
+def logistica_component_file(sub: str, file_name: str, k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    allowed = {
+        "navigation": {"sidebar", "submenu"},
+        "faena": {"pedidosDia", "etiquetasDia", "historicoCargas", "repartoFaena", "cargaOperarios"},
+        "inventario": {"partes", "resumenSector", "resumenReferencia", "inventarios", "mapa"},
+        "etiquetas": {"disenador", "impresion"},
+        "configuracion": {"personal", "logistica", "inventario", "integraciones"},
+        "shared": {},
+    }
+    if sub not in allowed or file_name not in allowed[sub]:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "js", "components", sub, f"{file_name}.js"), media_type="text/javascript")
 
 
 @app.get("/logistica/js/{layer}/{file_name}.js")
 def logistica_layer_file(layer: str, file_name: str, k: Optional[str] = Query(default=None)):
     if k != LOGISTICA_WEB_TOKEN:
         raise HTTPException(404, "Not found")
+    # Ruta heredada (vistas beta) — se mantiene para no romper enlaces externos.
     allowed = {
-        "services": {"apiService"},
-        "components": {"orderCard", "modalDetail", "subnavFaena", "labelSelector"},
+        "services": {"apiService", "dataConnector", "printBatchBuilder", "printTemplateRenderer"},
+        "components": {"orderCard", "modalDetail", "subnavFaena", "labelSelector", "dashboardFaena", "etiquetasDia", "historicoFaena", "repartoFaena", "cargaOperarios", "printModal"},
     }
     if layer not in allowed or file_name not in allowed[layer]:
         raise HTTPException(404, "Not found")
     return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "js", layer, f"{file_name}.js"), media_type="text/javascript")
+
+
+@app.get("/logistica/css/{css_name}.css")
+def logistica_css(css_name: str, k: Optional[str] = Query(default=None)):
+    if k != LOGISTICA_WEB_TOKEN:
+        raise HTTPException(404, "Not found")
+    allowed_css = {"layout", "shared", "faena", "inventario", "etiquetas", "configuracion"}
+    if css_name not in allowed_css:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(LOGISTICA_WEB_DIR, "css", f"{css_name}.css"), media_type="text/css")
 
 
 MANAGER_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "manager")
@@ -5131,9 +5306,10 @@ def manager_orders(
                 l.PRIORIDAD, l.ACCION_LOGISTICA, l.NOTA_LINEA_PEDIDO,
                  COALESCE(lt.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '') AS LITRAJE_DESC,
                  COALESCE(st.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '') AS SECTOR_DESC,
-                 COALESCE(a.FINCA_ARTICULO, '') AS FINCA_ARTICULO,
-                 COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
-                 COALESCE(pr.OPERARIOS, '') AS OPERARIOS,
+                  COALESCE(a.FINCA_ARTICULO, '') AS FINCA_ARTICULO,
+                  COALESCE(pr.ACOPIADO_OPERARIO, 0) AS ACOPIADO_OPERARIO,
+                  COALESCE(pr.ACOPIADO, 0) AS ACOPIADO,
+                  COALESCE(pr.OPERARIOS, '') AS OPERARIOS,
                  COALESCE(pr.DETALLE_OPS, '') AS DETALLE_OPS,
                  CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO,
                  CASE WHEN pf.order_id IS NOT NULL THEN TRUE ELSE FALSE END AS TIENE_PARTE_FINAL,
@@ -5150,28 +5326,23 @@ def manager_orders(
          LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = l.CODIGO_LITRAJE
          LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
          LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = l.REFERENCIA_ARTICULO
-        LEFT JOIN (
-            SELECT order_id, order_line_id,
-                   STRING_AGG(empleado, ', ' ORDER BY empleado) AS OPERARIOS,
-                   STRING_AGG(CONCAT(op_email, ':', CAST(uds AS INT64)), ', ' ORDER BY op_email) AS DETALLE_OPS,
-                   SUM(IF(es_encargado, uds, 0)) AS ACOPIADO
-            FROM (
-                SELECT order_id, order_line_id,
-                       COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido') AS empleado,
-                       COALESCE(NULLIF(TRIM(LOWER(empleado_email)), ''),
-                                'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')) AS op_email,
-                       SUM(cantidad_partida) AS uds,
-                       (TRIM(COALESCE(empleado_email, '')) = ''
-                        OR LOWER(TRIM(empleado_email)) IN (
-                            SELECT LOWER(email) FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`
-                            WHERE email IS NOT NULL AND email != ''
-                        ))
-                       AS es_encargado
-                FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
-                GROUP BY order_id, order_line_id, empleado_nombre, empleado_email
-            )
-            GROUP BY order_id, order_line_id
-        ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
+         LEFT JOIN (
+             SELECT order_id, order_line_id,
+                    STRING_AGG(empleado, ', ' ORDER BY empleado) AS OPERARIOS,
+                    STRING_AGG(CONCAT(op_email, ':', CAST(uds AS INT64)), ', ' ORDER BY op_email) AS DETALLE_OPS,
+                    SUM(IF(picking_tipo = 'I', uds, 0)) AS ACOPIADO_OPERARIO,
+                    SUM(IF(picking_tipo = 'F', uds, 0)) AS ACOPIADO
+             FROM (
+                 SELECT order_id, order_line_id, picking_tipo,
+                        COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido') AS empleado,
+                        COALESCE(NULLIF(TRIM(LOWER(empleado_email)), ''),
+                                 'sin-email:' || COALESCE(NULLIF(TRIM(empleado_nombre), ''), 'Desconocido')) AS op_email,
+                        SUM(cantidad_partida) AS uds
+                 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
+                 GROUP BY order_id, order_line_id, empleado_nombre, empleado_email, picking_tipo
+             )
+             GROUP BY order_id, order_line_id
+         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
         LEFT JOIN (
             SELECT order_id, SUM(cantidad_partida) AS TOTAL_ACOPIADO
             FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
@@ -5257,6 +5428,7 @@ def manager_orders(
                     "marca": r.get("MARCA") or "",
                     "observaciones": r.get("NOTA_LINEA_PEDIDO") or r.get("ACCION_LOGISTICA") or "",
                     "pendientes": r.get("UNIDADES_PENDIENTES") or 0,
+                    "acopiadoOperario": int(r.get("ACOPIADO_OPERARIO") or 0),
                     "acopiado": int(r.get("ACOPIADO") or 0),
                     "operarios": r.get("OPERARIOS") or "",
                     "detalleOperarios": r.get("DETALLE_OPS") or "",
@@ -5321,6 +5493,144 @@ def manager_carga(
         })
     operarios.sort(key=lambda x: -x["asignado"])
     return {"operarios": operarios}
+
+
+@app.get("/api/manager/faena-operario")
+def manager_faena_operario(
+    email: str = Query(..., description="Email del operario"),
+    k: Optional[str] = Query(default=None),
+    x_api_key: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """Faena detallada de un operario: líneas asignadas agrupadas por finca > pedido.
+
+    Devuelve la lista de plantas que el operario tiene que acopiar, con toda la
+    información necesaria para imprimir como alternativa a la app móvil ('mi faena').
+    """
+    _verify_manager_key(k, x_api_key)
+    email_norm = (email or "").strip().lower()
+    if not email_norm:
+        raise HTTPException(status_code=400, detail="Email requerido")
+
+    rows = [dict(r) for r in client.query(f"""
+        SELECT p.NUMERO_PEDIDO, p.FINCA_CARGA, p.SECTOR_CARGA, p.FECHA_CARGA,
+               p.MARCA_PEDIDO, p.REFERENCIA_PEDIDO,
+               COALESCE(c.N_COMERCIAL, '') AS CLIENTE,
+               COALESCE(c.N_FISCAL, '') AS CLIENTE_FISCAL,
+               l.HUELLA_DIGITAL, l.POSICION_PEDIDO, l.REFERENCIA_ARTICULO,
+               l.DESCRIPCION_ARTICULO, l.UNIDADES_PENDIENTES,
+               l.CODIGO_LITRAJE, l.CODIGO_SECTOR, l.UBICACION_EXTRA,
+               l.FINCA_RELEVADA, l.SECTOR_RELEVADO, l.MARCADO, l.MARCA,
+               l.PRIORIDAD, l.NOTA_LINEA_PEDIDO,
+               COALESCE(lt.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '') AS LITRAJE_DESC,
+               COALESCE(st.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '') AS SECTOR_DESC,
+                COALESCE(a.FINCA_ARTICULO, '') AS FINCA_ARTICULO,
+                COALESCE(pr.ACOPIADO_OPERARIO, 0) AS ACOPIADO_OPERARIO,
+                COALESCE(pr.ACOPIADO, 0) AS ACOPIADO
+        FROM `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` rf
+        JOIN `{PROJECT}.{DATASET}.PEDIDOS` p ON p.NUMERO_PEDIDO = rf.pedido_id
+        JOIN `{PROJECT}.{DATASET}.LINEA_PEDIDO` l
+            ON l.NUMERO_PEDIDO = rf.pedido_id AND l.HUELLA_DIGITAL = rf.linea_huella
+            AND COALESCE(l.LINEA_ACTIVA, TRUE) = TRUE
+            AND COALESCE(l.IMPRIMIR_LINEA, 0) = 0
+        LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
+        LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lt ON lt.ID_LITRAJE = l.CODIGO_LITRAJE
+        LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` st ON st.ID_SECTOR = l.CODIGO_SECTOR
+        LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = l.REFERENCIA_ARTICULO
+         LEFT JOIN (
+             SELECT order_id, order_line_id,
+                    SUM(IF(picking_tipo = 'I', uds, 0)) AS ACOPIADO_OPERARIO,
+                    SUM(IF(picking_tipo = 'F', uds, 0)) AS ACOPIADO
+             FROM (
+                 SELECT order_id, order_line_id, picking_tipo,
+                        SUM(cantidad_partida) AS uds
+                 FROM `{PROJECT}.{PICKING_DATASET}.{PICKING_VIEW}`
+                 GROUP BY order_id, order_line_id, picking_tipo
+             )
+             GROUP BY order_id, order_line_id
+         ) pr ON pr.order_id = p.NUMERO_PEDIDO AND pr.order_line_id = l.HUELLA_DIGITAL
+        WHERE LOWER(rf.operario_email) = @email
+        ORDER BY p.FECHA_CARGA, p.NUMERO_PEDIDO, l.POSICION_PEDIDO
+    """, job_config=bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("email", "STRING", email_norm)]
+    )).result()]
+
+    if not rows:
+        return {"fincas": [], "totalPlantas": 0, "operario": email_norm}
+
+    fincas_map: dict[str, dict] = {}
+    total_pendientes = 0
+
+    for r in rows:
+        finca_raw = (r.get("FINCA_RELEVADA") or "").strip()
+        if not finca_raw:
+            finca_raw = (r.get("FINCA_ARTICULO") or "").strip()
+        if not finca_raw:
+            finca_raw = (r.get("FINCA_CARGA") or "").strip() or "Sin finca"
+
+        pedido_id = str(r.get("NUMERO_PEDIDO") or "")
+        huella = str(r.get("HUELLA_DIGITAL") or "")
+        acopiado_operario = int(r.get("ACOPIADO_OPERARIO") or 0)
+        acopiado = int(r.get("ACOPIADO") or 0)
+        pend = max(0, int(r.get("UNIDADES_PENDIENTES") or 0) - acopiado)
+
+        if finca_raw not in fincas_map:
+            fincas_map[finca_raw] = {"finca": finca_raw, "pedidos": {}}
+        finca = fincas_map[finca_raw]
+
+        if pedido_id not in finca["pedidos"]:
+            cliente = (r.get("CLIENTE") or "").strip()
+            cliente_fiscal = (r.get("CLIENTE_FISCAL") or "").strip()
+            cliente_display = f"{cliente_fiscal} - {cliente}" if cliente_fiscal and cliente else cliente or cliente_fiscal or ""
+            finca["pedidos"][pedido_id] = {
+                "orderId": pedido_id,
+                "clienteDisplay": cliente_display,
+                "marcaPedido": (r.get("MARCA_PEDIDO") or "").strip(),
+                "fincaCarga": (r.get("FINCA_CARGA") or "").strip(),
+                "sectorCarga": (r.get("SECTOR_CARGA") or "").strip(),
+                "fechaCarga": str(r.get("FECHA_CARGA") or ""),
+                "lineas": [],
+            }
+        ped = finca["pedidos"][pedido_id]
+
+        marca_linea = (r.get("MARCA") or "").strip()
+        marca_pedido = (r.get("MARCA_PEDIDO") or "").strip()
+        marca_eff = marca_linea if marca_linea and marca_linea != marca_pedido else ""
+
+        ped["lineas"].append({
+            "huella": huella,
+            "referencia": (r.get("REFERENCIA_ARTICULO") or "").strip(),
+            "producto": (r.get("DESCRIPCION_ARTICULO") or "").strip(),
+            "pendiente": pend,
+            "acopiadoOperario": acopiado_operario,
+            "acopiado": acopiado,
+            "solicitadas": int(r.get("UNIDADES_PENDIENTES") or 0),
+            "fincaProcedencia": finca_raw,
+            "sector": (r.get("SECTOR_DESC") or r.get("CODIGO_SECTOR") or "").strip(),
+            "litraje": (r.get("LITRAJE_DESC") or r.get("CODIGO_LITRAJE") or "").strip(),
+            "ubicacion": (r.get("UBICACION_EXTRA") or "").strip(),
+            "marca": marca_eff,
+            "prioridad": (r.get("PRIORIDAD") or "").strip(),
+            "marcado": bool(r.get("MARCADO")),
+            "observaciones": (r.get("NOTA_LINEA_PEDIDO") or "").strip(),
+        })
+        total_pendientes += ped["lineas"][-1]["pendiente"]
+
+    fincas_out = []
+    for finca_data in fincas_map.values():
+        pedidos_out = sorted(
+            finca_data["pedidos"].values(),
+            key=lambda pp: (-sum(ll["pendiente"] for ll in pp["lineas"]), pp["orderId"])
+        )
+        for ped in pedidos_out:
+            ped["plantasPendientes"] = sum(ll["pendiente"] for ll in ped["lineas"])
+        fincas_out.append({
+            "finca": finca_data["finca"],
+            "plantasPendientes": sum(pp["plantasPendientes"] for pp in pedidos_out),
+            "pedidos": pedidos_out,
+        })
+    fincas_out.sort(key=lambda ff: -ff["plantasPendientes"])
+
+    return {"fincas": fincas_out, "totalPlantas": total_pendientes, "operario": email_norm}
 
 
 @app.get("/api/manager/fechas")
@@ -5469,7 +5779,7 @@ def manager_reporte(
     if fmt == "pdf":
         try:
             data = informe_pdf.build_punteo_pdf(
-                client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
+                client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE, PICKING_PARTES_TABLE,
                 numero_pedido,
             )
         except ValueError as e:
@@ -5483,7 +5793,7 @@ def manager_reporte(
     else:
         try:
             html = informe_html.build_punteo_html(
-                client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
+                client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE, PICKING_PARTES_TABLE,
                 numero_pedido,
             )
         except ValueError as e:
@@ -5501,7 +5811,7 @@ def manager_informe_desglose(
     _verify_manager_key(k, x_api_key)
     try:
         html = informe_html.build_desglose_html(
-            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE, PICKING_PARTES_TABLE,
             numero_pedido,
         )
     except ValueError as e:
@@ -5519,7 +5829,7 @@ def manager_informe_detalle(
     _verify_manager_key(k, x_api_key)
     try:
         html = informe_html.build_detalle_html(
-            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE, PICKING_PARTES_TABLE,
             numero_pedido,
         )
     except ValueError as e:
@@ -5537,7 +5847,7 @@ def manager_informe_control(
     _verify_manager_key(k, x_api_key)
     try:
         html = informe_html.build_control_html(
-            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE,
+            client, PROJECT, DATASET, PICKING_DATASET, PICKING_VIEW, MATRICULAS_TABLE, PICKING_PARTES_TABLE,
             numero_pedido,
         )
     except ValueError as e:
@@ -5591,6 +5901,7 @@ def manager_etiquetas_dia(
                    COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '') AS litraje,
                    COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '') AS sector,
                    ANY_VALUE(a.DESCRIPCION_ARTICULO) AS descripcion,
+                   ANY_VALUE(ce.CODIGO_EAN) AS ean,
                    ANY_VALUE(r.order_line_id) AS order_line_id,
                    SUM(r.cantidad_partida) AS cantidad,
                    LOGICAL_OR(r.ocr_texto IS NOT NULL AND r.ocr_texto != '') AS ocr_presente,
@@ -5601,14 +5912,21 @@ def manager_etiquetas_dia(
             LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
             LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
             LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = r.ref_servida
-            WHERE (r.ean_escaneado IS NULL OR r.ean_escaneado = '' OR IFNULL(r.needs_label, FALSE))
+            LEFT JOIN (
+                SELECT REFERENCIA_ARTICULO, CODIGO_EAN,
+                       ROW_NUMBER() OVER (PARTITION BY REFERENCIA_ARTICULO ORDER BY CODIGO_LITRAJE DESC) as rn
+                FROM `{PROJECT}.{DATASET}.CODIGOS_EAN`
+            ) ce ON ce.REFERENCIA_ARTICULO = r.ref_servida AND ce.rn = 1
+            WHERE IFNULL(r.needs_label, FALSE)
             GROUP BY r.order_id, r.ref_servida,
                      COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, ''),
                      COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')
             HAVING SUM(r.cantidad_partida) > 0
         )
-        SELECT p.NUMERO_PEDIDO, COALESCE(c.N_COMERCIAL, '') AS CLIENTE, p.FECHA_CARGA, p.FINCA_CARGA, p.ESTADO_PEDIDO,
-               lbl.referencia, lbl.litraje, lbl.sector, lbl.descripcion, lbl.cantidad,
+        SELECT p.NUMERO_PEDIDO, COALESCE(c.N_COMERCIAL, '') AS CLIENTE,
+               COALESCE(c.N_FISCAL, '') AS CLIENTE_FISCAL,
+               p.FECHA_CARGA, p.FINCA_CARGA, p.SECTOR_CARGA, p.MARCA_PEDIDO, p.ESTADO_PEDIDO,
+               lbl.referencia, lbl.litraje, lbl.sector, lbl.descripcion, lbl.ean, lbl.cantidad,
                lbl.ocr_presente, lbl.etiqueta_pedida, lbl.label_reason, lbl.order_line_id
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
@@ -5626,7 +5944,10 @@ def manager_etiquetas_dia(
             p = pedidos_map[ped] = {
                 "pedido": ped,
                 "cliente": l.get("CLIENTE") or "",
+                "clienteFiscal": l.get("CLIENTE_FISCAL") or "",
                 "finca": l.get("FINCA_CARGA") or "",
+                "zona": l.get("SECTOR_CARGA") or "",
+                "marcaPedido": l.get("MARCA_PEDIDO") or "",
                 "fechaCarga": l.get("FECHA_CARGA"),
                 "etiquetas": [],
             }
@@ -5638,10 +5959,12 @@ def manager_etiquetas_dia(
             "litraje": litraje,
             "sector": sector,
             "descripcion": l.get("descripcion") or "",
+            "ean": l.get("ean") or "",
             "cantidad": float(l.get("cantidad") or 0),
         })
         _lr = str(l.get("label_reason") or "")
         _motivo_base = {
+            "SIN_ETIQUETA": "No tiene etiqueta",
             "MACETA_ROTA": "Rotura de maceta",
             "CAMBIO_FORMATO": "Cambio de formato",
             "PASAPORTE_MAL_ESTADO": "Pasaporte en mal estado",
@@ -5699,6 +6022,7 @@ def manager_etiquetas(
     labels_sql = f"""
         SELECT r.ref_servida AS referencia,
                ANY_VALUE(a.DESCRIPCION_ARTICULO) AS descripcion,
+               ANY_VALUE(ce.CODIGO_EAN) AS ean,
                ANY_VALUE(COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, '')) AS litraje,
                ANY_VALUE(COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')) AS sector,
                ANY_VALUE(r.order_line_id) AS order_line_id,
@@ -5711,8 +6035,13 @@ def manager_etiquetas(
         LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = l.CODIGO_LITRAJE
         LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = l.CODIGO_SECTOR
         LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON a.ID_ARTICULO = r.ref_servida
+        LEFT JOIN (
+            SELECT REFERENCIA_ARTICULO, CODIGO_EAN,
+                   ROW_NUMBER() OVER (PARTITION BY REFERENCIA_ARTICULO ORDER BY CODIGO_LITRAJE DESC) as rn
+            FROM `{PROJECT}.{DATASET}.CODIGOS_EAN`
+        ) ce ON ce.REFERENCIA_ARTICULO = r.ref_servida AND ce.rn = 1
         WHERE r.order_id = @pedido
-          AND (r.ean_escaneado IS NULL OR r.ean_escaneado = '' OR IFNULL(r.needs_label, FALSE))
+          AND IFNULL(r.needs_label, FALSE)
         GROUP BY r.ref_servida,
                  COALESCE(lit.DESCRIPCION_LITRAJE, l.CODIGO_LITRAJE, ''),
                  COALESCE(sec.DESCRIPCION_SECTOR, l.CODIGO_SECTOR, '')
@@ -5753,6 +6082,7 @@ def manager_etiquetas(
             "descripcion": l.get("descripcion") or "",
             "litraje": litraje,
             "sector": sector,
+            "ean": l.get("ean") or "",
             "cantidad": float(l.get("cantidad") or 0),
             "motivo": motivo,
             "estado": estado,
@@ -7722,34 +8052,47 @@ def _verify_inventario_key(
     x_api_key: Optional[str] = Header(default=None),
 ) -> None:
     """Clave para los endpoints de lectura del modulo de inventario: acepta la
-    X-API-Key de la app, el token del panel manager o el token propio de la
-    pagina /inventario (que consulta la API mismo-origen con ?k=)."""
+    X-API-Key de la app, el token del panel manager, el token propio de la
+    pagina /inventario (que consulta la API mismo-origen con ?k=) y el token
+    del portal unificado /logistica (D-265: el portal reutiliza esta
+    funcionalidad completa sin tocar la logica de negocio)."""
     if API_KEY and x_api_key == API_KEY:
         return
-    if k == INVENTARIO_WEB_TOKEN or k == MANAGER_WEB_TOKEN:
+    if k == INVENTARIO_WEB_TOKEN or k == MANAGER_WEB_TOKEN or k == LOGISTICA_WEB_TOKEN:
         return
     raise HTTPException(status_code=401, detail="API key inválida o ausente")
 
 
 # --- Diseñador Visual de Plantillas de Etiquetas ---
+# D-273: la fuente de verdad de las plantillas es la tabla BigQuery
+# `pickingve.etiquetas_plantillas`. plantillas_etiquetas.json solo se lee una
+# vez (migración) en _seed_etiquetas_plantillas; nunca se vuelve a escribir,
+# porque el filesystem de Cloud Run es efímero y el borrado se perdía.
 PLANTILLAS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plantillas_etiquetas.json")
 
 
-def _load_plantillas() -> list[dict]:
-    if os.path.exists(PLANTILLAS_FILE):
-        try:
-            with open(PLANTILLAS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
+def _f(v, d=0.0) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return d
+
+
+def _i(v, d=0) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return d
+
+
+def _plantillas_base() -> list[dict]:
+    """Plantillas de SISTEMA que se garantizan en la base de datos si la tabla está vacía."""
     return [
         {
             "id": "tpl-grande-default",
             "nombre": "Grande 100x50 Estándar",
-            "ancho_mm": 100.0,
-            "alto_mm": 50.0,
-            "margen_mm": 4.0,
-            "tipo_origen": "GENERAL",
+            "ancho_mm": 100.0, "alto_mm": 50.0, "margen_mm": 4.0,
+            "tipo_origen": "GENERAL", "es_sistema": True,
             "elementos_json": [
                 {"campo_id": "nombre_comercial", "pos_x_mm": 5.0, "pos_y_mm": 5.0, "ancho_mm": 90.0, "alto_mm": 10.0, "tipo_render": "TEXTO", "tamano_fuente_pt": 14.0, "alineacion": "LEFT", "negrita": True},
                 {"campo_id": "variedad", "pos_x_mm": 5.0, "pos_y_mm": 16.0, "ancho_mm": 90.0, "alto_mm": 8.0, "tipo_render": "TEXTO", "tamano_fuente_pt": 10.0, "alineacion": "LEFT", "negrita": False},
@@ -7759,21 +8102,167 @@ def _load_plantillas() -> list[dict]:
         {
             "id": "tpl-pequena-default",
             "nombre": "Pequeña Maceta",
-            "ancho_mm": 50.0,
-            "alto_mm": 30.0,
-            "margen_mm": 2.0,
-            "tipo_origen": "INVENTARIO",
+            "ancho_mm": 50.0, "alto_mm": 30.0, "margen_mm": 2.0,
+            "tipo_origen": "INVENTARIO", "es_sistema": True,
             "elementos_json": [
                 {"campo_id": "ref_factusol", "pos_x_mm": 2.0, "pos_y_mm": 2.0, "ancho_mm": 46.0, "alto_mm": 8.0, "tipo_render": "TEXTO", "tamano_fuente_pt": 12.0, "alineacion": "CENTER", "negrita": True},
                 {"campo_id": "ean13", "pos_x_mm": 5.0, "pos_y_mm": 12.0, "ancho_mm": 40.0, "alto_mm": 15.0, "tipo_render": "CODIGO_BARRAS_EAN", "tamano_fuente_pt": 8.0, "alineacion": "CENTER", "negrita": False}
             ]
-        }
+        },
+        {
+            "id": "tpl-sistema-9992",
+            "nombre": "9992 - Etiqueta Gran",
+            "ancho_mm": 50.0, "alto_mm": 80.0,
+            "margen_sup_mm": 1.30, "margen_izq_mm": 1.00, "cols": 2, "rows": 1,
+            "gap_h_mm": 3.00, "gap_v_mm": 3.00,
+            "tipo_origen": "GENERAL", "es_sistema": True,
+            "elementos_json": [
+                {"tipo": "rect", "pos_x_mm": 1, "pos_y_mm": 1, "ancho_mm": 47, "alto_mm": 35, "borde_color": "#000000", "borde_grosor": 1, "relleno_color": "transparent", "radio_borde": 0, "estilo_linea": "solid"},
+                {"tipo": "image", "pos_x_mm": 3, "pos_y_mm": 3, "ancho_mm": 12, "alto_mm": 8, "imagen_data": "", "mantener_proporcion": True, "fallback": "bandera_ue"},
+                {"tipo": "text", "pos_x_mm": 17, "pos_y_mm": 4, "ancho_mm": 30, "alto_mm": 6, "texto": "Plant Passport", "tamano_fuente_pt": 12, "negrita": True, "alineacion": "left", "color": "#000000"},
+                {"tipo": "text", "pos_x_mm": 3, "pos_y_mm": 12, "ancho_mm": 6, "alto_mm": 5, "texto": "A:", "tamano_fuente_pt": 10, "negrita": True, "alineacion": "left", "color": "#000000"},
+                {"tipo": "db", "campo_id": "NOMBRE_CIENTIFICO", "pos_x_mm": 10, "pos_y_mm": 12, "ancho_mm": 36, "alto_mm": 5, "tamano_fuente_pt": 10, "negrita": False, "alineacion": "left", "prefijo": "", "sufijo": ""},
+                {"tipo": "text", "pos_x_mm": 3, "pos_y_mm": 18, "ancho_mm": 6, "alto_mm": 5, "texto": "B:", "tamano_fuente_pt": 10, "negrita": True, "alineacion": "left", "color": "#000000"},
+                {"tipo": "text", "pos_x_mm": 10, "pos_y_mm": 18, "ancho_mm": 36, "alto_mm": 5, "texto": "ES-17031672", "tamano_fuente_pt": 10, "negrita": False, "alineacion": "left", "color": "#000000"},
+                {"tipo": "text", "pos_x_mm": 3, "pos_y_mm": 24, "ancho_mm": 6, "alto_mm": 5, "texto": "C:", "tamano_fuente_pt": 10, "negrita": True, "alineacion": "left", "color": "#000000"},
+                {"tipo": "db", "campo_id": "CODIGO_LOTE", "pos_x_mm": 10, "pos_y_mm": 24, "ancho_mm": 36, "alto_mm": 5, "tamano_fuente_pt": 10, "negrita": False, "alineacion": "left", "prefijo": "", "sufijo": ""},
+                {"tipo": "text", "pos_x_mm": 3, "pos_y_mm": 30, "ancho_mm": 6, "alto_mm": 5, "texto": "D:", "tamano_fuente_pt": 10, "negrita": True, "alineacion": "left", "color": "#000000"},
+                {"tipo": "text", "pos_x_mm": 10, "pos_y_mm": 30, "ancho_mm": 36, "alto_mm": 5, "texto": "ES", "tamano_fuente_pt": 10, "negrita": False, "alineacion": "left", "color": "#000000"},
+                {"tipo": "db", "campo_id": "CONTENEDOR", "pos_x_mm": 3, "pos_y_mm": 37, "ancho_mm": 44, "alto_mm": 6, "tamano_fuente_pt": 14, "negrita": True, "alineacion": "left"},
+                {"tipo": "db", "campo_id": "VARIEDAD_FORMACION", "pos_x_mm": 3, "pos_y_mm": 43, "ancho_mm": 44, "alto_mm": 5, "tamano_fuente_pt": 11, "negrita": True, "alineacion": "left"},
+                {"tipo": "db", "campo_id": "UBICACION_SECTOR", "pos_x_mm": 3, "pos_y_mm": 49, "ancho_mm": 25, "alto_mm": 4, "tamano_fuente_pt": 7, "negrita": False, "alineacion": "left", "prefijo": "", "sufijo": " * GGN "},
+                {"tipo": "db", "campo_id": "GGN", "pos_x_mm": 28, "pos_y_mm": 49, "ancho_mm": 19, "alto_mm": 4, "tamano_fuente_pt": 7, "negrita": False, "alineacion": "left", "prefijo": "GGN ", "sufijo": ""},
+                {"tipo": "db", "campo_id": "CODIGO_EAN13_BARRAS", "pos_x_mm": 3, "pos_y_mm": 54, "ancho_mm": 44, "alto_mm": 22, "tamano_fuente_pt": 10},
+            ]
+        },
     ]
 
 
-def _save_plantillas(plantillas: list[dict]):
-    with open(PLANTILLAS_FILE, "w", encoding="utf-8") as f:
-        json.dump(plantillas, f, ensure_ascii=False, indent=2)
+def _es_plantilla_sistema(tpl_id: str) -> bool:
+    if not tpl_id:
+        return False
+    if tpl_id.startswith("tpl-sistema-") or tpl_id in ("tpl-grande-default", "tpl-pequena-default"):
+        return True
+    try:
+        rows = _query(
+            f"SELECT es_sistema FROM `{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_PLANTILLAS_TABLE}` WHERE id = {_esc(tpl_id)}"
+        )
+        return bool(rows and rows[0].get("es_sistema"))
+    except Exception:
+        return False
+
+
+def _plantillas_table_ref() -> str:
+    return f"`{PROJECT}.{PICKING_DATASET}.{ETIQUETAS_PLANTILLAS_TABLE}`"
+
+
+def _upsert_plantilla(tpl: dict) -> dict:
+    """UPSERT real en BigQuery (MERGE): inserta o actualiza una plantilla por id."""
+    _ensure_etiquetas_plantillas_table()
+    id_ = str(tpl.get("id") or ("tpl-" + str(int(time.time()))))
+    nombre = str(tpl.get("nombre") or "Plantilla sin nombre")
+    es_sistema = bool(tpl.get("es_sistema"))
+    elementos = json.dumps(tpl.get("elementos_json") or [], ensure_ascii=False)
+    ref = _plantillas_table_ref()
+    client.query(
+        f"""
+        MERGE {ref} T
+        USING (SELECT {_esc(id_)} AS id) S
+        ON T.id = S.id
+        WHEN MATCHED THEN UPDATE SET
+            nombre = {_esc(nombre)},
+            ancho_mm = {_f(tpl.get("ancho_mm"))},
+            alto_mm = {_f(tpl.get("alto_mm"))},
+            margen_mm = {_f(tpl.get("margen_mm"))},
+            margen_sup_mm = {_f(tpl.get("margen_sup_mm"), 1.3)},
+            margen_izq_mm = {_f(tpl.get("margen_izq_mm"), 1.0)},
+            cols = {_i(tpl.get("cols"), 2)},
+            `rows` = {_i(tpl.get("rows"), 1)},
+            gap_h_mm = {_f(tpl.get("gap_h_mm"), 3.0)},
+            gap_v_mm = {_f(tpl.get("gap_v_mm"), 3.0)},
+            tipo_origen = {_esc(str(tpl.get("tipo_origen") or "GENERAL"))},
+            es_sistema = {str(es_sistema).upper()},
+            elementos_json = {_esc(elementos)},
+            actualizado_en = CURRENT_TIMESTAMP()
+        WHEN NOT MATCHED THEN INSERT
+            (id, nombre, ancho_mm, alto_mm, margen_mm, margen_sup_mm, margen_izq_mm,
+             cols, `rows`, gap_h_mm, gap_v_mm, tipo_origen, es_sistema, elementos_json,
+             creado_en, actualizado_en)
+        VALUES
+            ({_esc(id_)}, {_esc(nombre)}, {_f(tpl.get("ancho_mm"))}, {_f(tpl.get("alto_mm"))},
+             {_f(tpl.get("margen_mm"))}, {_f(tpl.get("margen_sup_mm"), 1.3)}, {_f(tpl.get("margen_izq_mm"), 1.0)},
+             {_i(tpl.get("cols"), 2)}, {_i(tpl.get("rows"), 1)},
+             {_f(tpl.get("gap_h_mm"), 3.0)}, {_f(tpl.get("gap_v_mm"), 3.0)},
+             {_esc(str(tpl.get("tipo_origen") or "GENERAL"))}, {str(es_sistema).upper()},
+             {_esc(elementos)}, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+        """
+    ).result()
+    return {**tpl, "id": id_, "nombre": nombre, "es_sistema": es_sistema}
+
+
+def _seed_etiquetas_plantillas() -> list[dict]:
+    """Migración/inicialización automática: inserta las plantillas base en
+    BigQuery si la tabla está vacía (o importa el legacy plantillas_etiquetas.json)."""
+    _ensure_etiquetas_plantillas_table()
+    try:
+        rows = _query(f"SELECT id FROM {_plantillas_table_ref()} LIMIT 1")
+    except Exception:
+        return _plantillas_base()
+    if rows:
+        return _load_plantillas()
+
+    legacy: list[dict] = []
+    if os.path.exists(PLANTILLAS_FILE):
+        try:
+            with open(PLANTILLAS_FILE, "r", encoding="utf-8") as f:
+                legacy = json.load(f)
+            if not isinstance(legacy, list):
+                legacy = []
+        except Exception:
+            legacy = []
+
+    base = _plantillas_base()
+    base_ids = {t["id"] for t in base}
+    por_id = {t.get("id"): t for t in legacy if t.get("id")}
+    for t in base:
+        por_id.setdefault(t["id"], t)
+    for t in por_id.values():
+        t["es_sistema"] = bool(t.get("es_sistema") or t.get("id") in base_ids)
+        _upsert_plantilla(t)
+    return _load_plantillas()
+
+
+def _load_plantillas() -> list[dict]:
+    """SELECT real desde BigQuery. La BD es la fuente de verdad: nunca se
+    devuelven copias locales que pudieran resucitar plantillas borradas."""
+    try:
+        rows = _query(f"SELECT * FROM {_plantillas_table_ref()} ORDER BY id")
+    except Exception:
+        return _plantillas_base()
+    if not rows:
+        return _seed_etiquetas_plantillas()
+    plantillas = []
+    for r in rows:
+        t = dict(r)
+        try:
+            elems = json.loads(t.get("elementos_json") or "[]")
+        except Exception:
+            elems = []
+        t["elementos_json"] = elems if isinstance(elems, list) else []
+        plantillas.append(t)
+    return plantillas
+
+
+def _plantilla_por_id(tpl_id: str) -> dict:
+    rows = _query(f"SELECT * FROM {_plantillas_table_ref()} WHERE id = {_esc(tpl_id)}")
+    if not rows:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    t = dict(rows[0])
+    try:
+        t["elementos_json"] = json.loads(t.get("elementos_json") or "[]")
+    except Exception:
+        t["elementos_json"] = []
+    return t
 
 
 @app.get("/api/etiquetas/plantillas")
@@ -7787,36 +8276,46 @@ async def save_etiquetas_plantilla(request: Request, k: Optional[str] = Query(de
     _verify_manager_key(k, x_api_key)
     body = await request.json()
     tpl_id = body.get("id") or ("tpl-" + str(int(time.time())))
-    plantillas = _load_plantillas()
-    
+
+    # D-273: las plantillas del sistema no se pueden sobrescribir en BD.
+    if _es_plantilla_sistema(tpl_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Las plantillas predeterminadas del sistema no se pueden sobrescribir; utiliza 'Guardar como nueva' para crear una versión personalizable",
+        )
+
     nuevo_tpl = {
         "id": tpl_id,
         "nombre": body.get("nombre", "Plantilla sin nombre"),
-        "ancho_mm": float(body.get("ancho_mm", 100.0)),
-        "alto_mm": float(body.get("alto_mm", 50.0)),
-        "margen_mm": float(body.get("margen_mm", 4.0)),
+        "ancho_mm": _f(body.get("ancho_mm"), 100.0),
+        "alto_mm": _f(body.get("alto_mm"), 50.0),
+        "margen_mm": _f(body.get("margen_mm")),
+        "margen_sup_mm": _f(body.get("margen_sup_mm"), 1.3),
+        "margen_izq_mm": _f(body.get("margen_izq_mm"), 1.0),
+        "cols": _i(body.get("cols"), 2),
+        "rows": _i(body.get("rows"), 1),
+        "gap_h_mm": _f(body.get("gap_h_mm"), 3.0),
+        "gap_v_mm": _f(body.get("gap_v_mm"), 3.0),
         "tipo_origen": body.get("tipo_origen", "GENERAL"),
-        "elementos_json": body.get("elementos_json", [])
+        "es_sistema": False,
+        "elementos_json": body.get("elementos_json", []) or [],
     }
-    
-    idx = next((i for i, t in enumerate(plantillas) if t["id"] == tpl_id), -1)
-    if idx >= 0:
-        plantillas[idx] = nuevo_tpl
-    else:
-        plantillas.append(nuevo_tpl)
-        
-    _save_plantillas(plantillas)
-    return {"ok": True, "plantilla": nuevo_tpl}
+    _upsert_plantilla(nuevo_tpl)
+    return {"ok": True, "plantilla": _plantilla_por_id(tpl_id)}
 
 
 @app.delete("/api/etiquetas/plantillas/{tpl_id}")
 def delete_etiquetas_plantilla(tpl_id: str, k: Optional[str] = Query(default=None), x_api_key: Optional[str] = Header(default=None)):
     _verify_manager_key(k, x_api_key)
-    plantillas = _load_plantillas()
-    nuevas = [t for t in plantillas if t["id"] != tpl_id]
-    if len(nuevas) == len(plantillas):
+    if _es_plantilla_sistema(tpl_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Las plantillas predeterminadas del sistema no se pueden eliminar; utiliza 'Guardar como nueva' para crear una versión personalizable",
+        )
+    rows = _query(f"SELECT id FROM {_plantillas_table_ref()} WHERE id = {_esc(tpl_id)}")
+    if not rows:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
-    _save_plantillas(nuevas)
+    client.query(f"DELETE FROM {_plantillas_table_ref()} WHERE id = {_esc(tpl_id)}").result()
     return {"ok": True, "eliminado": tpl_id}
 
 
@@ -7824,23 +8323,42 @@ def resolver_variables_articulo(articulo: dict, contexto_extra: dict = None) -> 
     """Resuelve dinámicamente las variables utilizando estrictamente las columnas reales de GestionComercialVE.ARTICULOS, CODIGOS_EAN y LITRAJES."""
     contexto_extra = contexto_extra or {}
     
-    ref = str(articulo.get("ID_ARTICULO") or articulo.get("REFERENCIA_ARTICULO") or articulo.get("ref_factusol") or "")
+    ref = str(articulo.get("ID_ARTICULO") or articulo.get("REFERENCIA_ARTICULO") or articulo.get("REFERENCIA") or articulo.get("ref_factusol") or articulo.get("referencia") or articulo.get("ref") or "")
     nombre_cientifico = str(articulo.get("NOMBRE_CIENTIFICO") or "")
     ean = str(articulo.get("CODIGO_EAN") or articulo.get("ean13") or "")
     litraje = str(articulo.get("DESCRIPCION_LITRAJE") or articulo.get("contenedor") or "")
     ubicaciones = str(articulo.get("UBICACIONES_FINCAS") or articulo.get("sector") or "")
     ggn = str(articulo.get("GLOBALGAP") or "8438002215009")
     descripcion_articulo = str(articulo.get("DESCRIPCION_ARTICULO") or "")
-    
+    # Código de trazabilidad / lote del pasaporte fitosanitario (Campo C).
+    # La referencia de Factusol (ref_factusol, formato "NNNNN-XX-NN") ES el código
+    # de trazabilidad de la planta; se respeta un valor propio si llegase (codigo_lote/lote).
+    codigo_lote = str(
+        articulo.get("CODIGO_LOTE") or articulo.get("codigo_lote") or articulo.get("LOTE")
+        or articulo.get("lote") or ref
+    )
+
     variables = {
         "PASOPARTE_A": nombre_cientifico,  # Columna real ARTICULOS.NOMBRE_CIENTIFICO
         "NOMBRE_CIENTIFICO": nombre_cientifico,
         "ID_ARTICULO": ref,
+        "REFERENCIA_ARTICULO": ref,
+        "ref": ref,
+        "ref_factusol": ref,
+        "referencia": ref,
+        "CODIGO_LOTE": codigo_lote,
         "VARIEDAD_FORMACION": descripcion_articulo,  # Columna real ARTICULOS.DESCRIPCION_ARTICULO
         "CONTENEDOR": litraje,  # Columna real LITRAJES.DESCRIPCION_LITRAJE
         "GGN": ggn,  # Columna real ARTICULOS.GLOBALGAP
         "UBICACION_SECTOR": ubicaciones,  # Columna real ARTICULOS.UBICACIONES_FINCAS
         "CODIGO_EAN13_BARRAS": ean,  # Columna real CODIGOS_EAN.CODIGO_EAN
+        # Aliases del formato antiguo de plantillas (mismos valores reales de la fila).
+        # OJO: sin claves duplicadas por case (p.ej. REFERENCIA+referencia rompe
+        # consumidores JSON case-insensitive); el renderer ya resuelve case-insensitive.
+        "ean13": ean,
+        "nombre_comercial": descripcion_articulo,
+        "variedad": descripcion_articulo,
+        "sector": ubicaciones,
         "ID_PEDIDO": str(contexto_extra.get("NUMERO_PEDIDO") or contexto_extra.get("ID_PEDIDO") or ""),
         "CLIENTE": str(contexto_extra.get("N_COMERCIAL") or contexto_extra.get("CLIENTE") or ""),
         "FINCA_CARGA": str(contexto_extra.get("FINCA_CARGA") or ""),
@@ -7904,15 +8422,23 @@ async def generar_lote_etiquetas(request: Request, k: Optional[str] = Query(defa
                 lineas = []
         elif origen == "PICKING":
             try:
+                # D-270: un solo EAN por referencia (un artículo puede tener varios
+                # códigos en CODIGOS_EAN y antes duplicaba etiquetas por fila) y sin
+                # LIMIT para no truncar el lote del informe.
                 rows = _query(
                     f"""
+                    WITH ean_primario AS (
+                        SELECT REFERENCIA_ARTICULO, CODIGO_EAN,
+                               ROW_NUMBER() OVER (PARTITION BY REFERENCIA_ARTICULO ORDER BY CODIGO_LITRAJE DESC) AS rn
+                        FROM `{PROJECT}.{DATASET}.CODIGOS_EAN`
+                        WHERE CODIGO_EAN IS NOT NULL
+                    )
                     SELECT lp.REFERENCIA_ARTICULO, COALESCE(lp.UNIDADES_PENDIENTES, lp.UNIDADES, 0) AS CANTIDAD_PEDIDA,
                            a.NOMBRE_CIENTIFICO, a.DESCRIPCION_ARTICULO, ce.CODIGO_EAN
                     FROM `{PROJECT}.{DATASET}.LINEA_PEDIDO` lp
                     LEFT JOIN `{PROJECT}.{DATASET}.ARTICULOS` a ON lp.REFERENCIA_ARTICULO = a.ID_ARTICULO
-                    LEFT JOIN `{PROJECT}.{DATASET}.CODIGOS_EAN` ce ON lp.REFERENCIA_ARTICULO = ce.REFERENCIA_ARTICULO
+                    LEFT JOIN ean_primario ce ON ce.REFERENCIA_ARTICULO = lp.REFERENCIA_ARTICULO AND ce.rn = 1
                     WHERE lp.NUMERO_PEDIDO = {_esc(informe_id)}
-                    LIMIT 50
                     """
                 )
                 for r in rows:
@@ -7955,19 +8481,11 @@ async def generar_lote_etiquetas(request: Request, k: Optional[str] = Query(defa
 
 @app.get("/api/etiquetas/render-ejemplo")
 def render_ejemplo(plantilla_id: Optional[str] = Query("tpl-grande-default"), pedido: Optional[str] = Query("260833"), k: Optional[str] = Query(default=None)):
-    """Previsualización local con datos reales basados estrictamente en las tablas de GestionComercialVE y pickingve."""
+    """Previsualización con artículos REALES activos de Factusol (BigQuery EU)."""
+    _verify_manager_key(k, None)
     plantillas = _load_plantillas()
     plantilla = next((t for t in plantillas if t["id"] == plantilla_id), plantillas[0] if plantillas else {})
-    
-    articulo_ejemplo = {
-        "ID_ARTICULO": "TRACHY",
-        "NOMBRE_CIENTIFICO": "Trachycarpus fortunei",
-        "DESCRIPCION_ARTICULO": "Palmera Trachycarpus C30",
-        "CODIGO_EAN": "8438002215009",
-        "DESCRIPCION_LITRAJE": "Maceta C30",
-        "UBICACIONES_FINCAS": "Finca Elche - Sector Norte",
-        "GLOBALGAP": "8438002215009"
-    }
+
     contexto_pedido = {
         "NUMERO_PEDIDO": pedido,
         "N_COMERCIAL": "Viveros y Jardines S.L.",
@@ -7975,18 +8493,66 @@ def render_ejemplo(plantilla_id: Optional[str] = Query("tpl-grande-default"), pe
         "SECTOR_CARGA": "Zona Norte",
         "MARCA_PEDIDO": "VE-PREMIUM"
     }
-    
-    variables_resueltas = resolver_variables_articulo(articulo_ejemplo, contexto_pedido)
+
+    # D-270: artículos REALES activos (DESCATALOGADO=0) con nombre científico,
+    # EAN primario (1 por referencia), litraje y sector resueltos.
+    articulos_reales = []
+    try:
+        rows = _query(
+            f"""
+            WITH ean_primario AS (
+                SELECT REFERENCIA_ARTICULO, CODIGO_EAN, CODIGO_LITRAJE, CODIGO_SECTOR,
+                       ROW_NUMBER() OVER (PARTITION BY REFERENCIA_ARTICULO ORDER BY CODIGO_LITRAJE DESC) AS rn
+                FROM `{PROJECT}.{DATASET}.CODIGOS_EAN`
+                WHERE CODIGO_EAN IS NOT NULL
+            )
+            SELECT a.ID_ARTICULO, a.DESCRIPCION_ARTICULO, a.NOMBRE_CIENTIFICO, a.GLOBALGAP,
+                   a.UBICACIONES_FINCAS, a.CODIGO_EAN,
+                   e.CODIGO_EAN AS EAN_PRIMARIO, e.CODIGO_LITRAJE, e.CODIGO_SECTOR,
+                   lit.DESCRIPCION_LITRAJE, sec.DESCRIPCION_SECTOR
+            FROM `{PROJECT}.{DATASET}.ARTICULOS` a
+            LEFT JOIN ean_primario e ON e.REFERENCIA_ARTICULO = a.ID_ARTICULO AND e.rn = 1
+            LEFT JOIN `{PROJECT}.{DATASET}.LITRAJES` lit ON lit.ID_LITRAJE = e.CODIGO_LITRAJE
+            LEFT JOIN `{PROJECT}.{DATASET}.SECTORES` sec ON sec.ID_SECTOR = e.CODIGO_SECTOR
+            WHERE SAFE_CAST(a.DESCATALOGADO AS INT64) = 0
+              AND TRIM(COALESCE(a.NOMBRE_CIENTIFICO, '')) != ''
+            ORDER BY CASE WHEN a.ID_ARTICULO LIKE '%-%' THEN 0 ELSE 1 END, a.ID_ARTICULO
+            LIMIT 6
+            """
+        )
+        for r in rows:
+            raw = {
+                "ID_ARTICULO": r.get("ID_ARTICULO"),
+                "DESCRIPCION_ARTICULO": r.get("DESCRIPCION_ARTICULO"),
+                "NOMBRE_CIENTIFICO": r.get("NOMBRE_CIENTIFICO"),
+                "CODIGO_EAN": r.get("EAN_PRIMARIO") or r.get("CODIGO_EAN"),
+                "GLOBALGAP": r.get("GLOBALGAP"),
+                "UBICACIONES_FINCAS": r.get("UBICACIONES_FINCAS"),
+                "DESCRIPCION_LITRAJE": r.get("DESCRIPCION_LITRAJE"),
+                "DESCRIPCION_SECTOR": r.get("DESCRIPCION_SECTOR"),
+            }
+            vars_resueltas = resolver_variables_articulo(raw, contexto_pedido)
+            articulos_reales.append({
+                **raw,
+                **vars_resueltas,
+                "nombre": vars_resueltas.get("VARIEDAD_FORMACION")
+                          or raw.get("DESCRIPCION_ARTICULO") or (raw.get("ID_ARTICULO") or ""),
+            })
+    except Exception:
+        articulos_reales = []
+
+    primera = resolver_variables_articulo(articulos_reales[0], contexto_pedido) if articulos_reales else {}
     cabecera_picking = generar_etiqueta_cabecera("PICKING", contexto_pedido)
     cabecera_inventario = generar_etiqueta_cabecera("INVENTARIO", {"record_id": "INV-998877", "finca": "La Fábrica", "sector": "A", "operario": "Operario Pruebas", "fecha_hora": str(date.today())})
-    
+
     return {
         "ok": True,
         "esquema_verificado": "GestionComercialVE y pickingve",
         "plantilla": plantilla,
         "cabecera_picking_real": cabecera_picking,
         "cabecera_inventario_real": cabecera_inventario,
-        "variables_articulo_reales": variables_resueltas
+        "variables_articulo_reales": primera,
+        "articulos_reales": articulos_reales
     }
 
 
