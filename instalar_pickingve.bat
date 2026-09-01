@@ -1,28 +1,13 @@
 <# :
 @echo off
-chcp 65001 >nul
 title PickingVE - Instalador Servidor v3
-
-REM 1. Comprobar permisos de Administrador usando net session y auto-elevar con PowerShell
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [AVISO] Se requieren privilegios de Administrador para la instalacion.
-    echo Solicitando elevacion de privilegios (mantenimiento de unidad de red con cd /d)...
-    PowerShell -Command "Start-Process cmd -ArgumentList '/k cd /d ""%~dp0"" && ""%~f0""' -Verb RunAs"
-    exit /b
-)
-
 echo.
 echo  INSTALADOR PICKINGVE v3 - esta ventana NO se cierra sola hasta el final.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$raw=[IO.File]::ReadAllText('%~f0'); $parts=$raw -split '(?m)^#>[ \t]*\r?\n',2; if($parts.Count -lt 2){ Write-Host 'Cabecera corrupta'; pause; exit 1 }; & { Invoke-Expression $parts[1] }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$raw=[IO.File]::ReadAllText('%~f0'); $parts=$raw -split '(?m)^#>[ \t]*\r?\n',2; if($parts.Count -lt 2){ Write-Host 'Cabecera corrupta'; exit 1 }; & { Invoke-Expression $parts[1] }"
 set "EC=%errorlevel%"
 echo.
 echo ============================================================
-if "%EC%"=="0" (
-    echo   INSTALACION FINALIZADA CORRECTAMENTE
-) else (
-    echo   INSTALACION CON ERRORES - codigo %EC%
-)
+if "%EC%"=="0" (echo   INSTALACION FINALIZADA CORRECTAMENTE) else (echo   INSTALACION CON ERRORES - codigo %EC%)
 echo   Log guardado en el ESCRITORIO: pickingve_instalador.log
 echo ============================================================
 echo.
@@ -239,66 +224,43 @@ bigquery:
     Ok "settings.local.yaml escrito"
 
     # ---------- 7. Tareas programadas ----------
-    Step "7/9 Programando sincronizacion automatica"
+    Step "7/9 Programando sincronizacion automatica y auto-actualizacion"
     $runSync = Join-Path $connectorDir "scripts\run_sync.ps1"
     $action  = "-NoProfile -ExecutionPolicy Bypass -File `"$runSync`""
-    $user    = "$env:USERDOMAIN\$env:USERNAME"
-    $hoy     = Get-Date -Format "yyyy-MM-dd"
-
-    function New-SyncTaskXml($name, $startHour, $intervalMin, $durHours, $dataset){
-        $rep = ""
-        if ($intervalMin -gt 0) {
-            $rep = "<Repetition><Interval>PT$($intervalMin)M</Interval><Duration>PT$($durHours)H</Duration><StopAtDurationEnd>true</StopAtDurationEnd></Repetition>"
-        }
-        $xml = @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <Triggers>
-    <CalendarTrigger>
-      <StartBoundary>$($hoy)T$($startHour):00:00</StartBoundary>
-      $rep
-      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
-    </CalendarTrigger>
-  </Triggers>
-  <Principals>
-    <Principal id="Author"><UserId>$user</UserId><LogonType>InteractiveToken</LogonType></Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
-  </Settings>
-  <Actions Context="Author">
-    <Exec><Command>powershell.exe</Command><Arguments>$action -Dataset $dataset</Arguments><WorkingDirectory>$Root</WorkingDirectory></Exec>
-  </Actions>
-</Task>
-"@
-        $xmlFile = Join-Path $env:TEMP "$name.xml"
-        [IO.File]::WriteAllText($xmlFile, $xml, (New-Object Text.UnicodeEncoding))
-        schtasks /Create /F /TN $name /XML $xmlFile | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "schtasks devolvio $LASTEXITCODE para $name" }
+    function New-SyncTask($name, $startHour, $intervalMin, $durHours, $dataset){
+        $trg = New-ScheduledTaskTrigger -Daily -At ("{0:00}:00" -f $startHour)
+        $trg.RepetitionInterval = [TimeSpan]::FromMinutes($intervalMin)
+        $trg.RepetitionDuration = [TimeSpan]::FromHours($durHours)
+        $act = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($action + " -Dataset $dataset") -WorkingDirectory $Root
+        $set = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
+        Register-ScheduledTask -TaskName $name -Trigger $trg -Action $act -Settings $set -Force -ErrorAction Stop | Out-Null
+        Ok "$name -> $dataset cada $intervalMin min desde las $($startHour):00"
     }
-
     try {
-        New-SyncTaskXml "PickingVE-Sync-Produccion" 8 30 13 "GestionComercialVE"
-        Ok "Produccion -> GestionComercialVE cada 30 min (08:00-21:00)"
-        New-SyncTaskXml "PickingVE-Sync-Analytics" 5 0 0 "Analytics"
-        Ok "Analytics -> diario a las 05:00"
+        New-SyncTask "PickingVE-Sync-Produccion" 8 30 13 "GestionComercialVE"
+        New-SyncTask "PickingVE-Sync-Analytics"  5 1440 1  "Analytics"
     } catch {
-        Fail ("No se pudieron crear las tareas automaticas: " + $_.Exception.Message)
-        Warn " Podras crearlas a mano; no bloquea la instalacion ni el menu manual."
+        Warn " Register-ScheduledTask fallo ($($_.Exception.Message)); probando schtasks..."
+        schtasks /Create /F /TN "PickingVE-Sync-Produccion" /SC MINUTE /MO 30 /TR "powershell.exe $action -Dataset GestionComercialVE" | Out-Null
+        schtasks /Create /F /TN "PickingVE-Sync-Analytics"  /SC DAILY /ST 05:00 /TR "powershell.exe $action -Dataset Analytics"       | Out-Null
+        if ($LASTEXITCODE -eq 0) { Ok "Tareas creadas con schtasks" }
+        else { Warn " No se pudieron crear tareas automaticas (podras hacerlas a mano; no bloquea)." }
     }
 
-    # ---------- 7b. Tarea programada de Auto-Update diario ----------
-    Step "7b/9 Programando auto-actualizacion diaria desde GitHub"
-    $autoUpdateBat = Join-Path $Root "auto_update.bat"
-    schtasks /create /tn "PickingVE_AutoUpdate" /tr "cmd.exe /c `"$autoUpdateBat`"" /sc DAILY /st 02:00 /ru "SYSTEM" /f | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        Ok "Tarea programada 'PickingVE_AutoUpdate' registrada con exito (diaria a las 02:00 AM como SYSTEM)."
-    } else {
-        Warn "No se pudo registrar la tarea programada PickingVE_AutoUpdate (codigo $LASTEXITCODE)."
+    # Tarea programada de Auto-Actualizacion del repositorio (cada 4 horas)
+    try {
+        $autoUpdateBat = Join-Path $Root "auto_update.bat"
+        $trgUpdate = New-ScheduledTaskTrigger -Once -At (Get-Date)
+        $trgUpdate.RepetitionInterval = [TimeSpan]::FromHours(4)
+        $actUpdate = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$autoUpdateBat`"" -WorkingDirectory $Root
+        $setUpdate = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
+        Register-ScheduledTask -TaskName "PickingVE_AutoUpdate" -Trigger $trgUpdate -Action $actUpdate -Settings $setUpdate -Force -ErrorAction Stop | Out-Null
+        Ok "PickingVE_AutoUpdate -> actualiza el repositorio desde GitHub cada 4 horas"
+    } catch {
+        $autoUpdateBat = Join-Path $Root "auto_update.bat"
+        schtasks /Create /F /TN "PickingVE_AutoUpdate" /SC HOURLY /MO 4 /TR "cmd.exe /c `"$autoUpdateBat`"" | Out-Null
+        if ($LASTEXITCODE -eq 0) { Ok "Tarea PickingVE_AutoUpdate creada con schtasks (cada 4 horas)" }
+        else { Warn " No se pudo crear la tarea de auto-actualizacion automaticamente." }
     }
 
     # ---------- 8. Acceso directo ----------
@@ -333,6 +295,7 @@ bigquery:
      RESUMEN - INSTALACION COMPLETADA
      Proyecto ............ $Root
      Sync automatica ..... Produccion cada 30 min / Analytics diaria
+     Auto-actualizacion .. Cada 4 horas desde GitHub
      Manual escritorio ... 'Sincronizar Factusol'
      Logs sync ........... backend\connector\logs\
   ============================================================
@@ -346,7 +309,6 @@ bigquery:
     Write-Host "   Detalle tecnico completo en el log:" -ForegroundColor Red
     Write-Host "   $LogPath" -ForegroundColor Red
     Write-Host "  ==========================================`n" -ForegroundColor Red
-    Read-Host "Presiona Enter para cerrar la ventana..."
 }
 
 Stop-Transcript | Out-Null
