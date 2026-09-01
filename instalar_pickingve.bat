@@ -26,6 +26,15 @@ $ErrorActionPreference = 'Continue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
+# 1. Comprobar privilegios de Administrador y elevar si es necesario
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "`n[AVISO] Se requieren privilegios de Administrador para configurar tareas del sistema (SYSTEM)." -ForegroundColor Yellow
+    Write-Host "Elevando privilegios..." -ForegroundColor Cyan
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
 $RepoUrl      = "https://github.com/ManuViverosElche/PickingVE.git"
 $DefaultDb    = "X:\Datos\FS\0142026.accdb"
 $DefaultCreds = "V:\DashBoard\clave_json.json"
@@ -276,6 +285,16 @@ bigquery:
     } catch {
         Fail ("No se pudieron crear las tareas automaticas: " + $_.Exception.Message)
         Warn " Podras crearlas a mano; no bloquea la instalacion ni el menu manual."
+    }
+
+    # ---------- 7b. Tarea programada de Auto-Update diario ----------
+    Step "7b/9 Programando auto-actualizacion diaria desde GitHub"
+    $autoUpdateBat = Join-Path $Root "auto_update.bat"
+    schtasks /create /tn "PickingVE_AutoUpdate" /tr "cmd.exe /c `"$autoUpdateBat`"" /sc DAILY /st 02:00 /ru "SYSTEM" /f | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Ok "Tarea programada 'PickingVE_AutoUpdate' registrada con exito (diaria a las 02:00 AM como SYSTEM)."
+    } else {
+        Warn "No se pudo registrar la tarea programada PickingVE_AutoUpdate (codigo $LASTEXITCODE)."
     }
 
     # ---------- 8. Acceso directo ----------
