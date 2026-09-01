@@ -1,0 +1,87 @@
+/* ==========================================================================
+   layout.css — Layout del portal unificado /logistica (sidebar + topbar + main)
+   ========================================================================== */
+:root {
+    --bg: #f4f9f8; --card: #ffffff; --card2: #eef7f5; --line: #b8d8d3;
+    --txt: #17282a; --mut: #3d565a;
+    --primary: #0c3a3f; --on-primary: #ffffff; --primary-soft: #025C65;
+    --accent: #35b8ac; --accent-soft: #a7ece2;
+    --ok: #2e7d32; --ok-bg: #e3f2e6; --ok-bd: rgba(46,125,50,0.4);
+    --warn: #a06a10; --warn-bg: #fdf3e0; --warn-bd: rgba(160,106,16,0.4);
+    --bad: #962622; --bad-soft: #962622; --bad-bg: #f7e3e2; --bad-bd: rgba(150,38,34,0.4);
+    --info: #1565c0; --info-bg: #e3edfb; --info-bd: rgba(21,101,192,0.35);
+    --amarillo: #d97706;
+    --ring: rgba(53,184,172,0.25);
+    --shadow-sm: 0 2px 6px rgba(12,58,63,0.10);
+    --shadow-lg: 0 6px 18px rgba(12,58,63,0.16);
+    --r: 12px;
+    --lime: var(--primary); --lime2: var(--primary-soft); --blue: var(--info);
+}
+[data-theme="dark"] {
+    --bg: #071a1e; --card: #0c262b; --card2: #103238; --line: #1c4a51;
+    --txt: #e8f4f2; --mut: #8fb0ac;
+    --primary: #42c9bd; --on-primary: #062325; --primary-soft: #a7ece2;
+    --accent: #35b8ac; --accent-soft: #a7ece2;
+    --ok: #7ecf8a; --ok-bg: rgba(66,201,189,0.12); --ok-bd: rgba(66,201,189,0.5);
+    --warn: #e0a13c; --warn-bg: rgba(224,161,60,0.15); --warn-bd: rgba(224,161,60,0.5);
+    --bad: #e05a4e; --bad-soft: #ff9e95; --bad-bg: rgba(224,90,78,0.12); --bad-bd: rgba(224,90,78,0.5);
+    --info: #7fd0e0; --info-bg: rgba(127,208,224,0.15); --info-bd: rgba(127,208,224,0.4);
+    --amarillo: #e6b45c;
+    --ring: rgba(66,201,189,0.25);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { margin: 0; background: var(--bg); color: var(--txt); font: 14px system-ui, -apple-system, sans-serif; display: flex; min-height: 100vh; }
+button, .btn, select, input { font: inherit; }
+button, .btn { border: 0; border-radius: 8px; padding: 9px 13px; background: var(--primary); color: var(--on-primary); font-weight: 700; cursor: pointer; text-decoration: none; }
+button:hover, .btn:hover { filter: brightness(1.1); }
+button.btn-sec, .btn-sec { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
+input, select { border: 1px solid var(--line); border-radius: 8px; padding: 9px; background: var(--card); color: var(--txt); }
+
+/* ---- Sidebar ---- */
+#portal-sidebar { width: 280px; flex: none; background: var(--card); border-right: 1px solid var(--line); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+.brand-box { display: flex; flex-direction: column; gap: 8px; }
+.brand-box img { width: 170px; height: auto; object-fit: contain; }
+.brand-title h1 { font-size: 1.3rem; margin: 0; color: var(--primary); }
+.brand-title span { color: var(--mut); font-size: 0.8rem; }
+.user-info-box { display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--bg); border-radius: var(--r); }
+.user-info-box .user-role-badge { font-size: 11px; font-weight: 700; color: var(--primary); }
+.nav-section { margin-bottom: 4px; }
+.nav-section-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 9px; color: var(--mut); font-weight: 700; cursor: pointer; user-select: none; transition: all 0.15s; }
+.nav-section-head:hover { background: var(--card2); color: var(--primary); }
+.nav-section-head.open { background: #e2f2f0; color: var(--primary); }
+.nav-section-head .nav-chevron { transition: transform 0.2s; font-size: 0.8rem; }
+.nav-section-head.open .nav-chevron { transform: rotate(90deg); }
+.nav-section-body { padding: 4px 0 4px 8px; }
+.nav-item { display: block; padding: 8px 12px; border-radius: 8px; color: var(--mut); font-weight: 600; cursor: pointer; font-size: 0.88rem; margin-bottom: 2px; transition: all 0.12s; }
+.nav-item:hover { background: var(--card2); color: var(--primary); }
+.nav-item.active { background: var(--primary); color: var(--on-primary); }
+
+/* ---- Main / topbar ---- */
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { padding: 20px 28px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+.topbar h2 { margin: 0; font-size: 1.35rem; color: var(--primary); }
+.content-body { width: 100%; padding: 24px 28px; flex: 1; }
+
+/* ---- Elementos globales ---- */
+.filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; background: var(--card); padding: 12px; border-radius: var(--r); border: 1px solid var(--line); align-items: center; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.chip { border-radius: 20px; padding: 6px 13px; font-size: 0.8rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--txt); cursor: pointer; }
+.chip:hover { border-color: var(--primary); }
+.chip-activo { outline: 2px solid var(--accent-soft); outline-offset: 1px; border-color: var(--accent-soft) !important; }
+.text-muted { color: var(--mut); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.vacio { padding: 18px; color: var(--mut); font-size: 0.85rem; text-align: center; }
+.error { margin: 14px 0; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-bd); border-radius: 8px; padding: 12px 16px; font-size: 0.85rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-sm); padding: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+thead th { background: var(--card); color: var(--mut); text-align: left; padding: 7px 9px; font-weight: 700; position: sticky; top: 0; z-index: 10; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; border-bottom: 1px solid var(--line); }
+tbody td { padding: 7px 9px; border-bottom: 1px solid var(--line); }
+tbody tr:nth-child(even) { background: var(--card2); }
+.table-scroll { max-height: 480px; overflow-y: auto; }
+
+@media (max-width: 760px) {
+    body { display: block; }
+    #portal-sidebar { width: 100%; padding: 14px; position: static; }
+    .topbar { padding: 16px; }
+    .content-body { padding: 12px; }
+}

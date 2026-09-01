@@ -1,0 +1,254 @@
+/* ==========================================================================
+   faena.css — Hoja compartida del Dashboard & Faena (PickingVE /logistica)
+   ==========================================================================
+   Replica el token set y las clases de la vista /manager (D-237 paleta
+   unificada) para que las tarjetas de pedido, filtros, badges, pills,
+   progreso, botones y modales tengan EXACTAMENTE el mismo lenguaje visual.
+   No es una copia divergente: es la misma hoja que consume el componente
+   dashboardFaena.js y está lista para compartirse con /manager si algún día
+   se refactoriza (AGENTS.md lo marca como WIP ajeno, no se toca).
+   ========================================================================== */
+
+:root {
+    --bg: #f4f9f8; --card: #ffffff; --card2: #eef7f5; --line: #b8d8d3;
+    --txt: #17282a; --mut: #3d565a;
+    --primary: #0c3a3f; --on-primary: #ffffff; --primary-soft: #025C65;
+    --accent: #35b8ac; --accent-soft: #a7ece2;
+    --ok: #2e7d32; --ok-bg: #e3f2e6; --ok-bd: rgba(46,125,50,0.4);
+    --warn: #a06a10; --warn-bg: #fdf3e0; --warn-bd: rgba(160,106,16,0.4);
+    --bad: #962622; --bad-soft: #962622; --bad-bg: #f7e3e2; --bad-bd: rgba(150,38,34,0.4);
+    --info: #1565c0; --info-bg: #e3edfb; --info-bd: rgba(21,101,192,0.35);
+    --ring: rgba(53,184,172,0.25);
+    --shadow-sm: 0 2px 6px rgba(12,58,63,0.10);
+    --shadow-lg: 0 6px 18px rgba(12,58,63,0.16);
+    --r: 12px;
+    --lime: var(--primary); --lime2: var(--primary-soft); --blue: var(--info);
+}
+
+/* ---- Filtros ---- */
+.filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; background: var(--card); padding: 12px; border-radius: var(--r); border: 1px solid var(--line); align-items: center; }
+.filters input, .filters select { background: var(--card); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; }
+
+/* ---- Chips (fechas y estados) ---- */
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.chip { border-radius: 20px; padding: 6px 13px; font-size: 0.8rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--txt); cursor: pointer; transition: transform 0.1s; }
+.chip:hover { border-color: var(--primary); transform: translateY(-1px); }
+.chip-activo { outline: 2px solid var(--accent-soft); outline-offset: 1px; border-color: var(--accent-soft) !important; }
+.chip-pendiente { background: var(--info-bg); color: var(--info); border-color: var(--info-bd); }
+.chip-cargado { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-bd); }
+.chip-enviado { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-bd); }
+
+/* ---- Botones de finca (reemplazan el select) ---- */
+.finca-btn { border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 700; border: 1px solid var(--line); background: var(--card); color: var(--txt); cursor: pointer; transition: all 0.15s; }
+.finca-btn:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--on-primary); }
+.finca-btn.active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+
+/* ---- Agrupación por finca ---- */
+.finca-group { margin-bottom: 22px; }
+.finca-title { font-size: 1.15rem; font-weight: 700; color: var(--info); margin-bottom: 10px; border-left: 4px solid var(--info); padding-left: 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 14px; }
+
+/* ---- Tarjetas de pedido ---- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; position: relative; transition: border-color 0.2s; }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 10px; }
+.card-header > div:first-child { min-width: 0; }
+.card-header > div:last-child { flex-shrink: 0; }
+.order-id { font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.client-name { color: var(--mut); font-size: 0.85rem; }
+
+.badge { font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; white-space: nowrap; }
+.b-blue { background: var(--info-bg); color: var(--info); border: 1px solid var(--info-bd); }
+.b-yellow { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-bd); }
+.b-green { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-bd); }
+
+.card-sin_acopiar { border-color: var(--info-bd); background: var(--card); }
+.card-en_proceso { border-color: var(--warn-bd); background: var(--warn-bg); }
+.card-camion_asignado { border-color: var(--info); background: var(--info-bg); }
+.card-enviado { border-color: var(--ok-bd); background: var(--ok-bg); }
+
+.pill { display: inline-block; font-size: 0.68rem; font-weight: 700; border-radius: 20px; padding: 2px 9px; border: 1px solid var(--line); color: var(--mut); white-space: nowrap; }
+.pill-ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-bd); }
+
+.progress-box { margin: 8px 0; background: var(--card2); border-radius: 8px; padding: 7px 10px; }
+.progress-bar-bg { background: var(--line); height: 7px; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.progress-bar-fill { background: var(--accent); height: 100%; transition: width 0.3s; }
+.progress-text { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--mut); }
+
+/* ---- Acciones de tarjeta ---- */
+.card-actions { display: flex; gap: 6px; margin-top: 10px; }
+.card-actions button { flex: 1; padding: 6px 8px; font-size: 0.78rem; border-radius: 6px; }
+.card-actions button.btn-sec { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
+.card-actions button.btn-sec:hover { background: var(--line); }
+.icon-btn { background: var(--card2); border: 1px solid var(--line); color: var(--txt); cursor: pointer; border-radius: 8px; padding: 5px 9px; font-size: 0.82rem; transition: all 0.15s; }
+.icon-btn:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-1px); }
+
+/* ---- Mensajes sin leer ---- */
+.btn-msg-unread { animation: msgBlink 1s infinite; background: var(--bad-bg) !important; color: var(--bad) !important; border: 1px solid var(--bad-bd) !important; }
+@keyframes msgBlink { 0%,100% { background: var(--bad-bg); } 50% { background: var(--warn-bg); } }
+
+/* ---- Modales ---- */
+.modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000; justify-content: center; align-items: center; padding: 12px; }
+.modal.open { display: flex; }
+.modal-content { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); width: 100%; max-width: 820px; max-height: 92vh; overflow-y: auto; padding: 18px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.modal-header h2 { font-size: 1.15rem; color: var(--primary); }
+.close-btn { background: none; color: var(--bad); font-size: 1.3rem; cursor: pointer; padding: 0 6px; border: none; }
+.close-btn:hover { color: var(--bad-soft); }
+.alert-box { background: var(--bad-bg); border: 1px solid var(--bad); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.85rem; color: var(--bad-soft); }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+th { color: var(--mut); text-transform: uppercase; font-size: 0.7rem; }
+
+.preview-frame { width: 100%; flex: 1; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-height: 480px; }
+
+/* Fix: sticky header for reparto tables (D-270).
+   border-collapse:collapse breaks position:sticky on th (Chromium bug).
+   Using border-collapse:separate makes the existing layout.css rule
+   (thead th { position: sticky; top: 0 }) work correctly. */
+.reparto-bloque table { border-collapse: separate; border-spacing: 0; margin-top: 10px; }
+
+/* ---- Reparto: colores por estado de línea ---- */
+.reparto-bloque { transition: border-color 0.2s; }
+.reparto-bloque:hover { border-color: var(--primary-soft) !important; }
+.reparto-bloque.abierto { border-color: var(--primary) !important; box-shadow: var(--shadow-sm); }
+.reparto-bloque table tr[style*="info-bg"] { border-left: 3px solid var(--info) !important; }
+.reparto-bloque table tr[style*="warn-bg"] { border-left: 3px solid var(--warn) !important; }
+.reparto-bloque table tr[style*="ok-bg"] { border-left: 3px solid var(--ok) !important; }
+
+/* ---- Carga por Operario (réplica exacta de /manager) ---- */
+.carga-box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; }
+.carga-box h3 { color: var(--info); font-size: 1rem; margin-bottom: 10px; }
+.carga-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.84rem; }
+.carga-table th { text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.05em; color: var(--mut); padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
+.carga-table td { padding: 8px 8px; border-bottom: 1px solid var(--line); word-wrap: break-word; overflow-wrap: anywhere; }
+.carga-num { font-weight: 800; font-variant-numeric: tabular-nums; }
+.sobrecarga { color: var(--bad-soft) !important; }
+
+.btn-sec { background: var(--card2); color: var(--txt); border: 1px solid var(--line); }
+.btn-sec:hover { background: var(--line); }
+
+@media (max-width: 760px) {
+    .grid { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   Modal Faena por Operario (estilo "mi faena" de la app)
+   ========================================================================== */
+
+.faena-operario-modal { max-width: 780px; max-height: 90vh; }
+
+.faena-finca-group { margin-bottom: 18px; }
+.faena-finca-header {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--info-bg); border-left: 4px solid var(--info);
+    padding: 8px 14px; border-radius: 0 8px 8px 0; margin-bottom: 10px;
+}
+.faena-finca-name { font-size: 1.05rem; font-weight: 800; color: var(--info); }
+.faena-finca-count { font-size: 0.82rem; font-weight: 700; color: var(--info); background: var(--card); padding: 2px 10px; border-radius: 12px; border: 1px solid var(--info-bd); }
+
+.faena-pedido-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 10px;
+}
+.faena-pedido-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
+}
+.faena-pedido-id { font-size: 1rem; font-weight: 800; color: var(--primary); margin-right: 8px; }
+.faena-pedido-cliente { font-size: 0.82rem; color: var(--mut); }
+.faena-pedido-plantas { font-size: 0.82rem; font-weight: 700; color: var(--primary); }
+.faena-pedido-meta { display: flex; gap: 12px; font-size: 0.72rem; color: var(--mut); margin-bottom: 8px; flex-wrap: wrap; }
+
+.faena-linea-row {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+    margin-bottom: 6px; background: var(--card2); transition: border-color 0.2s;
+}
+.faena-linea-row.faena-linea-prioritaria { border-color: var(--bad-bd); background: var(--bad-bg); }
+.faena-linea-row.faena-linea-marcada { border-left: 3px solid var(--warn); }
+
+.faena-linea-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.faena-linea-nombre { font-size: 0.88rem; font-weight: 700; color: var(--txt); }
+.faena-linea-pend { font-size: 0.88rem; font-weight: 800; color: var(--primary); white-space: nowrap; }
+
+.faena-linea-meta { display: flex; gap: 10px; font-size: 0.72rem; color: var(--mut); flex-wrap: wrap; margin-bottom: 4px; }
+.faena-linea-badges { margin-top: 4px; }
+.faena-linea-obs { font-size: 0.74rem; color: var(--mut); margin-top: 4px; font-style: italic; }
+.faena-linea-progress { margin-top: 6px; }
+
+.faena-badge-prio { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-bd); animation: prioPulse 1.5s infinite; }
+@keyframes prioPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+/* ── Impresión ─────────────────────────────────────────────────────── */
+@media print {
+    /* OVERRIDE etiquetas.css que oculta body > * con display:none !important.
+       Necesitamos specificity >= (1,0,2) para ganarle. */
+    body > aside { display: none !important; }
+    body > main:not(#print-batch-container) { display: block !important; visibility: visible !important; }
+
+    /* Dentro de main: ocultar todo excepto el wrap del modal */
+    #portal-main > .carga-box,
+    #portal-main > #cargaContainer,
+    .topbar,
+    .close-btn, #printFaena, .btn-sec, .modal-header,
+    .btn-ver-faena { display: none !important; }
+
+    /* El wrap del modal: flujo normal, ancho completo, sin altura fija
+       (position:fixed + height:100% limita a 1 hoja en impresión) */
+    #faenaModalWrap {
+        position: static !important;
+        width: 100% !important;
+        background: #fff !important;
+        overflow: visible !important;
+    }
+
+    /* Quitar el backdrop oscuro del modal */
+    #faenaModalWrap .modal {
+        position: static !important;
+        width: 100% !important; height: auto !important;
+        background: none !important;
+        box-shadow: none !important;
+        padding: 0 !important; margin: 0 !important;
+        overflow: visible !important;
+    }
+
+    /* Contenido del modal: ancho completo, sin scroll */
+    #faenaModalWrap .modal-content {
+        position: static !important;
+        width: 100% !important; max-width: none !important;
+        max-height: none !important; overflow: visible !important;
+        border: none !important; box-shadow: none !important;
+        padding: 0 !important; margin: 0 !important;
+    }
+
+    /* Zona imprimible: sin límites de altura */
+    #faenaModalWrap .faena-print-area {
+        overflow: visible !important;
+        max-height: none !important;
+    }
+
+    /* ── Paginación: evitar cortar elementos a medio hacer ── */
+    .faena-linea-row {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+    }
+    .faena-pedido-card {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+    }
+    /* NOTA: .faena-finca-group NO lleva break-inside:avoid porque puede
+       ser mayor que 1 hoja; si lo forzamos, se desborda sin renderizar. */
+
+    /* Estilos monocromáticos para papel */
+    .faena-finca-header { background: #fff !important; border-left: 3px solid #000 !important; }
+    .faena-finca-name { color: #000 !important; }
+    .faena-pedido-id { color: #000 !important; }
+    .faena-linea-nombre { color: #000 !important; }
+    .faena-linea-pend { color: #000 !important; }
+    .faena-linea-row { background: #fff !important; border: 1px solid #ccc !important; }
+    .faena-pedido-card { border: 1px solid #999 !important; }
+    .badge { border: 1px solid #999 !important; background: #fff !important; color: #000 !important; }
+    .progress-bar-bg { border: 1px solid #ccc !important; background: #eee !important; }
+    .progress-bar-fill { background: #999 !important; }
+
+    @page { margin: 1.2cm; }
+}

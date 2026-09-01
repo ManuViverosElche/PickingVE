@@ -1,0 +1,20 @@
+/* ==========================================================================
+   etiquetas.css — Estilos de la sección Impresión de Etiquetas (impr. masiva)
+   ========================================================================== */
+.impresion-section .filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; background: var(--card); padding: 12px; border-radius: var(--r); border: 1px solid var(--line); align-items: center; }
+.impresion-section .filters input, .impresion-section .filters select { background: var(--card); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; }
+.impresion-section h4 { margin: 14px 0 8px; color: var(--primary); font-size: 0.95rem; }
+.impresion-section table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 8px; }
+.impresion-section th, .impresion-section td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.impresion-section th { color: var(--mut); text-transform: uppercase; font-size: 0.7rem; }
+
+/* Hoja de impresión de etiquetas */
+#print-batch-container { display: none; }
+@media print {
+    body > *:not(#print-batch-container) { display: none !important; }
+    #print-batch-container { display: block; }
+    /* Aislamiento de impresión (D-279): ocultar el chrome del portal. Estos
+       selectores no tocan main/.modal para no romper la impresión de faena. */
+    aside, nav, header, .sidebar, .topbar, #toast-container { display: none !important; }
+    .label-sheet-item { break-after: page; padding: 20mm; font-size: 12px; }
+}
