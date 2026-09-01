@@ -280,7 +280,7 @@ class FaenaDashboardViewModel(
 
     /**
      * D-233: acopio directo desde "Mi faena". El operario dice cuántas plantas
-     * ha cogido de la línea y se registra como acopio normal (offline-first).
+     * ha cogido de la línea en ESTE viaje y se SUMAN a lo ya acopiado.
      */
     fun acopiarCantidad(linea: FaenaLinea, cantidad: Int, onResultado: (Boolean, String) -> Unit) {
         if (cantidad <= 0) {
@@ -289,21 +289,7 @@ class FaenaDashboardViewModel(
         }
         viewModelScope.launch {
             try {
-                val numero = repository.nextPickingNumber(linea.orderId)
-                repository.createRecord(
-                    orderId = linea.orderId,
-                    pickingNumber = numero,
-                    pickingType = "I",
-                    orderLineId = linea.line.orderLineId,
-                    scannedEan = null,
-                    ocrRawText = null,
-                    originalProductId = linea.line.productId,
-                    actualProductId = linea.line.productId,
-                    liters = null,
-                    measure = null,
-                    caliber = null,
-                    batchQty = cantidad
-                )
+                repository.acopiarOperario(linea.line, cantidad)
                 subirPendientesBestEffort()
                 onResultado(true, "Acopiadas $cantidad · ${linea.line.productName}")
             } catch (e: Exception) {

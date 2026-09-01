@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -97,6 +98,7 @@ fun FaenaDashboardScreen(
     var cambioPassGuardando by remember { mutableStateOf(false) }
     var cambioPassError by remember { mutableStateOf<String?>(null) }
     var lineaAcopio by remember { mutableStateOf<FaenaLinea?>(null) }
+    var lineaModificar by remember { mutableStateOf<FaenaLinea?>(null) }
     var cerrandoLinea by remember { mutableStateOf<FaenaLinea?>(null) }
     var acopioGuardando by remember { mutableStateOf(false) }
     var acopioError by remember { mutableStateOf<String?>(null) }
@@ -294,13 +296,38 @@ fun FaenaDashboardScreen(
             guardando = acopioGuardando,
             error = acopioError,
             onRegistrar = { qty ->
-                cantidadAConfirmar = linea to qty
+                acopioGuardando = true
+                acopioError = null
+                viewModel.acopiarCantidad(linea, qty) { ok, msg ->
+                    acopioGuardando = false
+                    if (ok) {
+                        lineaAcopio = null
+                    } else {
+                        acopioError = msg
+                    }
+                }
+            },
+            onModificar = {
+                lineaModificar = linea
+                lineaAcopio = null
             },
             onCerrarLinea = {
                 cerrandoLinea = linea
                 lineaAcopio = null
             },
             onDismiss = { if (!acopioGuardando) lineaAcopio = null }
+        )
+    }
+
+    lineaModificar?.let { linea ->
+        ModificarAcopioDialog(
+            linea = linea,
+            guardando = acopioGuardando,
+            error = acopioError,
+            onGuardar = { cantidad ->
+                cantidadAConfirmar = linea to cantidad
+            },
+            onDismiss = { if (!acopioGuardando) lineaModificar = null }
         )
     }
 
@@ -319,7 +346,7 @@ fun FaenaDashboardScreen(
                             acopioGuardando = false
                             if (ok) {
                                 cantidadAConfirmar = null
-                                lineaAcopio = null
+                                lineaModificar = null
                             } else {
                                 cantidadAConfirmar = null
                                 acopioError = msg
@@ -795,6 +822,7 @@ private fun FaenaLineaRow(
     val fincaProc = linea.line.fincaAcopio.ifBlank { linea.line.fincaArticulo }
     val marcaDistinta = linea.line.marca.isNotBlank() && linea.line.marca != linea.marcaEfectiva
     val cogidas = linea.line.acopiadoOperario
+    val sobrecoge = cogidas > linea.line.requestedQty
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -947,6 +975,12 @@ private fun FaenaLineaRow(
                     }
                 }
             }
+            if (sobrecoge) {
+                SobrecogidaBadge(
+                    cogidas = cogidas,
+                    pedidas = linea.line.requestedQty
+                )
+            }
             LinearProgressIndicator(
                 progress = {
                     val total = linea.line.requestedQty.coerceAtLeast(1)
@@ -956,6 +990,44 @@ private fun FaenaLineaRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 6.dp)
+            )
+        }
+    }
+}
+
+/** D-246: el operario ha recogido más plantas de las pedidas; exclamación amarilla parpadeante. */
+@Composable
+private fun SobrecogidaBadge(cogidas: Int, pedidas: Int) {
+    val transition = rememberInfiniteTransition(label = "sobrecogida")
+    val alpha by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse),
+        label = "sobrecogidaAlpha"
+    )
+    Surface(
+        color = BrandAmber.copy(alpha = 0.25f),
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier
+            .alpha(alpha)
+            .padding(top = 6.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = "Sobrecogida",
+                modifier = Modifier.size(16.dp),
+                tint = BrandAmber
+            )
+            Text(
+                "¡OJO! Sobrecogida: $cogidas de $pedidas pedidas",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = BrandAmber,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
             )
         }
     }
@@ -1014,16 +1086,19 @@ private fun AcopioLineaDialog(
     guardando: Boolean,
     error: String?,
     onRegistrar: (Int) -> Unit,
+    onModificar: () -> Unit,
     onCerrarLinea: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var cantidad by remember(linea) { mutableStateOf(linea.line.acopiadoOperario.toString()) }
+    var cantidad by remember(linea) { mutableStateOf("") }
     val qty = cantidad.toIntOrNull()
     val sectorNombre = sectoresDesc[linea.line.sectorAcopio] ?: linea.line.sectorDesc
+    // En modo acopio se valida cantidad > 0 (suma en varios viajes).
+    val valida = qty != null && qty > 0
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Modificar cantidad acopiada") },
+        title = { Text("Acopiar") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -1057,11 +1132,11 @@ private fun AcopioLineaDialog(
                 OutlinedTextField(
                     value = cantidad,
                     onValueChange = { cantidad = it.filter(Char::isDigit).take(4) },
-                    label = { Text("Plantas recogidas en total") },
+                    label = { Text("Plantas cogidas en este viaje") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     enabled = !guardando,
-                    isError = cantidad.isNotBlank() && (qty == null || qty <= 0),
+                    isError = cantidad.isNotBlank() && qty == null,
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (qty != null && qty > linea.pendiente) {
@@ -1071,6 +1146,13 @@ private fun AcopioLineaDialog(
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
                     )
+                }
+                TextButton(
+                    onClick = onModificar,
+                    enabled = !guardando && linea.line.acopiadoOperario > 0,
+                    modifier = Modifier.align(Alignment.Start)
+                ) {
+                    Text("Modificar recogido", color = MaterialTheme.colorScheme.primary)
                 }
                 TextButton(
                     onClick = onCerrarLinea,
@@ -1084,7 +1166,7 @@ private fun AcopioLineaDialog(
         confirmButton = {
             Button(
                 onClick = { qty?.let(onRegistrar) },
-                enabled = qty != null && qty > 0 && !guardando
+                enabled = valida && !guardando
             ) {
                 if (guardando) {
                     CircularProgressIndicator(
@@ -1094,7 +1176,86 @@ private fun AcopioLineaDialog(
                     )
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(if (guardando) "Guardando…" else "Guardar cantidad")
+                Text(if (guardando) "Guardando…" else "Registrar acopio")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !guardando) { Text("Cancelar") }
+        }
+    )
+}
+
+/** D-244: modal para corregir (poner un valor fijo) el total recogido por el operario. */
+@Composable
+private fun ModificarAcopioDialog(
+    linea: FaenaLinea,
+    guardando: Boolean,
+    error: String?,
+    onGuardar: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var cantidad by remember(linea) { mutableStateOf(linea.line.acopiadoOperario.toString()) }
+    val qty = cantidad.toIntOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Modificar recogido") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = linea.line.productName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Recogido actual: ${linea.line.acopiadoOperario} de ${linea.line.requestedQty} plantas",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (error != null) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                OutlinedTextField(
+                    value = cantidad,
+                    onValueChange = { cantidad = it.filter(Char::isDigit).take(4) },
+                    label = { Text("Total plantas recogidas") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    enabled = !guardando,
+                    isError = cantidad.isNotBlank() &&
+                        (qty == null || qty > linea.line.requestedQty),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (qty != null && qty > linea.line.requestedQty) {
+                    Text(
+                        text = "⚠ No puede superar las ${linea.line.requestedQty} plantas",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { qty?.let(onGuardar) },
+                enabled = qty != null && qty >= 0 &&
+                    qty <= linea.line.requestedQty && !guardando
+            ) {
+                if (guardando) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (guardando) "Guardando…" else "Guardar")
             }
         },
         dismissButton = {

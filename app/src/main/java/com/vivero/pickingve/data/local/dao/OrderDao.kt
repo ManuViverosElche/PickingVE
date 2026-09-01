@@ -107,6 +107,9 @@ interface OrderDao {
     @Query("UPDATE order_lines SET pickedQty = pickedQty + :qty WHERE orderLineId = :lineId")
     suspend fun addLinePickedQty(lineId: String, qty: Int)
 
+    @Query("UPDATE order_lines SET acopiadoOperario = acopiadoOperario + :cantidad WHERE orderLineId = :lineId")
+    suspend fun addLineAcopiadoOperario(lineId: String, cantidad: Int)
+
     @Query("UPDATE order_lines SET acopiadoOperario = :cantidad WHERE orderLineId = :lineId")
     suspend fun updateLineAcopiadoOperario(lineId: String, cantidad: Int)
 

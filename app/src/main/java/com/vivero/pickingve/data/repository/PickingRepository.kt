@@ -1562,7 +1562,34 @@ class PickingRepository(
         }
     }
 
-    /** D-244: corrige offline la cantidad total acopiada por el operario. */
+    /**
+     * D-233: acopio (suma) en varios viajes. Registra [cantidad] plantas cogidas
+     * y las SUMA a lo ya acopiado por el operario, sin tocar lo de otros viajes.
+     */
+    suspend fun acopiarOperario(line: OrderLineEntity, cantidad: Int) {
+        createRecord(
+            orderId = line.orderId,
+            pickingNumber = nextPickingNumber(line.orderId),
+            pickingType = "I",
+            orderLineId = line.orderLineId,
+            scannedEan = null,
+            ocrRawText = null,
+            originalProductId = line.productId,
+            actualProductId = line.productId,
+            liters = null,
+            measure = null,
+            caliber = null,
+            batchQty = cantidad
+        )
+        orderDao.addLineAcopiadoOperario(line.orderLineId, cantidad)
+        orderDao.refreshOrderStatus(line.orderId)
+    }
+
+    /**
+     * D-244: corrige offline la cantidad total acopiada por el operario a un
+     * valor fijo [cantidad] (0..requestedQty). Crea un registro de ajuste que
+     * viaja a BigQuery como cantidad_partida positiva/negativa.
+     */
     suspend fun modificarCantidadAcopiada(line: OrderLineEntity, cantidad: Int) {
         val anterior = line.acopiadoOperario.coerceAtLeast(0)
         val nueva = cantidad.coerceIn(0, line.requestedQty)
