@@ -91,6 +91,7 @@ tables:
           FAMART AS CODIGO_FAMILIA,
           DESART AS DESCRIPCION_ARTICULO,
           DEEART AS NOMBRE_CIENTIFICO,
+          DEEART AS DESCRIPION_ETIQUETAS,
           PCOART AS PRECIO_COMPRA,
           UBIART AS UBICACIONES_FINCAS,
           DELART AS DESCRIPCION_LARGA,
@@ -109,6 +110,7 @@ tables:
       - {name: "CODIGO_FAMILIA",        type: "STRING", mode: "NULLABLE", description: "Código de la familia del artículo"}
       - {name: "DESCRIPCION_ARTICULO",  type: "STRING", mode: "NULLABLE", description: "Descripción del artículo"}
       - {name: "NOMBRE_CIENTIFICO",     type: "STRING", mode: "NULLABLE", description: "Nombre científico del artículo"}
+      - {name: "DESCRIPION_ETIQUETAS",  type: "STRING", mode: "NULLABLE", description: "Descripción de etiquetas del artículo (DEEART)"}
       - {name: "PRECIO_COMPRA",         type: "FLOAT",  mode: "NULLABLE", description: "Precio de compra del artículo"}
       - {name: "UBICACIONES_FINCAS",    type: "STRING", mode: "NULLABLE", description: "Ubicaciones en la finca"}
       - {name: "DESCRIPCION_LARGA",     type: "STRING", mode: "NULLABLE", description: "Descripción larga del artículo"}
