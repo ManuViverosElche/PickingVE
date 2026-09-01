@@ -86,25 +86,26 @@ tables:
     mode: "full"
     query: |
       SELECT
-          CODART AS ID_ARTICULO,
-          EQUART AS GLOBALGAP,
-          FAMART AS CODIGO_FAMILIA,
-          DESART AS DESCRIPCION_ARTICULO,
-          DEEART AS NOMBRE_CIENTIFICO,
-          DETART AS DESCRIPION_ETIQUETAS,
-          PCOART AS PRECIO_COMPRA,
-          UBIART AS UBICACIONES_FINCAS,
-          DELART AS DESCRIPCION_LARGA,
-          DSCART AS DESCATALOGADO,
-          EANART AS CODIGO_EAN,
-          CP4ART AS FINCA_ARTICULO,
-          CP5ART AS AUTORIZACION,
-          CP1ART AS AUTORIZACION_GGN,
-          DEWART AS DESCRIPCION_DETALLADA,
-          PESART AS PESO,
-          FUMART AS FECHA_MODIFICACION
-      FROM F_ART
-      ORDER BY CODART
+          a.CODART AS ID_ARTICULO,
+          a.EQUART AS GLOBALGAP,
+          a.FAMART AS CODIGO_FAMILIA,
+          a.DESART AS DESCRIPCION_ARTICULO,
+          a.DEEART AS NOMBRE_CIENTIFICO,
+          a.DETART AS DESCRIPION_ETIQUETAS,
+          a.PCOART AS PRECIO_COMPRA,
+          a.UBIART AS UBICACIONES_FINCAS,
+          a.DELART AS DESCRIPCION_LARGA,
+          a.DSCART AS DESCATALOGADO,
+          a.EANART AS CODIGO_EAN,
+          a.CP4ART AS FINCA_ARTICULO,
+          a.CP5ART AS AUTORIZACION,
+          u.DESUME AS AUTORIZACION_GGN,
+          a.DEWART AS DESCRIPCION_DETALLADA,
+          a.PESART AS PESO,
+          a.FUMART AS FECHA_MODIFICACION
+      FROM F_ART a
+      LEFT JOIN F_UME u ON a.UMEART = u.CODUME
+      ORDER BY a.CODART
     schema:
       - {name: "ID_ARTICULO",           type: "STRING", mode: "NULLABLE", description: "Referencia del artículo"}
       - {name: "GLOBALGAP",             type: "STRING", mode: "NULLABLE", description: "Artículo GlobalGAP"}
@@ -119,7 +120,7 @@ tables:
       - {name: "CODIGO_EAN",            type: "STRING", mode: "NULLABLE", description: "Código EAN del artículo"}
       - {name: "FINCA_ARTICULO",        type: "STRING", mode: "NULLABLE", description: "Finca del artículo"}
       - {name: "AUTORIZACION",          type: "STRING", mode: "NULLABLE", description: "Campo de autorización / cítrico inmovilizado CP5ART"}
-      - {name: "AUTORIZACION_GGN",      type: "STRING", mode: "NULLABLE", description: "Número de autorización GGN (campo CP1ART - Unidad de medida en Factusol)"}
+      - {name: "AUTORIZACION_GGN",      type: "STRING", mode: "NULLABLE", description: "Número de autorización GGN (F_UME.DESUME vía UMEART)"}
       - {name: "DESCRIPCION_DETALLADA", type: "STRING", mode: "NULLABLE", description: "Información adicional del artículo"}
       - {name: "PESO",                  type: "FLOAT",  mode: "NULLABLE", description: "Peso del artículo (PESART)"}
       - {name: "FECHA_MODIFICACION",    type: "DATETIME", mode: "NULLABLE", description: "Fecha de última modificación (FUMART)"}
