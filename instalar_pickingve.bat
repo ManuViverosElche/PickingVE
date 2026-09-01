@@ -3,21 +3,13 @@
 chcp 65001 >nul
 title PickingVE - Instalador Servidor v3
 
-REM 1. Comprobar permisos de Administrador usando net session
+REM 1. Comprobar permisos de Administrador usando net session y auto-elevar con PowerShell
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo.
-    echo ============================================================
-    echo   [ERROR] SE REQUIEREN PRIVILEGIOS DE ADMINISTRADOR
-    echo ============================================================
-    echo   Este instalador necesita registrar tareas programadas en el
-    echo   sistema. Por favor, abre la consola de comandos (CMD)
-    echo   como ADMINISTRADOR (clic derecho ^> Ejecutar como administrador)
-    echo   y vuelve a ejecutar este script.
-    echo ============================================================
-    echo.
-    pause
-    exit /b 1
+    echo [AVISO] Se requieren privilegios de Administrador para la instalacion.
+    echo Solicitando elevacion de privilegios (mantenimiento de unidad de red con cd /d)...
+    PowerShell -Command "Start-Process cmd -ArgumentList '/k cd /d ""%~dp0"" && ""%~f0""' -Verb RunAs"
+    exit /b
 )
 
 echo.
