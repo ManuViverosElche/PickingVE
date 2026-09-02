@@ -224,21 +224,59 @@ bigquery:
     Ok "settings.local.yaml escrito"
 
     # ---------- 7. Tareas programadas ----------
-    Step "7/9 Programando sincronizacion automatica y auto-actualizacion"
+    Step "7/9 Programando sincronizacion automatica"
     $runSync = Join-Path $connectorDir "scripts\run_sync.ps1"
-    $autoUpdateBat = Join-Path $Root "auto_update.bat"
+    $action  = "-NoProfile -ExecutionPolicy Bypass -File `"$runSync`""
+    $user    = "$env:USERDOMAIN\$env:USERNAME"
+    $hoy     = Get-Date -Format "yyyy-MM-dd"
 
-    # Tarea Produccion (cada 30 min)
-    schtasks /Create /F /TN "PickingVE-Sync-Produccion" /SC MINUTE /MO 30 /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$runSync`" -Dataset GestionComercialVE" | Out-Null
-    if ($LASTEXITCODE -eq 0) { Ok "PickingVE-Sync-Produccion -> cada 30 min" } else { Warn "No se pudo crear PickingVE-Sync-Produccion" }
+    function New-SyncTaskXml($name, $startHour, $intervalMin, $durHours, $dataset){
+        # schtasks + XML: metodo universal (Register-ScheduledTask falla en
+        # algunos Windows 10 al setear RepetitionInterval)
+        $rep = ""
+        if ($intervalMin -gt 0) {
+            $rep = "<Repetition><Interval>PT$($intervalMin)M</Interval><Duration>PT$($durHours)H</Duration><StopAtDurationEnd>true</StopAtDurationEnd></Repetition>"
+        }
+        $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>$($hoy)T$($startHour):00:00</StartBoundary>
+      $rep
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><UserId>$user</UserId><LogonType>InteractiveToken</LogonType></Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>powershell.exe</Command><Arguments>$action -Dataset $dataset</Arguments><WorkingDirectory>$Root</WorkingDirectory></Exec>
+  </Actions>
+</Task>
+"@
+        $xmlFile = Join-Path $env:TEMP "$name.xml"
+        [IO.File]::WriteAllText($xmlFile, $xml, (New-Object Text.UnicodeEncoding))
+        schtasks /Create /F /TN $name /XML $xmlFile | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "schtasks devolvio $LASTEXITCODE para $name" }
+    }
 
-    # Tarea Analytics (diaria a las 05:00)
-    schtasks /Create /F /TN "PickingVE-Sync-Analytics" /SC DAILY /ST 05:00 /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$runSync`" -Dataset Analytics" | Out-Null
-    if ($LASTEXITCODE -eq 0) { Ok "PickingVE-Sync-Analytics -> diario a las 05:00" } else { Warn "No se pudo crear PickingVE-Sync-Analytics" }
-
-    # Tarea Auto-Update (cada 4 horas)
-    schtasks /Create /F /TN "PickingVE_AutoUpdate" /SC HOURLY /MO 4 /TR "cmd.exe /c `"$autoUpdateBat`"" | Out-Null
-    if ($LASTEXITCODE -eq 0) { Ok "PickingVE_AutoUpdate -> actualiza el repositorio desde GitHub cada 4 horas" } else { Warn "No se pudo crear PickingVE_AutoUpdate" }
+    try {
+        New-SyncTaskXml "PickingVE-Sync-Produccion" 8 30 13 "GestionComercialVE"
+        Ok "Produccion -> GestionComercialVE cada 30 min (08:00-21:00)"
+        New-SyncTaskXml "PickingVE-Sync-Analytics" 5 0 0 "Analytics"
+        Ok "Analytics -> diario a las 05:00"
+    } catch {
+        Fail ("No se pudieron crear las tareas automaticas: " + $_.Exception.Message)
+        Warn " Podras crearlas a mano; no bloquea la instalacion ni el menu manual."
+    }
 
     # ---------- 8. Acceso directo ----------
     Step "8/9 Acceso directo en el Escritorio"
@@ -272,7 +310,6 @@ bigquery:
      RESUMEN - INSTALACION COMPLETADA
      Proyecto ............ $Root
      Sync automatica ..... Produccion cada 30 min / Analytics diaria
-     Auto-actualizacion .. Cada 4 horas desde GitHub
      Manual escritorio ... 'Sincronizar Factusol'
      Logs sync ........... backend\connector\logs\
   ============================================================
