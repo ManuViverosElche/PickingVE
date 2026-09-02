@@ -1167,7 +1167,7 @@ def _ensure_encargados_table() -> None:
 
 
 def _migrar_apellidos_encargados() -> None:
-    """D-69: separa nombre y apellidos en encargados existentes.
+    """D-72: separa nombre y apellidos en encargados existentes.
 
     Solo toca filas con apellidos vacío y nombre con espacios: el primer
     token queda como nombre y el resto como apellidos. Idempotente.
@@ -1248,7 +1248,7 @@ def _ensure_maquinarias_table() -> None:
 
 
 def _ensure_maquinaria_familias_table() -> None:
-    """D-76: familias de maquinaria (catálogo configurable en el panel)."""
+    """D-77: familias de maquinaria (catálogo configurable en el panel)."""
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
         client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
@@ -1269,7 +1269,7 @@ def _ensure_maquinaria_familias_table() -> None:
 
 
 def _ensure_reparto_table() -> None:
-    """D-72: reparto de faena por línea (pedido + huella) para la app futura."""
+    """D-74: reparto de faena por línea (pedido + huella) para la app futura."""
     dataset_ref = bigquery.Dataset(f"{PROJECT}.{PICKING_DATASET}")
     try:
         client.get_dataset(f"{PROJECT}.{PICKING_DATASET}")
@@ -2077,7 +2077,7 @@ def _ensure_etiquetas_table() -> None:
 
 
 def _ensure_etiquetas_plantillas_table() -> None:
-    """D-273: tabla de plantillas de etiquetas en BigQuery (pickingve).
+    """D-254: tabla de plantillas de etiquetas en BigQuery (pickingve).
 
     Sustituye la persistencia en plantillas_etiquetas.json (filesystem efimero
     de Cloud Run): la instruccion de eliminacion se perdeia en los reinicios y
@@ -2435,7 +2435,7 @@ def comentarios_recientes(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-73: actividad de chat por pedido/línea para marcar "sin leer" en el panel.
+    """D-74: actividad de chat por pedido/línea para marcar "sin leer" en el panel.
 
     Devuelve el último mensaje ajeno a oficina (rol APP/ENCARGADO) por
     pedido+línea en los últimos N días. El panel compara con su marca local
@@ -2561,6 +2561,30 @@ def guardar_matricula(
                         cuerpo[:300],
                         {"tipo": "camion_llegado", "pedido": pedido_id},
                     )
+                # D-274: además, avisar al operario de acopio asignado a las líneas
+                # pendientes del pedido: la planta que falte debe salir en este camión.
+                try:
+                    _ensure_reparto_table()
+                    _ensure_operarios_table()
+                    ops = _query(
+                        f"""
+                        SELECT DISTINCT r.operario_email
+                        FROM `{PROJECT}.{PICKING_DATASET}.{REPARTO_TABLE}` r
+                        WHERE r.pedido_id = {_esc(pedido_id)} AND r.operario_email != ''
+                        """
+                    )
+                    for r in ops:
+                        op_email = str(r.get("operario_email") or "").strip()
+                        if not op_email:
+                            continue
+                        _enviar_fcm(
+                            op_email,
+                            f"🚚 Camión en muelle · Pedido {pedido_id}",
+                            cuerpo[:300],
+                            {"tipo": "camion_llegado", "pedido": pedido_id},
+                        )
+                except Exception:
+                    pass
                 bot_token = os.getenv("TELEGRAM_MESSAGES_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "")
                 chat_id = _oficina_chat_id(bot_token) if bot_token else None
                 if bot_token and chat_id:
@@ -2847,7 +2871,7 @@ def notificar_cambios(
                 f"SELECT email FROM `{PROJECT}.{PICKING_DATASET}.{ENCARGADOS_TABLE}`"
             )]
             for email in destinos:
-                # D-207: nadie recibe push de sus propios mensajes.
+                # D-192: nadie recibe push de sus propios mensajes.
                 if autor_email and email.strip().lower() == autor_email:
                     continue
                 if _enviar_fcm(
@@ -3290,7 +3314,7 @@ def guardar_maquinaria(
     _ensure_maquinarias_table()
     mq_id = body.id or ""
     if not mq_id:
-        # D-77: alta idempotente — si ya existe una maquinaria con el mismo
+        # D-80: alta idempotente — si ya existe una maquinaria con el mismo
         # nombre (doble clic incluido), se actualiza esa fila en vez de duplicar.
         existentes = _query(
             f"""
@@ -3314,7 +3338,7 @@ def guardar_maquinaria(
     return {"ok": True}
 
 
-# ===== D-76: Familias de maquinaria =====
+# ===== D-77: Familias de maquinaria =====
 
 
 @app.get("/api/manager/maquinarias-familias")
@@ -3353,7 +3377,7 @@ def guardar_maquinaria_familia(
     _ensure_maquinaria_familias_table()
     fam_id = body.id or ""
     if not fam_id:
-        # D-77: alta idempotente — si ya existe una familia con el mismo
+        # D-80: alta idempotente — si ya existe una familia con el mismo
         # nombre (doble clic incluido), se actualiza esa fila en vez de duplicar.
         existentes = _query(
             f"""
@@ -3419,7 +3443,7 @@ def lista_reparto(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-72: asignaciones de faena guardadas para los pedidos de una fecha."""
+    """D-74: asignaciones de faena guardadas para los pedidos de una fecha."""
     _verify_manager_key(k, x_api_key)
     target_date = date.today()
     if fecha and fecha not in ("null", "undefined", ""):
@@ -3483,7 +3507,7 @@ def guardar_reparto(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-72: guarda el reparto de faena.
+    """D-74: guarda el reparto de faena.
 
     La app Android (cuando exista el módulo de faena) leerá esta tabla con
     GET /api/manager/reparto?fecha=... o un endpoint dedicado por encargado.
@@ -3679,6 +3703,23 @@ def notificar_discrepancia(
             "puntado": str(req.puntado),
         },
     )
+    # D-273: abrir el hilo de mensajes de la línea para que el operario pueda
+    # responder por el canal de chat existente (la respuesta viaja a la app de
+    # picking del encargado y al panel de logística por el flujo de comentarios).
+    try:
+        _ensure_notificaciones_tables()
+        _insertar_comentario(
+            req.pedido_id, req.linea_huella,
+            "discrepancia@pickingve",
+            "Discrepancia de acopio",
+            "ENCARGADO", "app",
+            f"⚠ Falta planta en {req.pedido_id}" +
+            (f" línea {pos}" if pos else "") +
+            f": declaraste {req.declarado} uds y se han puntuado {req.puntado} uds." +
+            (f" {req.mensaje.strip()}" if req.mensaje.strip() else ""),
+        )
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -3727,7 +3768,7 @@ def login_operario(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-166: login del operario de acopio (tabla operarios, salt = email).
+    """D-175: login del operario de acopio (tabla operarios, salt = email).
 
     Devuelve password_provisional=True cuando aún no ha cambiado la
     contraseña inicial; la app exige el cambio en el primer login.
@@ -3777,7 +3818,7 @@ def cambiar_password_operario(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-168: cambio de contraseña del operario (obligatorio en el primer login)."""
+    """D-177: cambio de contraseña del operario (obligatorio en el primer login)."""
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     _ensure_password_provisional_column()
@@ -3806,7 +3847,7 @@ def lista_operarios_app(
     request: Request,
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-166: operarios activos para el login offline de la app.
+    """D-175: operarios activos para el login offline de la app.
 
     Incluye password_hash con el mismo criterio que /api/encargados: permite
     validar credenciales sin cobertura (el hash nunca sale del dispositivo).
@@ -3838,7 +3879,7 @@ def lista_operarios_app(
     }
 
 
-# ---- D-169 Modo ayuda por línea: el compañero concede permiso concreto ----
+# ---- D-178 Modo ayuda por línea: el compañero concede permiso concreto ----
 
 AYUDA_PERMISOS_TABLE = "ayuda_permisos"
 
@@ -4138,7 +4179,7 @@ def login_encargado(
     _verify_key(x_api_key)
     _check_rate_limit(request.client.host if request.client else "unknown", POST_LIMIT)
     _ensure_encargados_table()
-    # D-201: login por email obligatorio; se resuelve por usuario o por email.
+    # D-186: login por email obligatorio; se resuelve por usuario o por email.
     enc = [dict(r) for r in client.query(
         f"""
         SELECT id, nombre, usuario, password_hash, rol, fincas_carga, modo, email, activo
@@ -4410,7 +4451,7 @@ def pedidos(
                     "observaciones": r.get("NOTA_LINEA_PEDIDO") or "",
                 }
             )
-    # D-15X: reparto de faena (D-72) adjuntado por lotes para no romper la
+    # D-15X: reparto de faena (D-74) adjuntado por lotes para no romper la
     # consulta principal si la tabla aún no existe.
     try:
         _ensure_reparto_table()
@@ -4443,6 +4484,35 @@ def pedidos(
                         linea["operarioNombre"] = (a.get("operario_nombre") or "").strip()
     except Exception:
         pass
+    # D-274: flag tieneCamion por pedido (existe matrícula tipo CAMION en
+    # matriculas_pedido). Se consulta en lotes para no romper por falta de tabla.
+    try:
+        _ensure_matriculas_table()
+        claves = list(pedidos.keys())
+        for i in range(0, len(claves), 200):
+            lote = [k.split("_")[-1] for k in claves[i:i + 200]]
+            con_camion = {
+                str(r.get("pedido_id") or "")
+                for r in client.query(
+                    f"""
+                    SELECT DISTINCT pedido_id
+                    FROM `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}`
+                    WHERE tipo = 'CAMION' AND matricula != ''
+                      AND pedido_id IN UNNEST(@pedidos)
+                    """,
+                    job_config=bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ArrayQueryParameter("pedidos", "STRING", lote)
+                        ]
+                    ),
+                ).result()
+            }
+            por_numero = {k.split("_")[-1]: pedidos[k] for k in claves}
+            for num, p in por_numero.items():
+                p["tieneCamion"] = num in con_camion
+    except Exception:
+        for p in pedidos.values():
+            p["tieneCamion"] = False
     return {
         "desde": desde.isoformat() if desde else None,
         "fecha": fecha.isoformat() if fecha else None,
@@ -4977,11 +5047,11 @@ def compensar(
 
 
 class ParteBody(BaseModel):
-    """D-271: datos del parte (inicial o final) con peso de la carga.
+    """D-261: datos del parte (inicial o final) con peso de la carga.
 
     La app envía esto al cerrar un parte para persistir en BigQuery la
     matrícula de camión/remolque y el peso, que de otro modo solo irían al
-    XLSX legacy de Telegram (D-153) y no estarían disponibles para los
+    XLSX legacy de Telegram (D-159) y no estarían disponibles para los
     informes. Idempotente por parte_id (MERGE).
     """
     parte_id: str = Field(min_length=1, max_length=128)
@@ -5275,7 +5345,7 @@ def manager_orders(
     
     st_filter = (estado or "").strip().lower()
     if not st_filter:
-        # D-70: por defecto se muestran TODOS los estados del día: un pedido
+        # D-72: por defecto se muestran TODOS los estados del día: un pedido
         # acopiado al completo o cargado no desaparece del listado.
         st_filter = "todos"
 
@@ -5444,7 +5514,7 @@ def manager_carga(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
-    """D-228: carga GLOBAL por operario (todas las fechas de carga).
+    """D-212: carga GLOBAL por operario (todas las fechas de carga).
 
     Devuelve por operario activo: asignado (suma de UNIDADES_PENDIENTES de las
     líneas con reparto guardado) y recogido (suma de cantidad_partida pistoleada).
@@ -5682,11 +5752,13 @@ def manager_report(
     order_sql = f"""
         SELECT p.SERIE_PEDIDO, p.NUMERO_PEDIDO, p.FINCA_CARGA, p.SECTOR_CARGA, p.FECHA_CARGA,
                COALESCE(c.N_COMERCIAL, '') AS CLIENTE,
-               m.matricula AS MATRICULA_CAMION,
-               CASE WHEN m.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO
+               mc.matricula AS MATRICULA_CAMION,
+               mr.matricula AS MATRICULA_REMOLQUE,
+               CASE WHEN mc.pedido_id IS NOT NULL THEN TRUE ELSE FALSE END AS CARGADO
         FROM `{PROJECT}.{DATASET}.PEDIDOS` p
         LEFT JOIN `{PROJECT}.{DATASET}.CLIENTE` c ON c.ID_CLIENTE = p.NUMERO_CLIENTE
-        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` m ON m.pedido_id = p.NUMERO_PEDIDO AND m.tipo = 'CAMION'
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` mc ON mc.pedido_id = p.NUMERO_PEDIDO AND mc.tipo = 'CAMION'
+        LEFT JOIN `{PROJECT}.{PICKING_DATASET}.{MATRICULAS_TABLE}` mr ON mr.pedido_id = p.NUMERO_PEDIDO AND mr.tipo IN ('REMOLQUE', 'REMOLQUE_A')
         WHERE p.NUMERO_PEDIDO = @pedido
         LIMIT 1
     """
@@ -5760,6 +5832,7 @@ def manager_report(
         "sector": o.get("SECTOR_CARGA"),
         "fechaCarga": str(o.get("FECHA_CARGA")) if o.get("FECHA_CARGA") else None,
         "matriculaCamion": o.get("MATRICULA_CAMION"),
+        "matriculaRemolque": o.get("MATRICULA_REMOLQUE"),
         "cargado": bool(o.get("CARGADO")),
         "alertasCitricos": alertas_citricos,
         "lineas": lineas_res
@@ -5773,7 +5846,7 @@ def manager_reporte(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Informe Punteo del pedido en HTML o PDF replicando el layout de Punteo de prueba.pdf (D-152, D-158)."""
+    """Informe Punteo del pedido en HTML o PDF replicando el layout de Punteo de prueba.pdf (D-178, D-176)."""
     _verify_manager_key(k, x_api_key)
     fmt = (formato or "html").lower()
     if fmt == "pdf":
@@ -5807,7 +5880,7 @@ def manager_informe_desglose(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Informe HTML desglosado (detalle exhaustivo del pistoleo) del pedido (D-158, D-160)."""
+    """Informe HTML desglosado (detalle exhaustivo del pistoleo) del pedido (D-176, D-178)."""
     _verify_manager_key(k, x_api_key)
     try:
         html = informe_html.build_desglose_html(
@@ -6147,7 +6220,7 @@ def manager_etiquetas_dia_informe(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Informe HTML imprimible de etiquetas a sacar del día (D-158)."""
+    """Informe HTML imprimible de etiquetas a sacar del día (D-176)."""
     _verify_manager_key(k, x_api_key)
     data = manager_etiquetas_dia(
         fecha=fecha,
@@ -6166,7 +6239,7 @@ def manager_historico(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Pestaña Histórico: pedidos cargados y enviados de todas las fechas (D-160)."""
+    """Pestaña Histórico: pedidos cargados y enviados de todas las fechas (D-178)."""
     _verify_manager_key(k, x_api_key)
     if fecha is None:
         sql = f"""
@@ -6248,7 +6321,7 @@ def manager_historico_detalle(
     k: Optional[str] = Query(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
-    """Detalle completo del pedido en histórico: matrículas, eventos de pistoleo y etiquetas (D-160)."""
+    """Detalle completo del pedido en histórico: matrículas, eventos de pistoleo y etiquetas (D-178)."""
     _verify_manager_key(k, x_api_key)
     params = [bigquery.ScalarQueryParameter("pedido", "STRING", numero_pedido)]
     jc = bigquery.QueryJobConfig(query_parameters=params)
@@ -6611,7 +6684,7 @@ def _ensure_inventario_tables() -> None:
         )
         """
     ).result()
-    # D-240/D-241/D-243/D-244: migración de columnas nuevas (tablas ya existentes).
+    # D-240/D-214/D-217/D-216: migración de columnas nuevas (tablas ya existentes).
     for _col in ["label_motivo", "incidencia_texto", "modo_inventario", "lineal_session_id"]:
         client.query(
             f"ALTER TABLE `{PROJECT}.{PICKING_DATASET}.{INVENTARIO_TABLE}` "
@@ -7382,7 +7455,7 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
 
     # Esperado (Factusol): por sectores si la finca los tiene; si es una finca
     # sin sectores (CARREFOUR...) por FINCA_ARTICULO sumando todas sus
-    # combinaciones (D-259).
+    # combinaciones (D-248).
     esperado_rows = _inventario_esperado(finca, objetivo or None, litraje_desc=True)
 
     # Contado compartido
@@ -7410,7 +7483,7 @@ def _inventario_datos_informe(finca: str, sector: Optional[str], desde: Optional
         ).result()
     ]
 
-    # D-243: huecos libres del modo lineal (no cuentan como planta).
+    # D-217: huecos libres del modo lineal (no cuentan como planta).
     huecos_rows = [
         dict(r)
         for r in client.query(
@@ -8054,7 +8127,7 @@ def _verify_inventario_key(
     """Clave para los endpoints de lectura del modulo de inventario: acepta la
     X-API-Key de la app, el token del panel manager, el token propio de la
     pagina /inventario (que consulta la API mismo-origen con ?k=) y el token
-    del portal unificado /logistica (D-265: el portal reutiliza esta
+    del portal unificado /logistica (D-232: el portal reutiliza esta
     funcionalidad completa sin tocar la logica de negocio)."""
     if API_KEY and x_api_key == API_KEY:
         return
@@ -8064,7 +8137,7 @@ def _verify_inventario_key(
 
 
 # --- Diseñador Visual de Plantillas de Etiquetas ---
-# D-273: la fuente de verdad de las plantillas es la tabla BigQuery
+# D-254: la fuente de verdad de las plantillas es la tabla BigQuery
 # `pickingve.etiquetas_plantillas`. plantillas_etiquetas.json solo se lee una
 # vez (migración) en _seed_etiquetas_plantillas; nunca se vuelve a escribir,
 # porque el filesystem de Cloud Run es efímero y el borrado se perdía.
@@ -8277,7 +8350,7 @@ async def save_etiquetas_plantilla(request: Request, k: Optional[str] = Query(de
     body = await request.json()
     tpl_id = body.get("id") or ("tpl-" + str(int(time.time())))
 
-    # D-273: las plantillas del sistema no se pueden sobrescribir en BD.
+    # D-254: las plantillas del sistema no se pueden sobrescribir en BD.
     if _es_plantilla_sistema(tpl_id):
         raise HTTPException(
             status_code=403,
@@ -8422,7 +8495,7 @@ async def generar_lote_etiquetas(request: Request, k: Optional[str] = Query(defa
                 lineas = []
         elif origen == "PICKING":
             try:
-                # D-270: un solo EAN por referencia (un artículo puede tener varios
+                # D-260: un solo EAN por referencia (un artículo puede tener varios
                 # códigos en CODIGOS_EAN y antes duplicaba etiquetas por fila) y sin
                 # LIMIT para no truncar el lote del informe.
                 rows = _query(
@@ -8494,7 +8567,7 @@ def render_ejemplo(plantilla_id: Optional[str] = Query("tpl-grande-default"), pe
         "MARCA_PEDIDO": "VE-PREMIUM"
     }
 
-    # D-270: artículos REALES activos (DESCATALOGADO=0) con nombre científico,
+    # D-260: artículos REALES activos (DESCATALOGADO=0) con nombre científico,
     # EAN primario (1 por referencia), litraje y sector resueltos.
     articulos_reales = []
     try:
