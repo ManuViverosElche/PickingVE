@@ -29,7 +29,7 @@ data class FaenaLinea(
     val esAyuda: Boolean = false
 )
 
-/** D-237: pedido agrupado dentro de una finca de procedencia, con datos de pedido estilo picking. */
+/** D-195: pedido agrupado dentro de una finca de procedencia, con datos de pedido estilo picking. */
 data class FaenaPedido(
     val orderId: String,
     val clienteDisplay: String,
@@ -37,7 +37,9 @@ data class FaenaPedido(
     val fincaCarga: String,
     val sectorCarga: String,
     val plantasPendientes: Int,
-    val lineas: List<FaenaLinea>
+    val lineas: List<FaenaLinea>,
+    val modificado: Boolean = false, // D-276: el pedido cambió en el último sync
+    val tieneCamion: Boolean = false // D-274: existe matrícula CAMION registrada
 )
 
 data class FaenaFinca(
@@ -79,7 +81,7 @@ data class FaenaUiState(
     val totalRecogidas: Int = 0,
     /** Catálogo sector -> descripción, para mostrar NOMBRES nunca códigos. */
     val sectoresDesc: Map<String, String> = emptyMap(),
-    /** D-237: fincas de procedencia de planta disponibles para filtrar. */
+    /** D-195: fincas de procedencia de planta disponibles para filtrar. */
     val fincasDisponibles: List<String> = emptyList(),
     val fincaFiltro: String? = null,
     val sectoresDisponibles: List<String> = emptyList(),
@@ -158,7 +160,7 @@ class FaenaDashboardViewModel(
         viewModelScope.launch {
             val listaOp = repository.operariosLocales()
 
-            // D-235: modo ayuda SOLO entre operarios que comparten ALGUNA familia
+            // D-208: modo ayuda SOLO entre operarios que comparten ALGUNA familia
             // de maquinaria con el logueado. Un operario puede llevar VARIAS
             // maquinarias (lista separada por comas), por lo que tiene varias
             // familias y le salen más colegas. Los encargados no aparecen (no
@@ -221,7 +223,7 @@ class FaenaDashboardViewModel(
             ?.value
     }
 
-    /** D-235: familias de maquinaria del operario (maquinaria puede ser varias, separadas por coma). */
+    /** D-208: familias de maquinaria del operario (maquinaria puede ser varias, separadas por coma). */
     private fun familiasDe(famMap: Map<String, String>, maquinaria: String): Set<String> {
         if (maquinaria.isBlank()) return emptySet()
         return maquinaria.split(",")
@@ -236,7 +238,7 @@ class FaenaDashboardViewModel(
         recargarPermisosAyuda()
     }
 
-    /** D-169: el ayudante solo ve las líneas que le fueron concedidas. */
+    /** D-178: el ayudante solo ve las líneas que le fueron concedidas. */
     private fun recargarPermisosAyuda() {
         viewModelScope.launch {
             permisosAyuda.value = try {
@@ -279,7 +281,7 @@ class FaenaDashboardViewModel(
     }
 
     /**
-     * D-233: acopio directo desde "Mi faena". El operario dice cuántas plantas
+     * D-191: acopio directo desde "Mi faena". El operario dice cuántas plantas
      * ha cogido de la línea en ESTE viaje y se SUMAN a lo ya acopiado.
      */
     fun acopiarCantidad(linea: FaenaLinea, cantidad: Int, onResultado: (Boolean, String) -> Unit) {
@@ -314,7 +316,7 @@ class FaenaDashboardViewModel(
         }
     }
 
-    /** D-233: cerrar la línea desde "Mi faena" (no hay más planta que acopiar). */
+    /** D-191: cerrar la línea desde "Mi faena" (no hay más planta que acopiar). */
     fun cerrarLineaFaena(
         line: OrderLineEntity,
         cantidadFaltante: Int,
@@ -340,7 +342,7 @@ class FaenaDashboardViewModel(
         }
     }
 
-    /** Concede al colega las líneas seleccionadas de MI faena visible (D-169). */
+    /** Concede al colega las líneas seleccionadas de MI faena visible (D-178). */
     fun concederAyuda(lineas: List<Pair<String, String>>, ayudanteEmail: String, onListo: () -> Unit) {
         viewModelScope.launch {
             try {
@@ -403,10 +405,26 @@ class FaenaDashboardViewModel(
             val fecha = p.order.fechaCarga?.let {
                 Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
             } ?: continue
-            if (fecha.isBefore(hoy)) continue
+            
+            // D-281: mostrar pedido si tiene líneas con acopio, aunque sea de días anteriores.
+            // Solo ocultar si no hay acopio Y la fecha es anterior a hoy.
+            val tieneLineasConAcopio = p.lineas.any { 
+                it.acopiadoOperario > 0 || it.pickedQty > 0 
+            }
+            if (fecha.isBefore(hoy) && !tieneLineasConAcopio) continue
             val marcaPedido = p.order.marcaPedido
 
-            for (line in p.lineas.filter { it.vigente && it.motivoCierre.isBlank() }) {
+            for (line in p.lineas.filter { l ->
+                if (!l.vigente) {
+                    // D-275: línea eliminada del pedido. Se muestra el día en curso
+                    // (para que el operario sepa que ya no hace falta) o si ya hubo
+                    // acopio (queda marcada y bloqueada). En días posteriores sin
+                    // acopio desaparece y el operario se rehace la ruta.
+                    l.acopiadoOperario > 0 || fecha == hoy
+                } else {
+                    l.motivoCierre.isBlank()
+                }
+            }) {
                 val asignadaAMi = line.operarioEmail.isNotBlank() &&
                     line.operarioEmail.equals(miEmail, ignoreCase = true)
                 val visible = when {
@@ -418,8 +436,11 @@ class FaenaDashboardViewModel(
                 }
                 if (!visible) continue
 
-                totalSolicitadas += line.requestedQty
-                // D-274: Separación de contadores según el rol
+                // D-275: una línea eliminada no suma a las solicitadas del pedido.
+                if (line.vigente) {
+                    totalSolicitadas += line.requestedQty
+                }
+                // D-232: Separación de contadores según el rol
                 // Operario: cuenta su propio acopio (acopiadoOperario)
                 // Encargado: cuenta su propia verificación (pickedQty)
                 val recogido = if (esOperario) line.acopiadoOperario else line.pickedQty
@@ -473,7 +494,9 @@ class FaenaDashboardViewModel(
                             fincaCarga = pedidoRef?.fincaCarga.orEmpty(),
                             sectorCarga = pedidoRef?.sectorCarga.orEmpty(),
                             plantasPendientes = lineasOrd.sumOf { it.pendiente },
-                            lineas = lineasOrd
+                            lineas = lineasOrd,
+                            modificado = pedidoRef?.modificado == true, // D-276
+                            tieneCamion = pedidoRef?.tieneCamion == true // D-274
                         )
                     }.sortedWith(
                         compareByDescending<FaenaPedido> { esUltraEnPedido(it) }
@@ -574,7 +597,7 @@ class FaenaDashboardViewModel(
         private fun esUltraEnPedido(pedido: FaenaPedido): Boolean =
             pedido.lineas.any { esUltra(it) }
 
-        /** D-237: true si el pedido tiene alguna línea PRIORITARIA (para chips de la finca). */
+        /** D-195: true si el pedido tiene alguna línea PRIORITARIA (para chips de la finca). */
         fun esUltraEnPedidoPublic(pedido: FaenaPedido): Boolean = esUltraEnPedido(pedido)
     }
 }

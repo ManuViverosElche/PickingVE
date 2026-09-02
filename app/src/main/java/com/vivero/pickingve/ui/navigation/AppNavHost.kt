@@ -68,7 +68,7 @@ fun AppNavHost(
     val invViewModel: InvViewModel =
         viewModel { InvViewModel(repository, inventarioRepository) }
 
-    // D-239: rememberSaveable en lugar de remember para que la pantalla activa
+    // D-182: rememberSaveable en lugar de remember para que la pantalla activa
     // sobreviva a la recreación de la Activity (segundo plano / presión de memoria)
     // y no vuelva a la bienvenida ("Buenos días").
     var loggedIn by rememberSaveable { mutableStateOf(repository.tipoSesion().isNotBlank()) }
@@ -80,7 +80,7 @@ fun AppNavHost(
     val deepTipo = deepLinkTipo?.takeIf { it.isNotBlank() }
     val deepCambioTipo = deepLinkCambioTipo?.takeIf { it.isNotBlank() }
 
-    // D-233: cierre de sesión único. Resetea el LoginViewModel porque sin eso
+    // D-191: cierre de sesión único. Resetea el LoginViewModel porque sin eso
     // `state.success` seguía a true tras un login y LoginScreen volvía a entrar
     // solo ("recarga la pantalla pero no cierra sesión").
     val logout = {
@@ -90,12 +90,17 @@ fun AppNavHost(
     }
 
     LaunchedEffect(loggedIn, deepPedido, deepTipo, deepCambioTipo) {
-        // D-167: los operarios no navegan al pedido por push; solo encargados+
-        if (loggedIn && deepPedido != null &&
-            repository.tipoSesion() != PickingRepository.TIPO_OPERARIO
-        ) {
-            pickingViewModel.selectOrder(deepPedido)
-            screen = AppScreen.PICKING
+        // D-176: los operarios no navegan al pedido por push; solo encargados+.
+        // D-273: EXCEPCIÓN - las discrepancias (tipo=discrepancia) y los comentarios
+        // dirigidos al operario viajan a "Mi faena" con la línea resaltada y el chat
+        // abierto, para que el operario responda sin perderse entre 200 líneas.
+        if (loggedIn && deepPedido != null) {
+            if (repository.tipoSesion() != PickingRepository.TIPO_OPERARIO) {
+                pickingViewModel.selectOrder(deepPedido)
+                screen = AppScreen.PICKING
+            } else if (deepTipo == "discrepancia" || deepTipo == "comentario") {
+                screen = AppScreen.FAENA
+            }
         }
     }
 
@@ -159,6 +164,9 @@ fun AppNavHost(
                     pickingViewModel.selectOrder(orderId)
                     screen = AppScreen.PICKING
                 },
+                deepLinkLinea = if (screen == AppScreen.FAENA && deepLinea != null) deepLinea else null,
+                deepLinkTipo = if (screen == AppScreen.FAENA && deepTipo != null) deepTipo else null,
+                onDeepLinkConsumed = onDeepLinkConsumed,
                 onLogout = logout
             )
         }
@@ -254,7 +262,7 @@ fun AppNavHost(
 }
 
 /**
- * Pantalla inicial según el rol de la sesión (D-166/D-167):
+ * Pantalla inicial según el rol de la sesión (D-175/D-176):
  * - OPERARIO: directo a Mi faena (no ve pedidos ni partes).
  * - ENCARGADO/SUPERUSUARIO modo AMBAS: selector.
  * - INVENTARIO: su pantalla.

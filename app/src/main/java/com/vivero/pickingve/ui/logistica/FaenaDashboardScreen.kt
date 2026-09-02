@@ -1,4 +1,4 @@
-﻿package com.vivero.pickingve.ui.logistica
+package com.vivero.pickingve.ui.logistica
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -60,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vivero.pickingve.data.local.entities.OrderLineEntity
 import com.vivero.pickingve.ui.picking.CierreLineaDialog
+import com.vivero.pickingve.ui.picking.ChatDialog
 import com.vivero.pickingve.ui.theme.BrandAmber
 import com.vivero.pickingve.ui.theme.BrandRed
 import com.vivero.pickingve.ui.theme.MarkedBorderColor
@@ -88,6 +91,9 @@ fun FaenaDashboardScreen(
     onBack: () -> Unit,
     onCambiarModo: () -> Unit = {},
     onOpenPedido: (String) -> Unit,
+    deepLinkLinea: String? = null,
+    deepLinkTipo: String? = null,
+    onDeepLinkConsumed: () -> Unit = {},
     onLogout: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -103,6 +109,26 @@ fun FaenaDashboardScreen(
     var acopioGuardando by remember { mutableStateOf(false) }
     var acopioError by remember { mutableStateOf<String?>(null) }
     var cantidadAConfirmar by remember { mutableStateOf<Pair<FaenaLinea, Int>?>(null) }
+    // D-273: resaltado temporal de una línea (8 s) y chat abierto por push de
+    // discrepancia/comentario dirigido al operario.
+    var highlightedLineId by remember { mutableStateOf<String?>(null) }
+    var deepLinkConsumido by remember { mutableStateOf(false) }
+    var chatLinea by remember { mutableStateOf<String?>(null) }
+
+    // D-273: al recibir un push de discrepancia/comentario, resaltar la línea y
+    // abrir el chat de esa línea (respuesta por el canal de mensajes existente).
+    LaunchedEffect(deepLinkLinea, deepLinkTipo) {
+        if (!deepLinkConsumido && deepLinkLinea != null) {
+            highlightedLineId = deepLinkLinea
+            if (deepLinkTipo == "discrepancia" || deepLinkTipo == "comentario") {
+                chatLinea = deepLinkLinea
+            }
+            kotlinx.coroutines.delay(8000)
+            highlightedLineId = null
+            deepLinkConsumido = true
+            onDeepLinkConsumed()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -114,7 +140,7 @@ fun FaenaDashboardScreen(
                     }
                 },
                 actions = {
-                    // D-209: volver al selector de modo sin cerrar sesion.
+                    // D-181: volver al selector de modo sin cerrar sesion.
                     if (!state.esOperario) {
                         IconButton(onClick = onCambiarModo) {
                             Icon(Icons.Filled.SwapHoriz, contentDescription = "Cambiar modo")
@@ -162,7 +188,7 @@ fun FaenaDashboardScreen(
                 }
             }
 
-            // D-237: filtro por finca y sector de procedencia de planta.
+            // D-195: filtro por finca y sector de procedencia de planta.
             if (state.fincasDisponibles.isNotEmpty()) {
                 FiltroFincaRow(
                     fincas = state.fincasDisponibles,
@@ -226,12 +252,19 @@ fun FaenaDashboardScreen(
                                 maquinaria = state.maquinaria,
                                 sectoresDesc = state.sectoresDesc,
                                 expandida = fincaAbierta == clave,
+                                highlightedLineId = highlightedLineId,
                                 onToggle = {
                                     fincaAbierta = if (fincaAbierta == clave) null else clave
                                 },
                                 onLineaClick = { linea ->
                                     if (state.esOperario) {
-                                         lineaAcopio = linea
+                                        // D-275: una línea eliminada (no vigente) no se
+                                        // puede acopiar; el operario la ve bloqueada.
+                                        if (!linea.line.vigente) {
+                                            chatLinea = linea.line.orderLineId
+                                        } else {
+                                            lineaAcopio = linea
+                                        }
                                     } else {
                                         onOpenPedido(linea.orderId)
                                     }
@@ -377,6 +410,21 @@ fun FaenaDashboardScreen(
             onDismiss = { cerrandoLinea = null }
         )
     }
+
+    // D-273: chat de una línea (discrepancia/comentario) abierto por push o a mano.
+    chatLinea?.let { linea ->
+        val info = state.dias
+            .flatMap { it.fincas }
+            .flatMap { it.pedidos }
+            .flatMap { it.lineas }
+            .firstOrNull { it.line.orderLineId == linea }
+        ChatDialog(
+            pedidoId = info?.orderId ?: "",
+            linea = linea,
+            lineaInfo = info?.line,
+            onDismiss = { chatLinea = null }
+        )
+    }
 }
 
 @Composable
@@ -489,6 +537,7 @@ private fun FaenaFincaCard(
     maquinaria: String,
     sectoresDesc: Map<String, String>,
     expandida: Boolean,
+    highlightedLineId: String?,
     onToggle: () -> Unit,
     onLineaClick: (FaenaLinea) -> Unit
 ) {
@@ -522,7 +571,7 @@ private fun FaenaFincaCard(
                 )
             }
 
-            // D-237: chips resumen de pedidos con planta en esta finca.
+            // D-195: chips resumen de pedidos con planta en esta finca.
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -578,6 +627,7 @@ private fun FaenaFincaCard(
                         FaenaPedidoCard(
                             pedido = pedido,
                             sectoresDesc = sectoresDesc,
+                            highlightedLineId = highlightedLineId,
                             onLineaClick = onLineaClick
                         )
                     }
@@ -587,11 +637,12 @@ private fun FaenaFincaCard(
     }
 }
 
-/** D-237: cabecera de pedido estilo picking + sus líneas, dentro de una finca de procedencia. */
+/** D-195: cabecera de pedido estilo picking + sus líneas, dentro de una finca de procedencia. */
 @Composable
 private fun FaenaPedidoCard(
     pedido: FaenaPedido,
     sectoresDesc: Map<String, String>,
+    highlightedLineId: String?,
     onLineaClick: (FaenaLinea) -> Unit
 ) {
     var mostrarDetalle by remember { mutableStateOf(false) }
@@ -646,6 +697,42 @@ private fun FaenaPedidoCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            // D-274: camión en muelle -> urgencia en las líneas pendientes.
+            if (pedido.tieneCamion) {
+                Surface(
+                    color = BrandRed,
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            "🚚 Camión en muelle · URGENTE",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+            // D-276: pedido modificado por el sistema.
+            if (pedido.modificado) {
+                Surface(
+                    color = BrandAmber.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    Text(
+                        "MODIFICADO · revisa las líneas",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandAmber,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
             Spacer(Modifier.height(6.dp))
             Button(
                 onClick = { mostrarDetalle = true },
@@ -660,6 +747,7 @@ private fun FaenaPedidoCard(
                 FaenaLineaRow(
                     linea = faenaLinea,
                     sectoresDesc = sectoresDesc,
+                    highlightedLineId = highlightedLineId,
                     onClick = { onLineaClick(faenaLinea) }
                 )
             }
@@ -678,6 +766,7 @@ private fun FaenaPedidoCard(
         FaenaPedidoDetailDialog(
             pedido = pedido,
             sectoresDesc = sectoresDesc,
+            highlightedLineId = highlightedLineId,
             onLineaClick = onLineaClick,
             onDismiss = { mostrarDetalle = false }
         )
@@ -689,6 +778,7 @@ private fun FaenaPedidoCard(
 private fun FaenaPedidoDetailDialog(
     pedido: FaenaPedido,
     sectoresDesc: Map<String, String>,
+    highlightedLineId: String?,
     onLineaClick: (FaenaLinea) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -782,6 +872,7 @@ private fun FaenaPedidoDetailDialog(
                         FaenaLineaRow(
                             linea = linea,
                             sectoresDesc = sectoresDesc,
+                            highlightedLineId = highlightedLineId,
                             onClick = { onLineaClick(linea) }
                         )
                     }
@@ -799,6 +890,7 @@ private fun FaenaPedidoDetailDialog(
                             FaenaLineaRow(
                                 linea = linea,
                                 sectoresDesc = sectoresDesc,
+                                highlightedLineId = highlightedLineId,
                                 onClick = { onLineaClick(linea) }
                             )
                         }
@@ -813,6 +905,7 @@ private fun FaenaPedidoDetailDialog(
 private fun FaenaLineaRow(
     linea: FaenaLinea,
     sectoresDesc: Map<String, String>,
+    highlightedLineId: String?,
     onClick: () -> Unit
 ) {
     val ultra = FaenaDashboardViewModel.esUltra(linea)
@@ -823,6 +916,14 @@ private fun FaenaLineaRow(
     val marcaDistinta = linea.line.marca.isNotBlank() && linea.line.marca != linea.marcaEfectiva
     val cogidas = linea.line.acopiadoOperario
     val sobrecoge = cogidas > linea.line.requestedQty
+    // D-273: resaltado temporal (8 s) al llegar por push de discrepancia/comentario.
+    val isHighlighted = highlightedLineId != null && highlightedLineId == linea.line.orderLineId
+    val highlightColor = if (isSystemInDarkTheme()) Color(0xFFFFD54F) else Color(0xFFF9A825)
+    // D-275: línea eliminada del pedido (ya no hace falta acopiar).
+    val esEliminada = !linea.line.vigente
+    // D-276: el sistema cambió la cantidad solicitada.
+    val cantAnterior = linea.line.requestedQtyAnterior
+    val cantidadModificada = cantAnterior != null && cantAnterior != linea.line.requestedQty
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -830,12 +931,15 @@ private fun FaenaLineaRow(
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = when {
+                isHighlighted -> highlightColor.copy(alpha = 0.3f)
+                esEliminada -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 completa -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                 ultra -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
                 else -> MaterialTheme.colorScheme.surface
             }
         ),
         border = when {
+            isHighlighted -> BorderStroke(3.dp, highlightColor)
             completa -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
             linea.line.marcado -> BorderStroke(2.dp, MarkedBorderColor)
             else -> null
@@ -855,7 +959,8 @@ private fun FaenaLineaRow(
                     text = "$cogidas / ${linea.line.requestedQty} uds",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (completa) MaterialTheme.colorScheme.primary
+                    color = if (esEliminada) MaterialTheme.colorScheme.onSurfaceVariant
+                    else if (completa) MaterialTheme.colorScheme.primary
                     else if (ultra) BrandRed else MaterialTheme.colorScheme.primary
                 )
             }
@@ -933,7 +1038,41 @@ private fun FaenaLineaRow(
             if (linea.line.prioridad.isNotBlank()) {
                 PrioBadgeFaena(prioridad = linea.line.prioridad)
             }
-            // D-237: estado de cogida TOTAL / PARCIAL.
+            // D-275: línea eliminada del pedido (el operario debe saber que ya no
+            // hace falta acopiar, sobre todo si ya había cogido planta).
+            if (esEliminada) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    Text(
+                        "❌ ELIMINADA del pedido" +
+                            (if (cogidas > 0) " · ya cogiste $cogidas" else " · ya no hace falta"),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            // D-276: el sistema cambió la cantidad solicitada; avisar al operario.
+            if (cantidadModificada) {
+                Surface(
+                    color = BrandAmber.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    Text(
+                        "⚠ Cantidad modificada: era $cantAnterior, ahora ${linea.line.requestedQty}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandAmber,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            // D-195: estado de cogida TOTAL / PARCIAL.
             when {
                 completa -> {
                     Surface(
@@ -995,7 +1134,7 @@ private fun FaenaLineaRow(
     }
 }
 
-/** D-246: el operario ha recogido más plantas de las pedidas; exclamación amarilla parpadeante. */
+/** D-208: el operario ha recogido más plantas de las pedidas; exclamación amarilla parpadeante. */
 @Composable
 private fun SobrecogidaBadge(cogidas: Int, pedidas: Int) {
     val transition = rememberInfiniteTransition(label = "sobrecogida")
@@ -1033,7 +1172,7 @@ private fun SobrecogidaBadge(cogidas: Int, pedidas: Int) {
     }
 }
 
-/** D-233: PRIORITARIO parpadea en rojo corporativo; NO PRIORITARIO lleva otra etiqueta. */
+/** D-191: PRIORITARIO parpadea en rojo corporativo; NO PRIORITARIO lleva otra etiqueta. */
 @Composable
 private fun PrioBadgeFaena(prioridad: String) {
     when (prioridad.trim().uppercase()) {
@@ -1185,7 +1324,7 @@ private fun AcopioLineaDialog(
     )
 }
 
-/** D-244: modal para corregir (poner un valor fijo) el total recogido por el operario. */
+/** D-261: modal para corregir (poner un valor fijo) el total recogido por el operario. */
 @Composable
 private fun ModificarAcopioDialog(
     linea: FaenaLinea,

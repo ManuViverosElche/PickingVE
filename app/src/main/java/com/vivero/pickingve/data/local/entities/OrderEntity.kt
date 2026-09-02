@@ -26,7 +26,8 @@ data class OrderEntity(
     val fotoMatriculaRemolqueB: String = "",
     val cargado: Boolean = false, // True: se envió el parte final (control de carga)
     val sobrante: Boolean = false, // True: camión terminado -> escaneos descuentan (sobrante)
-    val pickingActual: Int = 0 // Mayor picking_numero enviado a BigQuery por cualquier dispositivo
+    val pickingActual: Int = 0, // Mayor picking_numero enviado a BigQuery por cualquier dispositivo
+    val tieneCamion: Boolean = false // D-274: existe matrícula CAMION registrada (sincronizado desde backend)
 )
 
 @Entity(
@@ -55,13 +56,14 @@ data class OrderLineEntity(
     val vigente: Boolean = true, // False: línea retirada del pedido (se muestra pero no se pistoolea)
     val marcado: Boolean = false, // True: línea marcada ([M] en la descripción, tabla LINEA_PEDIDO)
     val acopiadoServidor: Int = 0, // Unidades subidas a BigQuery por cualquier dispositivo (otras tabletas incluidas)
-    val acopiadoOperario: Int = 0, // D-274: Acopio físico del operario de campo (picking_tipo='I')
+    val acopiadoOperario: Int = 0, // D-232: Acopio físico del operario de campo (picking_tipo='I')
     val fincaAcopio: String = "", // FINCA_RELEVADA: finca real donde está la planta (si difiere de la teórica)
     val sectorAcopio: String = "", // SECTOR_RELEVADO: sector real donde está la planta
     val fincaArticulo: String = "", // FINCA_ARTICULO: finca de procedencia de la planta (artículo)
-    val operarioEmail: String = "", // Reparto D-72: email del operario asignado a esta línea
-    val operarioNombre: String = "", // Reparto D-72: nombre del operario asignado
+    val operarioEmail: String = "", // Reparto D-77: email del operario asignado a esta línea
+    val operarioNombre: String = "", // Reparto D-77: nombre del operario asignado
     val motivoCierre: String = "", // Código del motivo al cerrar la línea sin completar (SIN_STOCK, ...)
     val motivoCierreTexto: String = "", // Detalle libre cuando el motivo es OTRO
-    val cierrePendiente: Boolean = false // True: el cierre aún no pudo subirse al backend
+    val cierrePendiente: Boolean = false, // True: el cierre aún no pudo subirse al backend
+    val requestedQtyAnterior: Int? = null // D-276: cantidad solicitada anterior (si el sistema la cambió)
 )

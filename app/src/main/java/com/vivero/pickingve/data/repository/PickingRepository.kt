@@ -167,7 +167,7 @@ class PickingRepository(
             .joinToString("") { "%02x".format(it) }
     }
 
-    // ---- Operarios (D-166) ----
+    // ---- Operarios (D-175) ----
 
     suspend fun syncOperarios(api: PickingApiClient) {
         val operarios = api.fetchOperariosApp()
@@ -273,7 +273,7 @@ class PickingRepository(
     fun tipoSesion(): String = sesPrefs.getString(KEY_SESION_TIPO, "") ?: ""
 
     /**
-     * D-167 Identidad para la faena: email según el rol de la sesión.
+     * D-176 Identidad para la faena: email según el rol de la sesión.
      * El reparto (reparto_faena.operario_email) es la única fuente de asignación.
      */
     fun emailFaena(): String = when (tipoSesion()) {
@@ -287,7 +287,7 @@ class PickingRepository(
     }
 
     /**
-     * D-167: el SUPERUSUARIO ve toda la faena (web y app). El resto de roles
+     * D-176: el SUPERUSUARIO ve toda la faena (web y app). El resto de roles
      * solo ve lo que le está asignado.
      */
     fun esSuperusuario(): Boolean =
@@ -295,7 +295,7 @@ class PickingRepository(
             sesPrefs.getString(KEY_ENCARGADO_ROL, "") == "SUPERUSUARIO"
 
     /**
-     * D-208: el SUPERUSUARIO solo ve "Mi faena" si además tiene rol activo de
+     * D-180: el SUPERUSUARIO solo ve "Mi faena" si además tiene rol activo de
      * OPERARIO asignado (mismo email en la tabla de operarios).
      */
     suspend fun encargadoEsOperarioActivo(): Boolean {
@@ -304,7 +304,7 @@ class PickingRepository(
         return operarioDao.findByEmail(email)?.activo == true
     }
 
-    /** D-201: el identificador puede ser usuario o email; la sal del hash es el usuario real. */
+    /** D-186: el identificador puede ser usuario o email; la sal del hash es el usuario real. */
     suspend fun loginEncargadoLocal(identificador: String, password: String): EncargadoEntity? {
         val enc = encargadoDao.findByUsuarioOEmail(identificador.trim()) ?: return null
         if (!enc.activo) return null
@@ -996,7 +996,7 @@ class PickingRepository(
             empleadoNombre = nombreFaena()
         )
         insertPickingRecord(record)
-        // D-275: la planta físicamente acopiada CUENTA como acopiada, independientemente
+        // D-256: la planta físicamente acopiada CUENTA como acopiada, independientemente
         // de si necesita etiqueta. Las etiquetas se listan por separado en el CSV/panel.
         // Se elimina el registro espejo -1 que restaba la unidad del conteo.
         return record
@@ -1066,7 +1066,8 @@ class PickingRepository(
                 marcaPedido = p.marcaPedido,
                 observaciones = p.observaciones,
                 pickingActual = p.pickingActual,
-                modificado = prevOrder?.modificado ?: false
+                modificado = prevOrder?.modificado ?: false,
+                tieneCamion = p.tieneCamion
             )
         }
         val descripciones = productDao.getAll().associate { it.id to it.name }
@@ -1118,6 +1119,11 @@ class PickingRepository(
                     productId = l.referencia,
                     productName = l.descripcion.ifBlank { l.referencia },
                     requestedQty = requested,
+                    // D-276: si el sistema cambió la cantidad, conservar el valor anterior
+                    // para que "Mi faena" avise al operario del cambio de objetivo.
+                    requestedQtyAnterior =
+                        if (prev != null && prev.requestedQty != requested) prev.requestedQty
+                        else prev?.requestedQtyAnterior,
                     pickedQty = prev?.pickedQty ?: 0,
                     requiresMeasure = prev?.requiresMeasure
                         ?: requiresMeasureByDescription(l.referencia, descripciones),
@@ -1366,7 +1372,7 @@ class PickingRepository(
 
         if (toSend.isEmpty()) return compensados
 
-        // D-170: subida por LOTES de 100 (antes iba todo el acumulado en una
+        // D-179: subida por LOTES de 100 (antes iba todo el acumulado en una
         // petición y un lote grande o un registro conflictivo dejaba los
         // pendientes colgados indefinidamente). Si un lote falla tras los
         // reintentos, se aísla registro a registro para no bloquear el resto:
@@ -1563,7 +1569,7 @@ class PickingRepository(
     }
 
     /**
-     * D-233: acopio (suma) en varios viajes. Registra [cantidad] plantas cogidas
+     * D-191: acopio (suma) en varios viajes. Registra [cantidad] plantas cogidas
      * y las SUMA a lo ya acopiado por el operario, sin tocar lo de otros viajes.
      */
     suspend fun acopiarOperario(line: OrderLineEntity, cantidad: Int) {
@@ -1586,7 +1592,7 @@ class PickingRepository(
     }
 
     /**
-     * D-244: corrige offline la cantidad total acopiada por el operario a un
+     * D-261: corrige offline la cantidad total acopiada por el operario a un
      * valor fijo [cantidad] (0..requestedQty). Crea un registro de ajuste que
      * viaja a BigQuery como cantidad_partida positiva/negativa.
      */

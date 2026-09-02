@@ -44,6 +44,7 @@ data class ApiPedido(
     val marcaPedido: String = "",
     val observaciones: String = "",
     val pickingActual: Int = 0,
+    val tieneCamion: Boolean = false, // D-274: existe matrícula CAMION registrada
     val lineas: List<ApiLinea> = emptyList()
 )
 
@@ -357,7 +358,7 @@ data class DiscrepanciaRequest(
     @SerialName("operario_email") val operarioEmail: String
 )
 
-// ---- D-166 Login de operarios ----
+// ---- D-175 Login de operarios ----
 
 @Serializable
 data class LoginOperarioRequest(
@@ -401,7 +402,7 @@ data class CambiarPasswordOperarioRequest(
     @SerialName("password_nueva") val passwordNueva: String
 )
 
-// ---- D-169 Ayuda por líneas concretas ----
+// ---- D-178 Ayuda por líneas concretas ----
 
 @Serializable
 data class AyudaPermisoLineaApi(
@@ -464,7 +465,7 @@ data class RepartoGuardarResponse(
     val guardadas: Int = 0,
     val borradas: Int = 0
 )
-// ---- D-213: panel manager (superusuario) ----
+// ---- D-183: panel manager (superusuario) ----
 
 @kotlinx.serialization.Serializable
 data class ManagerFecha(
@@ -538,7 +539,7 @@ data class ManagerHistoricoDetalleResponse(
     val registros: List<ManagerRegistro> = emptyList()
 )
 
-// ---- D-216: configuracion de maquinarias y familias (panel) ----
+// ---- D-186: configuracion de maquinarias y familias (panel) ----
 
 @kotlinx.serialization.Serializable
 data class MaquinariaItem(

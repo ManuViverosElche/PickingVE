@@ -41,7 +41,7 @@ import com.vivero.pickingve.data.local.dao.InventoryDao
         InventoryStockEntity::class,
         InventoryRecordEntity::class
     ],
-    version = 28,
+    version = 29,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -438,7 +438,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // D-240/D-241/D-243: campos de incidencia, motivo de etiqueta,
+                // D-240/D-214/D-187: campos de incidencia, motivo de etiqueta,
                 // huecos y modo de pistoleo en los registros de inventario.
                 db.execSQL(
                     "ALTER TABLE inventario_records ADD COLUMN labelMotivo TEXT NOT NULL DEFAULT ''"
@@ -457,7 +457,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_26_27 = object : Migration(26, 27) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // D-244: ID de sesión lineal (A -> B) para agrupar líneas independientes.
+                // D-186: ID de sesión lineal (A -> B) para agrupar líneas independientes.
                 db.execSQL(
                     "ALTER TABLE inventario_records ADD COLUMN linealSessionId TEXT NOT NULL DEFAULT ''"
                 )
@@ -466,9 +466,22 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // D-274: Separación de contadores - acopio de operario vs verificación de encargado
+                // D-232: Separación de contadores - acopio de operario vs verificación de encargado
                 db.execSQL(
                     "ALTER TABLE order_lines ADD COLUMN acopiadoOperario INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // D-274: flag tieneCamion en orders (sincronizado desde backend)
+                db.execSQL(
+                    "ALTER TABLE orders ADD COLUMN tieneCamion INTEGER NOT NULL DEFAULT 0"
+                )
+                // D-276: cantidad solicitada anterior en order_lines (cambio del sistema)
+                db.execSQL(
+                    "ALTER TABLE order_lines ADD COLUMN requestedQtyAnterior INTEGER"
                 )
             }
         }
@@ -487,7 +500,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                         MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                         MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
-                        MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28
+                        MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29
                     )
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()

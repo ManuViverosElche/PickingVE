@@ -84,6 +84,16 @@ fun ChatDialog(
         }
     }
 
+    // D-273: rol del autor. Si es operario de acopio, rol OPERARIO (para que el
+    // canal de mensajes atribuya la respuesta correctamente).
+    suspend fun rolAutor(db: AppDatabase): String {
+        val email = settings.operatorEmail.ifBlank { "" }
+        val enc = db.encargadoDao().getAll().firstOrNull { it.email == email }
+        if (enc != null) return enc.rol
+        val op = db.operarioDao().getAllActivos().firstOrNull { it.email == email }
+        return if (op != null) "OPERARIO" else "ENCARGADO"
+    }
+
     LaunchedEffect(pedidoId, linea) {
         cargar()
         while (true) {
@@ -99,15 +109,14 @@ fun ChatDialog(
         texto = ""
         scope.launch {
             try {
-                val rol = AppDatabase.getDatabase(context).encargadoDao().getAll()
-                    .firstOrNull { it.email == settings.operatorEmail }?.rol ?: "ENCARGADO"
+                val db = AppDatabase.getDatabase(context)
                 api.crearComentario(
                     pedido = pedidoId,
                     linea = linea,
                     texto = cuerpo,
                     autorEmail = settings.operatorEmail.ifBlank { "app@pickingve" },
                     autorNombre = settings.operatorName.ifBlank { "Encargado" },
-                    rol = rol
+                    rol = rolAutor(db)
                 )
                 error = null
                 cargar()
@@ -145,7 +154,7 @@ fun ChatDialog(
             "${context.packageName}.fileprovider",
             archivo
         )
-        // D-206: sin el permiso CAMERA en runtime, TakePicture crashea
+        // D-191: sin el permiso CAMERA en runtime, TakePicture crashea
         // (la app lo declara en el manifest para el escaner).
         val concedido = androidx.core.content.ContextCompat.checkSelfPermission(
             context, android.Manifest.permission.CAMERA
@@ -167,8 +176,7 @@ fun ChatDialog(
             try {
                 val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: throw IllegalStateException("No se pudo leer la foto")
-                val rol = AppDatabase.getDatabase(context).encargadoDao().getAll()
-                    .firstOrNull { it.email == settings.operatorEmail }?.rol ?: "ENCARGADO"
+                val db = AppDatabase.getDatabase(context)
                 val nombre = "foto_${System.currentTimeMillis()}.jpg"
                 api.subirAdjunto(
                     pedido = pedidoId,
@@ -176,7 +184,7 @@ fun ChatDialog(
                     texto = texto.trim(),
                     autorEmail = settings.operatorEmail.ifBlank { "app@pickingve" },
                     autorNombre = settings.operatorName.ifBlank { "Encargado" },
-                    rol = rol,
+                    rol = rolAutor(db),
                     nombreArchivo = nombre,
                     bytes = bytes,
                     contentType = ContentType.Image.JPEG

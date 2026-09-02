@@ -24,9 +24,8 @@ android {
         applicationId = "com.vivero.pickingve"
         minSdk = 26
         targetSdk = 34
-versionCode = 46
-
-        versionName = "2.3.6"
+        versionCode = 47
+        versionName = "2.3.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -89,7 +88,7 @@ versionCode = 46
     }
 }
 
-val apkVersionName = android.defaultConfig.versionName
+val apkVersionName = "${android.defaultConfig.versionName}-${android.defaultConfig.versionCode}"
 
 tasks.matching { it.name == "packageDebug" }.configureEach {
     doLast {
